@@ -1,0 +1,40 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React
+web/node_modules/
+web/dist/
+web/build/
+
+# Backend
+backend/node_modules/
+
+# Android
+mobile/.gradle/
+mobile/local.properties
+mobile/.idea/
+mobile/build/
+mobile/app/build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Firebase / secrets
+serviceAccountKey.json
+firebase-debug.log
+
+# Logs
+*.log
