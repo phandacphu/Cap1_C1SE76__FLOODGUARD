@@ -5,6 +5,8 @@ const morgan = require("morgan");
 
 const app = express();
 
+const authRoutes = require("./routes/auth.routes");
+
 // Middleware
 app.use(helmet());
 app.use(cors());
@@ -18,5 +20,7 @@ app.get("/api/health", (req, res) => {
     message: "FLOODGUARD API is running",
   });
 });
+
+app.use("/api/auth", authRoutes);
 
 module.exports = app;
