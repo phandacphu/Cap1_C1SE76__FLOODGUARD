@@ -192,8 +192,20 @@ async function getProfile(req, res) {
   }
 }
 
+// Stateless JWT logout:
+// The server does not store or blacklist access tokens.
+// The client must remove its token after logout.
+// Existing tokens become unusable when they expire.
+function logout(req, res) {
+  return res.status(200).json({
+    success: true,
+    message: "Logout successful",
+  });
+}
+
 module.exports = {
   register,
   login,
   getProfile,
+  logout,
 };

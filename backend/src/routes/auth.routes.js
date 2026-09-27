@@ -3,6 +3,7 @@ const {
   register,
   login,
   getProfile,
+  logout,
 } = require("../controllers/auth.controller");
 const {
   authenticateToken,
@@ -13,5 +14,6 @@ const router = express.Router();
 router.post("/register", register);
 router.post("/login", login);
 router.get("/me", authenticateToken, getProfile);
+router.post("/logout", authenticateToken, logout);
 
 module.exports = router;
