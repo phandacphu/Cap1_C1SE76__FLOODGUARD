@@ -1,6 +1,10 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { createUser, getUserByEmail } = require("../services/user.service");
+const {
+  createUser,
+  getUserByEmail,
+  getUserById,
+} = require("../services/user.service");
 
 async function register(req, res) {
   try {
@@ -151,7 +155,45 @@ async function login(req, res) {
   }
 }
 
+async function getProfile(req, res) {
+  try {
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is inactive",
+      });
+    }
+
+    const { passwordHash: _, ...safeUser } = user;
+
+    return res.status(200).json({
+      success: true,
+      message: "User profile retrieved successfully",
+      data: {
+        user: safeUser,
+      },
+    });
+  } catch (error) {
+    console.error("Get profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 module.exports = {
   register,
   login,
+  getProfile,
 };
