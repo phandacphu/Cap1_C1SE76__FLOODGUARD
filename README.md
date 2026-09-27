@@ -7,7 +7,7 @@ Flood Warning and Rescue Support System
 - mobile/ - Android application using Kotlin
 - web/ - React + TypeScript web application
 - Backend/ - Node.js REST API
-- irebase/ - Firebase / Firestore configuration
+- Firebase/ - Firebase / Firestore configuration
 - docs/ - Project documentation
 
 ## Main Technologies
