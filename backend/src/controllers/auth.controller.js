@@ -1,10 +1,5 @@
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const {
-  createUser,
-  getUserByEmail,
-  getUserById,
-} = require("../services/user.service");
+const { createUser, getUserByEmail } = require("../services/user.service");
 
 async function register(req, res) {
   try {
@@ -37,8 +32,7 @@ async function register(req, res) {
     }
 
     // Check duplicate email
-    const normalizedEmail = email.trim().toLowerCase();
-    const existingUser = await getUserByEmail(normalizedEmail);
+    const existingUser = await getUserByEmail(email);
 
     if (existingUser) {
       return res.status(409).json({
@@ -53,7 +47,7 @@ async function register(req, res) {
     // Public registration always creates Resident
     const user = await createUser({
       fullName: fullName.trim(),
-      email: normalizedEmail,
+      email,
       passwordHash,
       phone: phone || null,
       role: "resident",
@@ -79,133 +73,6 @@ async function register(req, res) {
   }
 }
 
-async function login(req, res) {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await getUserByEmail(normalizedEmail);
-
-    // Use one message for both cases to avoid revealing registered emails
-    if (!user || !user.passwordHash) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
-
-    const passwordMatches = await bcrypt.compare(
-      password,
-      user.passwordHash,
-    );
-
-    if (!passwordMatches) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password",
-      });
-    }
-
-    if (user.isActive === false) {
-      return res.status(403).json({
-        success: false,
-        message: "Account is inactive",
-      });
-    }
-
-    if (!process.env.JWT_SECRET) {
-      throw new Error("JWT_SECRET is not configured");
-    }
-
-    const token = jwt.sign(
-      {
-        sub: user.id,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: process.env.JWT_EXPIRES_IN || "7d",
-      },
-    );
-
-    const { passwordHash: _, ...safeUser } = user;
-
-    return res.status(200).json({
-      success: true,
-      message: "Login successful",
-      data: {
-        token,
-        user: safeUser,
-      },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-}
-
-async function getProfile(req, res) {
-  try {
-    const user = await getUserById(req.user.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    if (user.isActive === false) {
-      return res.status(403).json({
-        success: false,
-        message: "Account is inactive",
-      });
-    }
-
-    const { passwordHash: _, ...safeUser } = user;
-
-    return res.status(200).json({
-      success: true,
-      message: "User profile retrieved successfully",
-      data: {
-        user: safeUser,
-      },
-    });
-  } catch (error) {
-    console.error("Get profile error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-}
-
-// Stateless JWT logout:
-// The server does not store or blacklist access tokens.
-// The client must remove its token after logout.
-// Existing tokens become unusable when they expire.
-function logout(req, res) {
-  return res.status(200).json({
-    success: true,
-    message: "Logout successful",
-  });
-}
-
 module.exports = {
   register,
-  login,
-  getProfile,
-  logout,
 };
