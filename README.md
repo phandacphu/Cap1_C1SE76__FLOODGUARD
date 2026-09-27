@@ -6,7 +6,7 @@ Flood Warning and Rescue Support System
 
 - mobile/ - Android application using Kotlin
 - web/ - React + TypeScript web application
-- ackend/ - Node.js REST API
+- Backend/ - Node.js REST API
 - irebase/ - Firebase / Firestore configuration
 - docs/ - Project documentation
 
