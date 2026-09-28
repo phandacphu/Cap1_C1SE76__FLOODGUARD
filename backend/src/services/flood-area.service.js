@@ -161,10 +161,22 @@ async function getFloodAreaById(areaId) {
   };
 }
 
+async function getFloodAreas() {
+  const snapshot = await db
+    .collection(FLOOD_AREAS_COLLECTION)
+    .get();
+
+  return snapshot.docs.map((areaDoc) => ({
+    id: areaDoc.id,
+    ...areaDoc.data(),
+  }));
+}
+
 module.exports = {
   FLOOD_AREAS_COLLECTION,
   createFloodArea,
   setFloodAreaById,
   getFloodAreaById,
+  getFloodAreas,
   normalizeFloodAreaData,
 };

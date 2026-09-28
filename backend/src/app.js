@@ -6,6 +6,7 @@ const morgan = require("morgan");
 const app = express();
 
 const authRoutes = require("./routes/auth.routes");
+const floodAreaRoutes = require("./routes/flood-area.routes");
 
 // Middleware
 app.use(helmet());
@@ -22,5 +23,6 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/flood-areas", floodAreaRoutes);
 
 module.exports = app;
