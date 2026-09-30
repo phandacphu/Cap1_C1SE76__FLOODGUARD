@@ -233,11 +233,84 @@ async function getActiveFloodAlerts(
     });
 }
 
+function normalizeFloodAlertFilters(filters = {}) {
+  const normalizedFilters = {};
+
+  if (filters.areaId !== undefined) {
+    if (
+      typeof filters.areaId !== "string" ||
+      !filters.areaId.trim()
+    ) {
+      throw new Error("Invalid areaId filter");
+    }
+
+    normalizedFilters.areaId = filters.areaId.trim();
+  }
+
+  if (filters.severity !== undefined) {
+    if (
+      typeof filters.severity !== "string" ||
+      !ALLOWED_SEVERITIES.includes(filters.severity)
+    ) {
+      throw new Error("Invalid severity filter");
+    }
+
+    normalizedFilters.severity = filters.severity;
+  }
+
+  if (filters.status !== undefined) {
+    if (
+      typeof filters.status !== "string" ||
+      !ALLOWED_STATUSES.includes(filters.status)
+    ) {
+      throw new Error("Invalid status filter");
+    }
+
+    normalizedFilters.status = filters.status;
+  }
+
+  return normalizedFilters;
+}
+
+async function getFloodAlerts(filters = {}) {
+  const normalizedFilters =
+    normalizeFloodAlertFilters(filters);
+
+  const snapshot = await db
+    .collection(FLOOD_ALERTS_COLLECTION)
+    .get();
+
+  return snapshot.docs
+    .map((alertDoc) => ({
+      id: alertDoc.id,
+      ...alertDoc.data(),
+    }))
+    .filter((alert) =>
+      Object.entries(normalizedFilters).every(
+        ([field, value]) => alert[field] === value,
+      ),
+    )
+    .sort((firstAlert, secondAlert) => {
+      const firstStartAt =
+        firstAlert.startAt instanceof Timestamp
+          ? firstAlert.startAt.toMillis()
+          : 0;
+      const secondStartAt =
+        secondAlert.startAt instanceof Timestamp
+          ? secondAlert.startAt.toMillis()
+          : 0;
+
+      return secondStartAt - firstStartAt;
+    });
+}
+
 module.exports = {
   FLOOD_ALERTS_COLLECTION,
   createFloodAlert,
   setFloodAlertById,
   getFloodAlertById,
   getActiveFloodAlerts,
+  getFloodAlerts,
   normalizeFloodAlertData,
+  normalizeFloodAlertFilters,
 };
