@@ -15,6 +15,12 @@ const ALLOWED_SEVERITIES = [
   "critical",
 ];
 const ALLOWED_STATUSES = ["active", "inactive"];
+const SEVERITY_PRIORITY = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+};
 
 function normalizeTimestamp(value, fieldName) {
   if (value instanceof Timestamp) {
@@ -178,10 +184,60 @@ async function getFloodAlertById(alertId) {
   };
 }
 
+async function getActiveFloodAlerts(
+  currentTime = Timestamp.now(),
+) {
+  const normalizedCurrentTime = normalizeTimestamp(
+    currentTime,
+    "currentTime",
+  );
+  const currentTimeMillis =
+    normalizedCurrentTime.toMillis();
+
+  const snapshot = await db
+    .collection(FLOOD_ALERTS_COLLECTION)
+    .where("status", "==", "active")
+    .get();
+
+  return snapshot.docs
+    .map((alertDoc) => ({
+      id: alertDoc.id,
+      ...alertDoc.data(),
+    }))
+    .filter((alert) => {
+      if (
+        !(alert.startAt instanceof Timestamp) ||
+        !(alert.endAt instanceof Timestamp)
+      ) {
+        return false;
+      }
+
+      return (
+        alert.startAt.toMillis() <= currentTimeMillis &&
+        alert.endAt.toMillis() >= currentTimeMillis
+      );
+    })
+    .sort((firstAlert, secondAlert) => {
+      const severityDifference =
+        SEVERITY_PRIORITY[secondAlert.severity] -
+        SEVERITY_PRIORITY[firstAlert.severity];
+
+      if (severityDifference !== 0) {
+        return severityDifference;
+      }
+
+      return (
+        secondAlert.startAt.toMillis() -
+        firstAlert.startAt.toMillis()
+      );
+    });
+}
+
 module.exports = {
   FLOOD_ALERTS_COLLECTION,
   createFloodAlert,
   setFloodAlertById,
   getFloodAlertById,
+  getActiveFloodAlerts,
   normalizeFloodAlertData,
 };
