@@ -3,7 +3,9 @@ const jwt = require("jsonwebtoken");
 const {
   createUser,
   getUserByEmail,
+  getUserByPhone,
   getUserById,
+  normalizePhone,
 } = require("../services/user.service");
 
 async function register(req, res) {
@@ -47,6 +49,29 @@ async function register(req, res) {
       });
     }
 
+let normalizedPhone = null;
+
+if (phone !== undefined && phone !== null && phone !== "") {
+  try {
+    normalizedPhone = normalizePhone(phone);
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid phone number format",
+    });
+  }
+
+  const existingPhoneUser =
+    await getUserByPhone(normalizedPhone);
+
+  if (existingPhoneUser) {
+    return res.status(409).json({
+      success: false,
+      message: "Phone number already exists",
+    });
+  }
+}
+
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -55,7 +80,7 @@ async function register(req, res) {
       fullName: fullName.trim(),
       email: normalizedEmail,
       passwordHash,
-      phone: phone || null,
+phone: normalizedPhone,
       role: "resident",
     });
 
@@ -81,23 +106,49 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
+    const { identifier, email, password } = req.body;
+    const loginIdentifier = identifier ?? email;
 
-    if (!email || !password) {
+    if (
+      typeof loginIdentifier !== "string" ||
+      !loginIdentifier.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+        message:
+          "Email or phone number and password are required",
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await getUserByEmail(normalizedEmail);
+    const normalizedIdentifier =
+      loginIdentifier.trim().toLowerCase();
+    const loginByPhone =
+      !normalizedIdentifier.includes("@");
 
-    // Use one message for both cases to avoid revealing registered emails
+    let user;
+
+    if (loginByPhone) {
+      try {
+        user = await getUserByPhone(normalizedIdentifier);
+      } catch (error) {
+        user = null;
+      }
+
+      // Phone login is available only to Resident accounts
+      if (user && user.role !== "resident") {
+        user = null;
+      }
+    } else {
+      user = await getUserByEmail(normalizedIdentifier);
+    }
+
+    // Use one message to avoid revealing registered accounts
     if (!user || !user.passwordHash) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Invalid email, phone number or password",
       });
     }
 
@@ -109,7 +160,7 @@ async function login(req, res) {
     if (!passwordMatches) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password",
+        message: "Invalid email, phone number or password",
       });
     }
 
