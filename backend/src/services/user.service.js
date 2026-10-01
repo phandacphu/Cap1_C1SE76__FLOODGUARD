@@ -4,6 +4,63 @@ const { FieldValue } = require("firebase-admin/firestore");
 const USERS_COLLECTION = "users";
 
 /**
+ * Normalize a Vietnamese phone number to +84 format
+ */
+function normalizePhone(phone) {
+  if (typeof phone !== "string") {
+    throw new Error("Invalid phone number format");
+  }
+
+  const cleanedPhone = phone
+    .trim()
+    .replace(/[\s().-]/g, "");
+
+  let nationalNumber;
+
+  if (/^0\d{9}$/.test(cleanedPhone)) {
+    nationalNumber = cleanedPhone.slice(1);
+  } else if (/^\+84\d{9}$/.test(cleanedPhone)) {
+    nationalNumber = cleanedPhone.slice(3);
+  } else if (/^84\d{9}$/.test(cleanedPhone)) {
+    nationalNumber = cleanedPhone.slice(2);
+  } else {
+    throw new Error("Invalid phone number format");
+  }
+
+  return `+84${nationalNumber}`;
+}
+
+async function getUserByPhone(phone) {
+  const normalizedPhone = normalizePhone(phone);
+  const nationalNumber = normalizedPhone.slice(3);
+
+  const phoneCandidates = [
+    normalizedPhone,
+    `0${nationalNumber}`,
+    `84${nationalNumber}`,
+  ];
+
+  for (const phoneCandidate of phoneCandidates) {
+    const snapshot = await db
+      .collection(USERS_COLLECTION)
+      .where("phone", "==", phoneCandidate)
+      .limit(1)
+      .get();
+
+    if (!snapshot.empty) {
+      const userDoc = snapshot.docs[0];
+
+      return {
+        id: userDoc.id,
+        ...userDoc.data(),
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Create a new user document in Firestore
  */
 async function createUser(userData) {
@@ -13,7 +70,7 @@ async function createUser(userData) {
     fullName: userData.fullName,
     email: userData.email.toLowerCase(),
     passwordHash: userData.passwordHash,
-    phone: userData.phone || null,
+phone: userData.phone ? normalizePhone(userData.phone) : null,
     role: userData.role || "resident",
     isActive: true,
     createdAt: FieldValue.serverTimestamp(),
@@ -72,4 +129,6 @@ module.exports = {
   createUser,
   getUserById,
   getUserByEmail,
+  getUserByPhone,
+  normalizePhone,
 };
