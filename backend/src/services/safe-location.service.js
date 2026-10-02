@@ -283,12 +283,53 @@ async function setSafeLocationServiceById(
   return getSafeLocationServiceById(serviceRef.id);
 }
 
+async function getSafeLocations() {
+  const [locationsSnapshot, servicesSnapshot] =
+    await Promise.all([
+      db.collection(SAFE_LOCATIONS_COLLECTION).get(),
+      db
+        .collection(SAFE_LOCATION_SERVICES_COLLECTION)
+        .get(),
+    ]);
+
+  const servicesByLocationId = new Map();
+
+  servicesSnapshot.docs.forEach((serviceDoc) => {
+    const service = {
+      id: serviceDoc.id,
+      ...serviceDoc.data(),
+    };
+
+    const existingServices =
+      servicesByLocationId.get(service.safeLocationId) || [];
+
+    existingServices.push(service);
+
+    servicesByLocationId.set(
+      service.safeLocationId,
+      existingServices,
+    );
+  });
+
+  return locationsSnapshot.docs
+    .map((locationDoc) => ({
+      id: locationDoc.id,
+      ...locationDoc.data(),
+      services:
+        servicesByLocationId.get(locationDoc.id) || [],
+    }))
+    .sort((firstLocation, secondLocation) =>
+      firstLocation.name.localeCompare(secondLocation.name),
+    );
+}
+
 module.exports = {
   SAFE_LOCATIONS_COLLECTION,
   SAFE_LOCATION_SERVICES_COLLECTION,
   createSafeLocation,
   setSafeLocationById,
   getSafeLocationById,
+  getSafeLocations,
   setSafeLocationServiceById,
   getSafeLocationServiceById,
   normalizeSafeLocationData,
