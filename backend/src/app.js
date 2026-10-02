@@ -8,6 +8,9 @@ const app = express();
 const authRoutes = require("./routes/auth.routes");
 const floodAreaRoutes = require("./routes/flood-area.routes");
 const floodAlertRoutes = require("./routes/flood-alert.routes");
+const floodForecastRoutes = require(
+  "./routes/flood-forecast.routes",
+);
 
 // Middleware
 app.use(helmet());
@@ -26,5 +29,6 @@ app.get("/api/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/flood-areas", floodAreaRoutes);
 app.use("/api/flood-alerts", floodAlertRoutes);
+app.use("/api/flood-forecast", floodForecastRoutes);
 
 module.exports = app;
