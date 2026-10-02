@@ -57,7 +57,7 @@ const documents = [
       new Date("2026-09-30T03:00:00.000Z"),
     ),
     endAt: Timestamp.fromDate(
-      new Date("2026-09-30T12:00:00.000Z"),
+      new Date("2099-12-31T23:59:59.000Z"),
     ),
   }),
   createDocument("active-critical", {
@@ -70,7 +70,7 @@ const documents = [
       new Date("2026-09-30T01:00:00.000Z"),
     ),
     endAt: Timestamp.fromDate(
-      new Date("2026-09-30T12:00:00.000Z"),
+      new Date("2099-12-31T23:59:59.000Z"),
     ),
   }),
   createDocument("active-high-new", {
@@ -83,7 +83,7 @@ const documents = [
       new Date("2026-09-30T05:00:00.000Z"),
     ),
     endAt: Timestamp.fromDate(
-      new Date("2026-09-30T12:00:00.000Z"),
+      new Date("2099-12-31T23:59:59.000Z"),
     ),
   }),
 ];
