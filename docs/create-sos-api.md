@@ -341,3 +341,27 @@ Manual checks completed locally:
 
 
 All manual demo submissions must be clearly marked as simulated.
+
+## CCF-76 - SOS Data Validation
+
+Shared rescue-request validation rejects invalid coordinates before
+Firestore access, including NaN, Infinity, non-numeric values,
+out-of-range values, and arrays used as location objects.
+
+Existing validation also checks required fields, urgency,
+positive integer numberOfPeople, and optional string note.
+
+Validation tests cover:
+- 63 invalid input cases.
+- Rejection before database access for create, fixed-ID save,
+  and SOS creation with history.
+- Valid coordinate boundaries and zero coordinates.
+- All supported urgency values.
+- Trimming residentId and note.
+- Normalizing missing, null, or blank note to null.
+
+Run from the backend directory:
+- node tests/sos-validation.test.js
+- node tests/create-sos.test.js
+
+These tests use mocked Firestore and do not write real SOS records.

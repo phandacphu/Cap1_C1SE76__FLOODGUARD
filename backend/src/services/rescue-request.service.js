@@ -25,8 +25,10 @@ function normalizeOptionalString(value, fieldName) {
 function normalizeLocation(location) {
   if (
     !location ||
-    typeof location.latitude !== "number" ||
-    typeof location.longitude !== "number"
+    typeof location !== "object" ||
+    Array.isArray(location) ||
+    !Number.isFinite(location.latitude) ||
+    !Number.isFinite(location.longitude)
   ) {
     throw new Error(
       "Rescue request location must contain numeric latitude and longitude",
