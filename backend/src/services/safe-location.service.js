@@ -323,6 +323,151 @@ async function getSafeLocations() {
     );
 }
 
+function nearbyValidationError(message) {
+  const error = new Error(message);
+  error.code = "INVALID_NEARBY_FILTER";
+  return error;
+}
+
+function normalizeNearbySafeLocationFilters(filters = {}) {
+  function parseNumber(value, fieldName, min, max) {
+    if (
+      (typeof value !== "string" &&
+        typeof value !== "number") ||
+      (typeof value === "string" && !value.trim())
+    ) {
+      throw nearbyValidationError(
+        `${fieldName} must be a number between ${min} and ${max}`,
+      );
+    }
+
+    const number = Number(value);
+
+    if (
+      !Number.isFinite(number) ||
+      number < min ||
+      number > max
+    ) {
+      throw nearbyValidationError(
+        `${fieldName} must be a number between ${min} and ${max}`,
+      );
+    }
+
+    return number;
+  }
+
+  const latitude = parseNumber(
+    filters.latitude,
+    "latitude",
+    -90,
+    90,
+  );
+
+  const longitude = parseNumber(
+    filters.longitude,
+    "longitude",
+    -180,
+    180,
+  );
+
+  const radiusKm =
+    filters.radiusKm === undefined
+      ? 10
+      : parseNumber(filters.radiusKm, "radiusKm", 0, 100);
+
+  if (radiusKm <= 0) {
+    throw nearbyValidationError(
+      "radiusKm must be greater than 0 and at most 100",
+    );
+  }
+
+  if (
+    filters.type !== undefined &&
+    !ALLOWED_TYPES.includes(filters.type)
+  ) {
+    throw nearbyValidationError("Invalid safe location type");
+  }
+
+  return {
+    latitude,
+    longitude,
+    radiusKm,
+    type: filters.type,
+  };
+}
+
+function calculateDistanceKm(origin, destination) {
+  const toRadians = (degrees) => degrees * Math.PI / 180;
+  const earthRadiusKm = 6371;
+
+  const latitudeDifference = toRadians(
+    destination.latitude - origin.latitude,
+  );
+  const longitudeDifference = toRadians(
+    destination.longitude - origin.longitude,
+  );
+
+  const a =
+    Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(toRadians(origin.latitude)) *
+      Math.cos(toRadians(destination.latitude)) *
+      Math.sin(longitudeDifference / 2) ** 2;
+
+  const clampedA = Math.min(1, Math.max(0, a));
+
+  return (
+    earthRadiusKm *
+    2 *
+    Math.atan2(
+      Math.sqrt(clampedA),
+      Math.sqrt(1 - clampedA),
+    )
+  );
+}
+
+async function getNearbySafeLocations(filters = {}) {
+  const normalizedFilters =
+    normalizeNearbySafeLocationFilters(filters);
+
+  const safeLocations = await getSafeLocations();
+
+  return safeLocations
+    .filter((safeLocation) => {
+      const location = safeLocation.location;
+
+      return (
+        safeLocation.status === "active" &&
+        (
+          normalizedFilters.type === undefined ||
+          safeLocation.type === normalizedFilters.type
+        ) &&
+        location &&
+        Number.isFinite(location.latitude) &&
+        Number.isFinite(location.longitude) &&
+        location.latitude >= -90 &&
+        location.latitude <= 90 &&
+        location.longitude >= -180 &&
+        location.longitude <= 180
+      );
+    })
+    .map((safeLocation) => ({
+      ...safeLocation,
+      distanceKm: calculateDistanceKm(
+        normalizedFilters,
+        safeLocation.location,
+      ),
+    }))
+    .filter(
+      (safeLocation) =>
+        safeLocation.distanceKm <= normalizedFilters.radiusKm,
+    )
+    .sort(
+      (first, second) =>
+        first.distanceKm - second.distanceKm ||
+        first.id.localeCompare(second.id),
+    );
+}
+
 module.exports = {
   SAFE_LOCATIONS_COLLECTION,
   SAFE_LOCATION_SERVICES_COLLECTION,
@@ -334,4 +479,7 @@ module.exports = {
   getSafeLocationServiceById,
   normalizeSafeLocationData,
   normalizeSafeLocationServiceData,
+  getNearbySafeLocations,
+  normalizeNearbySafeLocationFilters,
+  calculateDistanceKm,
 };
