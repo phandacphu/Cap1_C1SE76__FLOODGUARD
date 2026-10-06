@@ -1,4 +1,4 @@
-package com.c1se76.floodguard
+package com.example.floodguard
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

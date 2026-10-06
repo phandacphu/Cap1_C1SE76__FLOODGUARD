@@ -1,4 +1,4 @@
-package com.c1se76.floodguard.ui.theme
+package com.example.floodguard.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

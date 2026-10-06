@@ -1,4 +1,4 @@
-package com.c1se76.floodguard
+package com.example.floodguard
 
 import org.junit.Test
 
