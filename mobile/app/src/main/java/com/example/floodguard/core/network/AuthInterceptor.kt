@@ -1,38 +1,30 @@
 package com.example.floodguard.core.network
 
-import com.example.floodguard.core.datastore.UserPreferences
-import kotlinx.coroutines.flow.first
+import com.example.floodguard.data.local.SessionManager
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 
 class AuthInterceptor(
-    private val userPreferences: UserPreferences
+    private val sessionManager: SessionManager
 ) : Interceptor {
 
-    override fun intercept(
-        chain: Interceptor.Chain
-    ): Response {
-
+    override fun intercept(chain: Interceptor.Chain): Response {
         val token = runBlocking {
-            userPreferences
-                .getToken()
-                .first()
+            sessionManager.getToken()
         }
 
-        val requestBuilder =
-            chain.request()
-                .newBuilder()
+        val requestBuilder = chain.request().newBuilder()
 
         if (!token.isNullOrBlank()) {
-            requestBuilder.addHeader(
+            requestBuilder.header(
                 "Authorization",
                 "Bearer $token"
             )
+        } else {
+            requestBuilder.removeHeader("Authorization")
         }
 
-        return chain.proceed(
-            requestBuilder.build()
-        )
+        return chain.proceed(requestBuilder.build())
     }
 }
