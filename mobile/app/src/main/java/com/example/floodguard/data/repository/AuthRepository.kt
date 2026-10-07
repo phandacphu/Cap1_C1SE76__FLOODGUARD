@@ -1,6 +1,6 @@
 package com.example.floodguard.data.repository
 
-import com.example.floodguard.core.datastore.UserPreferences
+import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.dto.auth.LoginRequest
 import com.example.floodguard.data.remote.dto.auth.RegisterRequest
@@ -10,7 +10,7 @@ import java.net.UnknownHostException
 
 class AuthRepository(
     private val authApi: AuthApi,
-    private val userPreferences: UserPreferences
+    private val sessionManager: SessionManager
 ) {
 
     suspend fun login(
@@ -55,7 +55,7 @@ class AuthRepository(
                     )
                 }
 
-                userPreferences.saveToken(token)
+                sessionManager.saveToken(token)
 
                 Result.success(Unit)
 
@@ -215,6 +215,22 @@ class AuthRepository(
             Result.failure(
                 Exception(
                     e.message ?: "Đã xảy ra lỗi khi đăng ký."
+                )
+            )
+        }
+    }
+    suspend fun logout(): Result<Unit> {
+        return try {
+
+            sessionManager.clearSession()
+
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+
+            Result.failure(
+                Exception(
+                    e.message ?: "Không thể đăng xuất."
                 )
             )
         }

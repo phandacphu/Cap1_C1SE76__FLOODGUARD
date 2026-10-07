@@ -19,19 +19,24 @@ import com.example.floodguard.ui.screens.auth.register.RegisterScreen
 
 import com.example.floodguard.ui.screens.home.HomeScreen
 import com.example.floodguard.ui.screens.warning.WarningListScreen
+import com.example.floodguard.ui.screens.warning.WarningDetailRoute
+import com.example.floodguard.ui.screens.warning.WarningDetailViewModel
 import com.example.floodguard.ui.screens.auth.register.RegisterViewModel
+import com.example.floodguard.ui.screens.map.FloodMapRoute
+import com.example.floodguard.ui.screens.map.FloodMapViewModel
 
 @Composable
 fun AppNavGraph(
     navController: NavHostController,
-    authRepository: AuthRepository
+    authRepository: AuthRepository,
+    startDestination: String
 ) {
 
     val context = LocalContext.current
 
     NavHost(
         navController = navController,
-        startDestination = AppRoutes.LOGIN
+        startDestination = startDestination
     ) {
 
         // =========================
@@ -44,7 +49,6 @@ fun AppNavGraph(
             HomeScreen(
 
                 onWarningClick = {
-
                     navController.navigate(
                         AppRoutes.WARNING_LIST
                     )
@@ -79,11 +83,9 @@ fun AppNavGraph(
 
                 onMapClick = {
 
-                    Toast.makeText(
-                        context,
-                        "Bản đồ chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(
+                        AppRoutes.MAP
+                    )
                 },
 
                 onSafeLocationClick = {
@@ -105,11 +107,11 @@ fun AppNavGraph(
 
                         AppRoutes.MAP -> {
 
-                            Toast.makeText(
-                                context,
-                                "Bản đồ chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(
+                                AppRoutes.MAP
+                            ) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SEND_SOS -> {
@@ -242,10 +244,10 @@ fun AppNavGraph(
                     navController.popBackStack()
                 },
 
-                onWarningClick = {
+                onWarningClick = { warningId ->
 
                     navController.navigate(
-                        AppRoutes.WARNING_DETAIL
+                        "${AppRoutes.WARNING_DETAIL}/$warningId"
                     )
                 },
 
@@ -282,11 +284,11 @@ fun AppNavGraph(
 
                         AppRoutes.MAP -> {
 
-                            Toast.makeText(
-                                context,
-                                "Bản đồ chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(
+                                AppRoutes.MAP
+                            ) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SEND_SOS -> {
@@ -324,11 +326,207 @@ fun AppNavGraph(
         // WARNING DETAIL
         // =========================
         composable(
-            route = AppRoutes.WARNING_DETAIL
+            route = "${AppRoutes.WARNING_DETAIL}/{warningId}"
+        ) { backStackEntry ->
+
+            val warningDetailViewModel: WarningDetailViewModel =
+                viewModel(
+                    viewModelStoreOwner = backStackEntry
+                )
+
+            WarningDetailRoute(
+                viewModel = warningDetailViewModel,
+
+                onBack = {
+                    navController.popBackStack()
+                },
+
+                onNotificationClick = {
+
+                    Toast.makeText(
+                        context,
+                        "Thông báo chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onProfileClick = {
+
+                    Toast.makeText(
+                        context,
+                        "Cá nhân chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onFloodMapClick = {
+                    navController.navigate(
+                        AppRoutes.MAP
+                    )
+                },
+
+                onSafeLocationClick = {
+
+                    Toast.makeText(
+                        context,
+                        "Tránh trú chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onSosClick = {
+
+                    Toast.makeText(
+                        context,
+                        "SOS chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onBottomNavigate = { route ->
+
+                    when (route) {
+
+                        AppRoutes.HOME -> {
+                            navController.navigate(
+                                AppRoutes.HOME
+                            ) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.MAP -> {
+                            navController.navigate(
+                                AppRoutes.MAP
+                            ) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.SEND_SOS -> {
+                            Toast.makeText(
+                                context,
+                                "SOS chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        AppRoutes.SAFE_LOCATION -> {
+                            Toast.makeText(
+                                context,
+                                "Tránh trú chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        AppRoutes.PROFILE -> {
+                            Toast.makeText(
+                                context,
+                                "Cài đặt chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            )
+        }
+        // =========================
+// FLOOD MAP
+// =========================
+        composable(
+            route = AppRoutes.MAP
         ) {
 
-            Text(
-                text = "Warning Detail"
+            val floodMapViewModel: FloodMapViewModel =
+                viewModel()
+
+            FloodMapRoute(
+                viewModel = floodMapViewModel,
+
+                onBack = {
+                    navController.popBackStack()
+                },
+
+                onNotificationClick = {
+                    Toast.makeText(
+                        context,
+                        "Thông báo chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onProfileClick = {
+                    Toast.makeText(
+                        context,
+                        "Cá nhân chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onSafeRouteClick = {
+                    Toast.makeText(
+                        context,
+                        "Đang mở tuyến đường an toàn",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onShelterDetailClick = {
+                    Toast.makeText(
+                        context,
+                        "Chi tiết trạm trú chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onSosClick = {
+                    Toast.makeText(
+                        context,
+                        "SOS chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onBottomNavigate = { route ->
+
+                    when (route) {
+
+                        AppRoutes.HOME -> {
+                            navController.navigate(
+                                AppRoutes.HOME
+                            ) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.MAP -> {
+                            // đang ở map
+                        }
+
+                        AppRoutes.SEND_SOS -> {
+                            Toast.makeText(
+                                context,
+                                "SOS chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        AppRoutes.SAFE_LOCATION -> {
+                            Toast.makeText(
+                                context,
+                                "Tránh trú chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        AppRoutes.PROFILE -> {
+                            Toast.makeText(
+                                context,
+                                "Cài đặt chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
             )
         }
     }
