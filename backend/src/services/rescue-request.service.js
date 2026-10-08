@@ -163,6 +163,51 @@ async function setRescueRequestById(
   return getRescueRequestById(requestRef.id);
 }
 
+function getTimestampMillis(value) {
+  if (value && typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (value && typeof value.toDate === "function") {
+    return value.toDate().getTime();
+  }
+
+  const millis = new Date(value).getTime();
+
+  return Number.isFinite(millis) ? millis : 0;
+}
+
+async function getRescueRequestsForUser(user) {
+  if (
+    !user ||
+    typeof user.id !== "string" ||
+    !user.id.trim()
+  ) {
+    throw new Error("Authenticated user ID is required");
+  }
+
+  const snapshot = await db
+    .collection(RESCUE_REQUESTS_COLLECTION)
+    .get();
+
+  return snapshot.docs
+    .map((requestDoc) => ({
+      id: requestDoc.id,
+      ...requestDoc.data(),
+    }))
+    .filter(
+      (request) =>
+        user.role !== "resident" ||
+        request.residentId === user.id,
+    )
+    .sort(
+      (firstRequest, secondRequest) =>
+        getTimestampMillis(secondRequest.createdAt) -
+          getTimestampMillis(firstRequest.createdAt) ||
+        secondRequest.id.localeCompare(firstRequest.id),
+    );
+}
+
 module.exports = {
   RESCUE_REQUESTS_COLLECTION,
   ALLOWED_URGENCY_LEVELS,
@@ -170,4 +215,6 @@ module.exports = {
   setRescueRequestById,
   getRescueRequestById,
   normalizeRescueRequestData,
+  getRescueRequestsForUser,
+  getTimestampMillis,
 };

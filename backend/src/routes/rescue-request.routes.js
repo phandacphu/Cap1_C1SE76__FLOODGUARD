@@ -2,6 +2,7 @@ const express = require("express");
 
 const {
   createSos,
+  listRescueRequests,
 } = require("../controllers/rescue-request.controller");
 
 const {
@@ -13,6 +14,13 @@ const {
 } = require("../middleware/rbac.middleware");
 
 const router = express.Router();
+
+router.get(
+  "/",
+  authenticateToken,
+  authorizeRoles("resident", "rescue", "admin"),
+  listRescueRequests,
+);
 
 router.post(
   "/",
