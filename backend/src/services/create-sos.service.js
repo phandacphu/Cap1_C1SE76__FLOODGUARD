@@ -12,6 +12,32 @@ const {
   normalizeRescueRequestStatusHistoryData,
 } = require("./rescue-request-status-history.service");
 
+const ACTIVE_SOS_STATUSES = [
+  "submitted",
+  "received",
+  "in_progress",
+];
+
+async function findActiveSosByResidentId(residentId) {
+  const snapshot = await db
+    .collection(RESCUE_REQUESTS_COLLECTION)
+    .where("residentId", "==", residentId)
+    .get();
+
+  const activeDoc = snapshot.docs.find((doc) =>
+    ACTIVE_SOS_STATUSES.includes(doc.data().status),
+  );
+
+  if (!activeDoc) {
+    return null;
+  }
+
+  return {
+    id: activeDoc.id,
+    ...activeDoc.data(),
+  };
+}
+
 async function createSosWithHistory(residentId, input) {
   let normalizedData;
 
@@ -64,6 +90,20 @@ async function createSosWithHistory(residentId, input) {
     throw error;
   }
 
+  const existingActiveSos =
+    await findActiveSosByResidentId(
+      normalizedData.residentId,
+    );
+
+  if (existingActiveSos) {
+    const error = new Error(
+      "An active SOS request already exists for this resident",
+    );
+
+    error.code = "DUPLICATE_SOS_REQUEST";
+    throw error;
+  }
+
   const requestRef = db
     .collection(RESCUE_REQUESTS_COLLECTION)
     .doc();
@@ -102,5 +142,7 @@ async function createSosWithHistory(residentId, input) {
 }
 
 module.exports = {
+  ACTIVE_SOS_STATUSES,
   createSosWithHistory,
+  findActiveSosByResidentId,
 };

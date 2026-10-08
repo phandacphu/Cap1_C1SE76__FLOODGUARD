@@ -365,3 +365,26 @@ Run from the backend directory:
 - node tests/create-sos.test.js
 
 These tests use mocked Firestore and do not write real SOS records.
+
+## Duplicate active SOS request
+
+A resident cannot create a new SOS request when they already have
+an active request with one of these statuses:
+
+- `submitted`
+- `received`
+- `in_progress`
+
+The API returns:
+
+```http
+409 Conflict
+```json
+{
+  "success": false,
+  "message": "An active SOS request already exists for this resident"
+}
+```
+
+Sau khi request cũ chuyển sang `assisted` hoặc `cancelled`,
+resident được phép tạo SOS request mới.

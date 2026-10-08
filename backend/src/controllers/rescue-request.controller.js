@@ -69,6 +69,12 @@ async function createSos(req, res) {
       },
     });
   } catch (error) {
+    if (error.code === "DUPLICATE_SOS_REQUEST") {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
     if (error.code === "INVALID_SOS_INPUT") {
       return res.status(400).json({
         success: false,
