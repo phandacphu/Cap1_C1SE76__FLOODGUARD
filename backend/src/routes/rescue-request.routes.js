@@ -4,6 +4,7 @@ const {
   createSos,
   listRescueRequests,
   getRescueRequestDetail,
+  acceptRescueRequest,
 } = require("../controllers/rescue-request.controller");
 
 const {
@@ -28,6 +29,13 @@ router.get(
   authenticateToken,
   authorizeRoles("resident", "rescue", "admin"),
   getRescueRequestDetail,
+);
+
+router.post(
+  "/:requestId/accept",
+  authenticateToken,
+  authorizeRoles("rescue"),
+  acceptRescueRequest,
 );
 
 router.post(

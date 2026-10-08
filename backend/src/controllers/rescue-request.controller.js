@@ -17,6 +17,10 @@ const {
   getUserById,
 } = require("../services/user.service");
 
+const {
+  acceptRescueRequestWithHistory,
+} = require("../services/accept-rescue-request.service");
+
 function toClientRescueRequest(request) {
   return {
     id: request.id,
@@ -281,10 +285,101 @@ async function createSos(req, res) {
   }
 }
 
+async function acceptRescueRequest(req, res) {
+  try {
+    if (
+      !req.user ||
+      typeof req.user.id !== "string" ||
+      !req.user.id.trim()
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication is required",
+      });
+    }
+
+    // This endpoint accepts no client-controlled fields.
+    // The staff ID comes from the verified JWT.
+    if (
+      req.body !== undefined &&
+      (
+        req.body === null ||
+        typeof req.body !== "object" ||
+        Array.isArray(req.body) ||
+        Object.keys(req.body).length > 0
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Accept rescue request body must be empty or an empty object",
+      });
+    }
+
+    const result =
+      await acceptRescueRequestWithHistory(
+        req.params.requestId,
+        req.user.id,
+      );
+
+    const assignment = result.assignment;
+
+    return res.status(200).json({
+      success: true,
+      message: "Rescue request accepted successfully",
+      data: {
+        rescueRequest: toClientRescueRequest(
+          result.rescueRequest,
+        ),
+        assignment: {
+          id: assignment.id,
+          requestId: assignment.requestId,
+          rescueStaffId: assignment.rescueStaffId,
+          status: assignment.status,
+          note: assignment.note,
+          assignedAt: assignment.assignedAt
+            .toDate()
+            .toISOString(),
+          updatedAt: assignment.updatedAt
+            .toDate()
+            .toISOString(),
+        },
+      },
+    });
+  } catch (error) {
+    const errorStatuses = {
+      ACCEPT_AUTH_REQUIRED: 401,
+      ACCEPT_USER_NOT_FOUND: 401,
+      ACCEPT_ACCOUNT_INACTIVE: 403,
+      ACCEPT_ROLE_FORBIDDEN: 403,
+      INVALID_ACCEPT_REQUEST_ID: 400,
+      ACCEPT_REQUEST_NOT_FOUND: 404,
+      ACCEPT_REQUEST_UNAVAILABLE: 409,
+    };
+
+    const statusCode = errorStatuses[error.code];
+
+    if (statusCode) {
+      return res.status(statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error("Accept rescue request error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 module.exports = {
   createSos,
   listRescueRequests,
   getRescueRequestDetail,
+  acceptRescueRequest,
   toClientRescueRequest,
   toClientStatusHistory,
 };
