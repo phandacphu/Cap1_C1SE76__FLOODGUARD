@@ -3,6 +3,7 @@ const express = require("express");
 const {
   createSos,
   listRescueRequests,
+  getRescueRequestDetail,
 } = require("../controllers/rescue-request.controller");
 
 const {
@@ -20,6 +21,13 @@ router.get(
   authenticateToken,
   authorizeRoles("resident", "rescue", "admin"),
   listRescueRequests,
+);
+
+router.get(
+  "/:requestId",
+  authenticateToken,
+  authorizeRoles("resident", "rescue", "admin"),
+  getRescueRequestDetail,
 );
 
 router.post(

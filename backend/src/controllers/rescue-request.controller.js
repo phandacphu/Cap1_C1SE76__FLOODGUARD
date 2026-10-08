@@ -3,8 +3,15 @@ const {
 } = require("../services/create-sos.service");
 
 const {
+  getRescueRequestById,
   getRescueRequestsForUser,
 } = require("../services/rescue-request.service");
+
+const {
+  getRescueRequestStatusHistoryByRequestId,
+} = require(
+  "../services/rescue-request-status-history.service",
+);
 
 const {
   getUserById,
@@ -19,8 +26,25 @@ function toClientRescueRequest(request) {
     numberOfPeople: request.numberOfPeople,
     note: request.note,
     status: request.status,
-    createdAt: request.createdAt.toDate().toISOString(),
-    updatedAt: request.updatedAt.toDate().toISOString(),
+    createdAt: request.createdAt
+      .toDate()
+      .toISOString(),
+    updatedAt: request.updatedAt
+      .toDate()
+      .toISOString(),
+  };
+}
+
+function toClientStatusHistory(history) {
+  return {
+    id: history.id,
+    oldStatus: history.oldStatus,
+    newStatus: history.newStatus,
+    changedBy: history.changedBy,
+    note: history.note,
+    changedAt: history.changedAt
+      .toDate()
+      .toISOString(),
   };
 }
 
@@ -78,6 +102,98 @@ async function listRescueRequests(req, res) {
   }
 }
 
+async function getRescueRequestDetail(req, res) {
+  try {
+    if (
+      !req.user ||
+      typeof req.user.id !== "string" ||
+      !req.user.id.trim()
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication is required",
+      });
+    }
+
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user no longer exists",
+      });
+    }
+
+    if (user.isActive !== true) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is inactive",
+      });
+    }
+
+    const requestId = req.params.requestId;
+
+    if (
+      typeof requestId !== "string" ||
+      !requestId.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Rescue request ID is required",
+      });
+    }
+
+    const rescueRequest =
+      await getRescueRequestById(requestId.trim());
+
+    if (!rescueRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "Rescue request not found",
+      });
+    }
+
+    if (
+      user.role === "resident" &&
+      rescueRequest.residentId !== req.user.id
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You do not have permission to access this rescue request",
+      });
+    }
+
+    const statusHistory =
+      await getRescueRequestStatusHistoryByRequestId(
+        rescueRequest.id,
+      );
+
+    return res.status(200).json({
+      success: true,
+      message: "Rescue request retrieved successfully",
+      data: {
+        rescueRequest: {
+          ...toClientRescueRequest(rescueRequest),
+          statusHistory: statusHistory.map(
+            toClientStatusHistory,
+          ),
+        },
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get rescue request detail error:",
+      error,
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 async function createSos(req, res) {
   try {
     if (
@@ -123,7 +239,9 @@ async function createSos(req, res) {
       success: true,
       message: "SOS request created successfully",
       data: {
-        rescueRequest: toClientRescueRequest(rescueRequest),
+        rescueRequest: toClientRescueRequest(
+          rescueRequest,
+        ),
       },
     });
   } catch (error) {
@@ -133,6 +251,7 @@ async function createSos(req, res) {
         message: error.message,
       });
     }
+
     if (error.code === "INVALID_SOS_INPUT") {
       return res.status(400).json({
         success: false,
@@ -152,5 +271,7 @@ async function createSos(req, res) {
 module.exports = {
   createSos,
   listRescueRequests,
+  getRescueRequestDetail,
   toClientRescueRequest,
+  toClientStatusHistory,
 };
