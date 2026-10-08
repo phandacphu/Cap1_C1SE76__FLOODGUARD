@@ -18,6 +18,7 @@ let lastBatch = [];
 
 const users = {
   resident: { role: "resident", isActive: true },
+  resident2: { role: "resident", isActive: true },
   inactive: { role: "resident", isActive: false },
   admin: { role: "admin", isActive: true },
   rescue: { role: "rescue", isActive: true },
@@ -25,34 +26,61 @@ const users = {
 
 const db = {
   collection(collectionName) {
-    return {
-      doc(id = `test-${++sequence}`) {
-        const key = `${collectionName}/${id}`;
+  return {
+    doc(id = `test-${++sequence}`) {
+      const key = `${collectionName}/${id}`;
 
-        return {
-          id,
-          key,
-          collectionName,
-          async get() {
-            if (collectionName === "users" && failUserRead) {
-              throw new Error("Simulated user lookup failure");
-            }
+      return {
+        id,
+        key,
+        collectionName,
+        async get() {
+          if (collectionName === "users" && failUserRead) {
+            throw new Error("Simulated user lookup failure");
+          }
 
-            const data =
-              collectionName === "users"
-                ? users[id]
-                : records.get(key);
+          const data =
+            collectionName === "users"
+              ? users[id]
+              : records.get(key);
 
-            return {
-              id,
-              exists: data !== undefined,
+          return {
+            id,
+            exists: data !== undefined,
+            data: () => data,
+          };
+        },
+      };
+    },
+
+    where(fieldName, operator, expectedValue) {
+      assert.equal(operator, "==");
+
+      return {
+        async get() {
+          const prefix = `${collectionName}/`;
+
+          const docs = [...records.entries()]
+            .filter(
+              ([key, data]) =>
+                key.startsWith(prefix) &&
+                data[fieldName] === expectedValue,
+            )
+            .map(([key, data]) => ({
+              id: key.slice(prefix.length),
+              exists: true,
               data: () => data,
-            };
-          },
-        };
-      },
-    };
-  },
+            }));
+
+          return {
+            empty: docs.length === 0,
+            docs,
+          };
+        },
+      };
+    },
+  };
+},
 
   batch() {
     const writes = [];
@@ -296,6 +324,24 @@ async function runTests() {
 
     assert.ok(records.has(`rescue_requests/${request.id}`));
 
+    // Duplicate active SOS must return 409.
+    const beforeDuplicateSize = records.size;
+    const beforeDuplicateCommits = commitCount;
+
+    const duplicate = await post(
+      validBody(),
+      residentToken,
+    );
+
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.success, false);
+    assert.equal(
+      duplicate.body.message,
+      "An active SOS request already exists for this resident",
+    );
+    assert.equal(records.size, beforeDuplicateSize);
+    assert.equal(commitCount, beforeDuplicateCommits);
+
     const historyEntries = [...records.entries()].filter(
       ([key]) => key.startsWith("rescue_request_status_history/"),
     );
@@ -322,7 +368,10 @@ async function runTests() {
       failCommit = true;
       const beforeSize = records.size;
       const beforeCommits = commitCount;
-      const failed = await post(validBody(), residentToken);
+      const failed = await post(
+  validBody(),
+  tokenFor("resident2"),
+);
 
       assert.equal(failed.status, 500);
       assert.equal(failed.body.success, false);
