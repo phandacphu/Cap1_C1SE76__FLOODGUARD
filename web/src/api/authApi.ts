@@ -3,7 +3,7 @@ import type { User, UserRole } from "../types/auth";
 /**
  * CCF-39: login API for the web dashboard.
  * Backend contract (backend/src/controllers/auth.controller.js):
- *   POST {API_URL}/auth/login   body: { email, password }
+ *   POST {API_URL}/auth/login   body: { identifier, password }  (identifier = email or phone number)
  *   200 -> { success, message, data: { token, user } }
  *   400 missing fields | 401 wrong credentials | 403 inactive account | 500 server error
  */
@@ -52,7 +52,7 @@ export function homePathForRole(role: UserRole): string {
 }
 
 export async function loginRequest(
-  email: string,
+  identifier: string,
   password: string,
 ): Promise<{ token: string; user: User }> {
   const controller = new AbortController();
@@ -63,7 +63,10 @@ export async function loginRequest(
     response = await fetch(`${API_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        identifier: identifier.trim(),
+        password,
+      }),
       signal: controller.signal,
     });
   } catch {
@@ -78,7 +81,7 @@ export async function loginRequest(
     .catch(() => null);
 
   if (!response.ok) {
-    if (response.status === 400) throw new AuthError("Vui lòng nhập email và mật khẩu");
+    if (response.status === 400) throw new AuthError("Vui lòng nhập email hoặc số điện thoại và mật khẩu");
     if (response.status === 401) throw new AuthError("Email hoặc mật khẩu không đúng");
     if (response.status === 403) {
       throw new AuthError("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
@@ -99,7 +102,7 @@ export async function loginRequest(
     token,
     user: {
       id: String(rawUser.id ?? ""),
-      email: String(rawUser.email ?? email),
+      email: String(rawUser.email ?? (identifier.includes("@") ? identifier.trim() : "")),
       fullName: String(rawUser.fullName ?? ""),
       role,
     },

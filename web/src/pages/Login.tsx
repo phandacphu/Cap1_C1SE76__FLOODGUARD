@@ -63,7 +63,7 @@ export function Login() {
   const navigate = useNavigate()
 
   // --- STATE ---
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [showPassword, setShowPassword] = useState(false)
@@ -80,8 +80,8 @@ export function Login() {
     if (loading) return
     setError('')
 
-    if (!email.trim() || !password) {
-      setError('Vui lòng nhập email và mật khẩu')
+    if (!identifier.trim() || !password) {
+      setError('Vui lòng nhập email hoặc số điện thoại và mật khẩu')
       return
     }
 
@@ -89,7 +89,7 @@ export function Login() {
     // Máy chủ demo (Render free) có thể cần ~1 phút để khởi động lại.
     const slowTimer = window.setTimeout(() => setSlow(true), 6000)
     try {
-      const result = await loginRequest(email.trim(), password)
+      const result = await loginRequest(identifier.trim(), password)
 
       // Web chỉ dành cho Admin và Rescue Staff: không lưu phiên của tài khoản khác.
       if (!isWebRole(result.user.role)) {
@@ -243,9 +243,9 @@ export function Login() {
             </div>
           )}
 
-          {/* Email */}
+          {/* Email hoặc số điện thoại */}
           <label className="block space-y-2">
-            <span className="text-sm font-medium">Email công vụ</span>
+            <span className="text-sm font-medium">Email hoặc số điện thoại</span>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-text">
                 <svg {...ICON} className="h-5 w-5">
@@ -254,11 +254,11 @@ export function Login() {
                 </svg>
               </div>
               <input
-                type="email"
+                type="text"
                 autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="canbo.cuuho@floodguard.gov.vn"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="Email hoặc số điện thoại"
                 className="w-full rounded-lg bg-bg py-3.5 pl-11 pr-3 text-sm outline-none ring-1 ring-transparent transition focus:ring-water"
               />
             </div>
