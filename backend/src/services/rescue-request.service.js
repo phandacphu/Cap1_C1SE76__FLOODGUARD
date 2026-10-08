@@ -18,6 +18,19 @@ const ALLOWED_RESCUE_REQUEST_STATUSES = [
   "cancelled",
 ];
 
+const RESCUE_REQUEST_PRIORITY_SCORES = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+};
+
+const ALLOWED_RESCUE_REQUEST_SORTS = [
+  "newest",
+  "oldest",
+  "priority",
+];
+
 function normalizeOptionalString(value, fieldName) {
   if (value === undefined || value === null) {
     return null;
@@ -123,6 +136,7 @@ function normalizeRescueRequestFilters(filters) {
     return {
       status: null,
       urgency: null,
+      sort: "newest",
     };
   }
 
@@ -148,6 +162,11 @@ function normalizeRescueRequestFilters(filters) {
   const severity = normalizeFilterValue(
     filters.severity,
     "Rescue request severity",
+  );
+
+  const sort = normalizeFilterValue(
+    filters.sort,
+    "Rescue request sort",
   );
 
   if (
@@ -182,9 +201,19 @@ function normalizeRescueRequestFilters(filters) {
     );
   }
 
+  if (
+    sort &&
+    !ALLOWED_RESCUE_REQUEST_SORTS.includes(sort)
+  ) {
+    throw createInvalidFilterError(
+      "Invalid rescue request sort filter",
+    );
+  }
+
   return {
     status,
     urgency: normalizedUrgency,
+    sort: sort || "newest",
   };
 }
 
@@ -275,6 +304,40 @@ function getTimestampMillis(value) {
   return Number.isFinite(millis) ? millis : 0;
 }
 
+function compareRescueRequests(
+  firstRequest,
+  secondRequest,
+  sort,
+) {
+  if (sort === "priority") {
+    const priorityDifference =
+      RESCUE_REQUEST_PRIORITY_SCORES[
+        secondRequest.urgency
+      ] -
+      RESCUE_REQUEST_PRIORITY_SCORES[
+        firstRequest.urgency
+      ];
+
+    if (priorityDifference !== 0) {
+      return priorityDifference;
+    }
+  }
+
+  const createdAtDifference =
+    getTimestampMillis(secondRequest.createdAt) -
+    getTimestampMillis(firstRequest.createdAt);
+
+  if (createdAtDifference !== 0) {
+    return sort === "oldest"
+      ? -createdAtDifference
+      : createdAtDifference;
+  }
+
+  return secondRequest.id.localeCompare(
+    firstRequest.id,
+  );
+}
+
 async function getRescueRequestsForUser(
   user,
   filters,
@@ -314,11 +377,12 @@ async function getRescueRequestsForUser(
         !normalizedFilters.urgency ||
         request.urgency === normalizedFilters.urgency,
     )
-    .sort(
-      (firstRequest, secondRequest) =>
-        getTimestampMillis(secondRequest.createdAt) -
-          getTimestampMillis(firstRequest.createdAt) ||
-        secondRequest.id.localeCompare(firstRequest.id),
+    .sort((firstRequest, secondRequest) =>
+      compareRescueRequests(
+        firstRequest,
+        secondRequest,
+        normalizedFilters.sort,
+      ),
     );
 }
 
@@ -326,6 +390,8 @@ module.exports = {
   RESCUE_REQUESTS_COLLECTION,
   ALLOWED_URGENCY_LEVELS,
   ALLOWED_RESCUE_REQUEST_STATUSES,
+  RESCUE_REQUEST_PRIORITY_SCORES,
+  ALLOWED_RESCUE_REQUEST_SORTS,
   createRescueRequest,
   setRescueRequestById,
   getRescueRequestById,
@@ -333,4 +399,5 @@ module.exports = {
   normalizeRescueRequestFilters,
   getRescueRequestsForUser,
   getTimestampMillis,
+  compareRescueRequests,
 };
