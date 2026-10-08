@@ -186,6 +186,41 @@ async function setRescueRequestStatusHistoryById(
   return getRescueRequestStatusHistoryById(historyRef.id);
 }
 
+async function getRescueRequestStatusHistoryByRequestId(
+  requestId,
+) {
+  if (
+    typeof requestId !== "string" ||
+    !requestId.trim()
+  ) {
+    throw new Error(
+      "Rescue request ID is required",
+    );
+  }
+
+  const snapshot = await db
+    .collection(
+      RESCUE_REQUEST_STATUS_HISTORY_COLLECTION,
+    )
+    .where("requestId", "==", requestId.trim())
+    .get();
+
+  return snapshot.docs
+    .map((historyDoc) => ({
+      id: historyDoc.id,
+      ...historyDoc.data(),
+    }))
+    .sort((firstHistory, secondHistory) => {
+      const firstTime =
+        firstHistory.changedAt?.toMillis?.() || 0;
+
+      const secondTime =
+        secondHistory.changedAt?.toMillis?.() || 0;
+
+      return firstTime - secondTime;
+    });
+}
+
 module.exports = {
   RESCUE_REQUEST_STATUS_HISTORY_COLLECTION,
   ALLOWED_SOS_STATUSES,
@@ -193,4 +228,5 @@ module.exports = {
   setRescueRequestStatusHistoryById,
   getRescueRequestStatusHistoryById,
   normalizeRescueRequestStatusHistoryData,
+  getRescueRequestStatusHistoryByRequestId,
 };
