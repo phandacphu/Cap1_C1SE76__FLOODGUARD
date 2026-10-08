@@ -78,10 +78,13 @@ async function listRescueRequests(req, res) {
     }
 
     const rescueRequests =
-      await getRescueRequestsForUser({
-        id: req.user.id,
-        role: user.role,
-      });
+  await getRescueRequestsForUser(
+    {
+      id: req.user.id,
+      role: user.role,
+    },
+    req.query,
+  );
 
     return res.status(200).json({
       success: true,
@@ -92,7 +95,17 @@ async function listRescueRequests(req, res) {
         ),
       },
     });
-  } catch (error) {
+    } catch (error) {
+    if (
+      error.code ===
+      "INVALID_RESCUE_REQUEST_FILTER"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     console.error("List rescue requests error:", error);
 
     return res.status(500).json({
