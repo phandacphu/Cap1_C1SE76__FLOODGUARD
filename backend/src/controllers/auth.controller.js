@@ -135,11 +135,6 @@ async function login(req, res) {
       } catch (error) {
         user = null;
       }
-
-      // Phone login is available only to Resident accounts
-      if (user && user.role !== "resident") {
-        user = null;
-      }
     } else {
       user = await getUserByEmail(normalizedIdentifier);
     }
