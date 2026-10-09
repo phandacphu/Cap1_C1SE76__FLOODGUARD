@@ -375,10 +375,114 @@ async function acceptRescueRequest(req, res) {
   }
 }
 
+async function getRescueRequestHistory(req, res) {
+  try {
+    if (
+      !req.user ||
+      typeof req.user.id !== "string" ||
+      !req.user.id.trim()
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication is required",
+      });
+    }
+
+    const user = await getUserById(req.user.id);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authenticated user no longer exists",
+      });
+    }
+
+    if (user.isActive !== true) {
+      return res.status(403).json({
+        success: false,
+        message: "Account is inactive",
+      });
+    }
+
+    if (
+      !["resident", "rescue", "admin"].includes(user.role)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to access rescue request history",
+      });
+    }
+
+    const requestId = req.params.requestId;
+
+    if (
+      typeof requestId !== "string" ||
+      !requestId.trim() ||
+      requestId.trim().includes("/") ||
+      requestId.trim() === "." ||
+      requestId.trim() === ".." ||
+      Buffer.byteLength(requestId.trim(), "utf8") > 1500
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid rescue request ID",
+      });
+    }
+
+    const rescueRequest =
+      await getRescueRequestById(requestId.trim());
+
+    if (!rescueRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "Rescue request not found",
+      });
+    }
+
+    if (
+      user.role === "resident" &&
+      rescueRequest.residentId !== req.user.id
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to access this rescue request",
+      });
+    }
+
+    // Read history only after checking access to its SOS.
+    const statusHistory =
+      await getRescueRequestStatusHistoryByRequestId(
+        rescueRequest.id,
+      );
+
+    return res.status(200).json({
+      success: true,
+      message: "Rescue request history retrieved successfully",
+      data: {
+        requestId: rescueRequest.id,
+        statusHistory: statusHistory.map(
+          toClientStatusHistory,
+        ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Get rescue request history error:",
+      error,
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 module.exports = {
   createSos,
   listRescueRequests,
   getRescueRequestDetail,
+  getRescueRequestHistory,
   acceptRescueRequest,
   toClientRescueRequest,
   toClientStatusHistory,
