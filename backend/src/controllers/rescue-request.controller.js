@@ -21,6 +21,10 @@ const {
   acceptRescueRequestWithHistory,
 } = require("../services/accept-rescue-request.service");
 
+const {
+  updateRescueStatusWithHistory,
+} = require("../services/update-rescue-status.service");
+
 function toClientRescueRequest(request) {
   return {
     id: request.id,
@@ -478,12 +482,88 @@ async function getRescueRequestHistory(req, res) {
   }
 }
 
+async function updateRescueRequestStatus(req, res) {
+  try {
+    if (
+      !req.user ||
+      typeof req.user.id !== "string" ||
+      !req.user.id.trim()
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication is required",
+      });
+    }
+
+    const result = await updateRescueStatusWithHistory(
+      req.params.requestId,
+      req.user.id,
+      req.body,
+    );
+
+    const assignment = result.assignment;
+
+    return res.status(200).json({
+      success: true,
+      message: "Rescue request status updated successfully",
+      data: {
+        rescueRequest: toClientRescueRequest(
+          result.rescueRequest,
+        ),
+        assignment: {
+          id: assignment.id,
+          requestId: assignment.requestId,
+          rescueStaffId: assignment.rescueStaffId,
+          status: assignment.status,
+          note: assignment.note,
+          assignedAt: assignment.assignedAt
+            .toDate()
+            .toISOString(),
+          updatedAt: assignment.updatedAt
+            .toDate()
+            .toISOString(),
+        },
+      },
+    });
+  } catch (error) {
+    const errorStatuses = {
+      STATUS_AUTH_REQUIRED: 401,
+      STATUS_USER_NOT_FOUND: 401,
+      STATUS_ACCOUNT_INACTIVE: 403,
+      STATUS_ROLE_FORBIDDEN: 403,
+      STATUS_STAFF_FORBIDDEN: 403,
+      INVALID_STATUS_REQUEST_ID: 400,
+      INVALID_STATUS_UPDATE: 400,
+      STATUS_REQUEST_NOT_FOUND: 404,
+      STATUS_ASSIGNMENT_CONFLICT: 409,
+      STATUS_TRANSITION_CONFLICT: 409,
+    };
+
+    const statusCode = errorStatuses[error.code];
+
+    if (statusCode) {
+      return res.status(statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error("Update rescue status error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
 module.exports = {
   createSos,
   listRescueRequests,
   getRescueRequestDetail,
   getRescueRequestHistory,
   acceptRescueRequest,
+  updateRescueRequestStatus,
   toClientRescueRequest,
   toClientStatusHistory,
 };
