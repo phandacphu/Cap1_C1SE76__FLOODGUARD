@@ -199,3 +199,45 @@ The automated test verifies:
 
 
 Tests use mocked Firestore and do not write real SOS records.
+
+## Assignment in SOS Detail
+
+GET /api/rescue-requests/:requestId also returns
+data.rescueRequest.assignment.
+
+If the SOS has not been assigned, assignment is null.
+
+Otherwise, assignment contains:
+
+```json
+{
+  "id": "<request-id>",
+  "requestId": "<request-id>",
+  "rescueStaffId": "<assigned-rescue-user-id>",
+  "status": "accepted",
+  "note": null,
+  "assignedAt": "2026-10-08T20:07:01.809Z",
+  "updatedAt": "2026-10-08T20:07:01.809Z"
+}
+```
+
+Assignment timestamps are ISO 8601 UTC strings.
+Existing SOS fields and statusHistory remain available.
+
+After opening or reloading the page, the client reads
+data.rescueRequest.assignment to identify the assigned Rescue.
+
+Show status update controls only when:
+- The current user has the rescue role.
+- assignment.rescueStaffId matches the current user's ID.
+- SOS and assignment statuses allow the requested transition.
+
+Supported transitions:
+- SOS received + assignment accepted → SOS in_progress.
+- SOS in_progress + assignment in_progress → SOS assisted.
+
+The backend independently checks authorization and transitions
+for every PATCH request. UI visibility does not grant permission.
+
+Automated tests cover assignment fields, timestamp serialization,
+fresh reads by Rescue/Admin, and null for an unassigned SOS.
