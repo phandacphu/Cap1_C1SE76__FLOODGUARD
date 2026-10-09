@@ -2,7 +2,7 @@ const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
 
 const {
-  getRescueRequestById,
+  RESCUE_REQUESTS_COLLECTION,
 } = require("./rescue-request.service");
 
 const RESCUE_ASSIGNMENTS_COLLECTION =
@@ -16,6 +16,34 @@ const ALLOWED_ASSIGNMENT_STATUSES = [
   "cancelled",
 ];
 
+function assignmentError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function normalizeDocumentId(value, fieldName) {
+  if (
+    typeof value !== "string" ||
+    !value.trim()
+  ) {
+    throw new Error(`${fieldName} is required`);
+  }
+
+  const normalized = value.trim();
+
+  if (
+    normalized.includes("/") ||
+    normalized === "." ||
+    normalized === ".." ||
+    Buffer.byteLength(normalized, "utf8") > 1500
+  ) {
+    throw new Error(`${fieldName} is invalid`);
+  }
+
+  return normalized;
+}
+
 function normalizeOptionalString(value, fieldName) {
   if (value === undefined || value === null) {
     return null;
@@ -28,40 +56,38 @@ function normalizeOptionalString(value, fieldName) {
   return value.trim() || null;
 }
 
-function normalizeRescueAssignmentData(
-  assignmentData,
-) {
+function normalizeRescueAssignmentData(assignmentData) {
   if (
     !assignmentData ||
-    typeof assignmentData.requestId !== "string" ||
-    !assignmentData.requestId.trim()
+    typeof assignmentData !== "object" ||
+    Array.isArray(assignmentData)
   ) {
     throw new Error(
-      "Rescue assignment request ID is required",
+      "Rescue assignment data must be an object",
     );
   }
 
-  if (
-    typeof assignmentData.rescueStaffId !== "string" ||
-    !assignmentData.rescueStaffId.trim()
-  ) {
-    throw new Error(
-      "Rescue assignment rescue staff ID is required",
-    );
-  }
+  const requestId = normalizeDocumentId(
+    assignmentData.requestId,
+    "Rescue assignment request ID",
+  );
 
-  const status =
-    assignmentData.status === undefined
-      ? "assigned"
-      : assignmentData.status;
+  const rescueStaffId = normalizeDocumentId(
+    assignmentData.rescueStaffId,
+    "Rescue assignment rescue staff ID",
+  );
+
+  const status = assignmentData.status === undefined
+    ? "assigned"
+    : assignmentData.status;
 
   if (!ALLOWED_ASSIGNMENT_STATUSES.includes(status)) {
     throw new Error("Invalid rescue assignment status");
   }
 
   return {
-    requestId: assignmentData.requestId.trim(),
-    rescueStaffId: assignmentData.rescueStaffId.trim(),
+    requestId,
+    rescueStaffId,
     status,
     note: normalizeOptionalString(
       assignmentData.note,
@@ -70,22 +96,36 @@ function normalizeRescueAssignmentData(
   };
 }
 
-function normalizeAssignmentId(assignmentId) {
-  if (
-    typeof assignmentId !== "string" ||
-    !assignmentId.trim()
-  ) {
-    throw new Error("Rescue assignment ID is required");
+function ensureActiveRescueStaff(userDoc) {
+  if (!userDoc.exists) {
+    throw assignmentError(
+      "RESCUE_STAFF_NOT_FOUND",
+      "Rescue staff account does not exist",
+    );
   }
 
-  return assignmentId.trim();
+  const user = userDoc.data();
+
+  if (user.role !== "rescue") {
+    throw assignmentError(
+      "INVALID_RESCUE_STAFF_ROLE",
+      "Assignment recipient must be rescue staff",
+    );
+  }
+
+  if (user.isActive !== true) {
+    throw assignmentError(
+      "RESCUE_STAFF_INACTIVE",
+      "Rescue staff account is inactive",
+    );
+  }
 }
 
-async function getRescueAssignmentById(
-  assignmentId,
-) {
-  const normalizedId =
-    normalizeAssignmentId(assignmentId);
+async function getRescueAssignmentById(assignmentId) {
+  const normalizedId = normalizeDocumentId(
+    assignmentId,
+    "Rescue assignment ID",
+  );
 
   const assignmentDoc = await db
     .collection(RESCUE_ASSIGNMENTS_COLLECTION)
@@ -97,85 +137,92 @@ async function getRescueAssignmentById(
   }
 
   return {
-    id: assignmentDoc.id,
     ...assignmentDoc.data(),
+    id: assignmentDoc.id,
   };
 }
 
-async function getRescueAssignmentByRequestId(
-  requestId,
-) {
+async function getRescueAssignmentByRequestId(requestId) {
   return getRescueAssignmentById(requestId);
 }
 
-async function createRescueAssignment(
-  assignmentData,
-) {
-  const normalizedData =
+// Internal data helper.
+// The public accept API uses its own transaction to also
+// update the SOS and create status history.
+async function createRescueAssignment(assignmentData) {
+  const data =
     normalizeRescueAssignmentData(assignmentData);
 
-  const rescueRequest = await getRescueRequestById(
-    normalizedData.requestId,
-  );
+  const requestRef = db
+    .collection(RESCUE_REQUESTS_COLLECTION)
+    .doc(data.requestId);
 
-  if (!rescueRequest) {
-    const error = new Error(
-      "Referenced rescue request does not exist",
-    );
+  const staffRef = db
+    .collection("users")
+    .doc(data.rescueStaffId);
 
-    error.code = "RESCUE_REQUEST_NOT_FOUND";
-    throw error;
-  }
-
-  // The request ID is also the assignment document ID.
-  // Firestore create() fails atomically if an assignment
-  // already exists for this request.
   const assignmentRef = db
     .collection(RESCUE_ASSIGNMENTS_COLLECTION)
-    .doc(normalizedData.requestId);
+    .doc(data.requestId);
 
-  try {
-    await assignmentRef.create({
-      ...normalizedData,
+  await db.runTransaction(async (transaction) => {
+    const requestDoc = await transaction.get(requestRef);
+
+    if (!requestDoc.exists) {
+      throw assignmentError(
+        "RESCUE_REQUEST_NOT_FOUND",
+        "Referenced rescue request does not exist",
+      );
+    }
+
+    const assignmentDoc =
+      await transaction.get(assignmentRef);
+
+    if (assignmentDoc.exists) {
+      throw assignmentError(
+        "RESCUE_ASSIGNMENT_ALREADY_EXISTS",
+        "Rescue request is already assigned",
+      );
+    }
+
+    if (requestDoc.data().status !== "submitted") {
+      throw assignmentError(
+        "RESCUE_REQUEST_UNAVAILABLE",
+        "Rescue request is no longer available",
+      );
+    }
+
+    const staffDoc = await transaction.get(staffRef);
+    ensureActiveRescueStaff(staffDoc);
+
+    transaction.create(assignmentRef, {
+      ...data,
       assignedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-  } catch (error) {
-    if (
-      error.code === 6 ||
-      error.code === "already-exists" ||
-      /already exists/i.test(error.message || "")
-    ) {
-      const conflictError = new Error(
-        "Rescue request is already assigned",
-      );
+  });
 
-      conflictError.code =
-        "RESCUE_ASSIGNMENT_ALREADY_EXISTS";
-
-      throw conflictError;
-    }
-
-    throw error;
-  }
-
-  return getRescueAssignmentById(
-    assignmentRef.id,
-  );
+  return getRescueAssignmentById(data.requestId);
 }
 
+// Internal data helper, not an authorization boundary.
+// Callers must authorize the acting user before calling it.
+// Reassignment is deliberately not supported here.
 async function setRescueAssignmentById(
   assignmentId,
   assignmentData,
 ) {
-  const normalizedId =
-    normalizeAssignmentId(assignmentId);
+  const normalizedId = normalizeDocumentId(
+    assignmentId,
+    "Rescue assignment ID",
+  );
 
-  const normalizedData =
+  const data =
     normalizeRescueAssignmentData(assignmentData);
 
-  if (normalizedData.requestId !== normalizedId) {
-    throw new Error(
+  if (data.requestId !== normalizedId) {
+    throw assignmentError(
+      "RESCUE_ASSIGNMENT_REQUEST_MISMATCH",
       "Rescue assignment request ID must match assignment ID",
     );
   }
@@ -184,36 +231,70 @@ async function setRescueAssignmentById(
     .collection(RESCUE_ASSIGNMENTS_COLLECTION)
     .doc(normalizedId);
 
-  const existingAssignment =
-    await assignmentRef.get();
+  const requestRef = db
+    .collection(RESCUE_REQUESTS_COLLECTION)
+    .doc(normalizedId);
 
-  if (!existingAssignment.exists) {
-    const error = new Error(
-      "Rescue assignment does not exist",
-    );
+  const staffRef = db
+    .collection("users")
+    .doc(data.rescueStaffId);
 
-    error.code = "RESCUE_ASSIGNMENT_NOT_FOUND";
-    throw error;
-  }
+  await db.runTransaction(async (transaction) => {
+    const assignmentDoc =
+      await transaction.get(assignmentRef);
 
-  const existingData = existingAssignment.data();
+    if (!assignmentDoc.exists) {
+      throw assignmentError(
+        "RESCUE_ASSIGNMENT_NOT_FOUND",
+        "Rescue assignment does not exist",
+      );
+    }
 
-  await assignmentRef.set(
-    {
-      ...normalizedData,
-      assignedAt:
-        existingData.assignedAt ||
-        FieldValue.serverTimestamp(),
+    const existing = assignmentDoc.data();
+
+    if (existing.requestId !== normalizedId) {
+      throw assignmentError(
+        "RESCUE_ASSIGNMENT_REQUEST_MISMATCH",
+        "Stored assignment references a different rescue request",
+      );
+    }
+
+    if (existing.rescueStaffId !== data.rescueStaffId) {
+      throw assignmentError(
+        "RESCUE_ASSIGNMENT_STAFF_MISMATCH",
+        "Assignment recipient cannot be changed",
+      );
+    }
+
+    if (!existing.assignedAt) {
+      throw assignmentError(
+        "RESCUE_ASSIGNMENT_TIMESTAMP_MISSING",
+        "Stored assignment is missing its original assignedAt",
+      );
+    }
+
+    const requestDoc = await transaction.get(requestRef);
+
+    if (!requestDoc.exists) {
+      throw assignmentError(
+        "RESCUE_REQUEST_NOT_FOUND",
+        "Referenced rescue request does not exist",
+      );
+    }
+
+    const staffDoc = await transaction.get(staffRef);
+    ensureActiveRescueStaff(staffDoc);
+
+    // Preserve recipient, request ID, original assignedAt,
+    // and any additional fields already stored.
+    transaction.update(assignmentRef, {
+      status: data.status,
+      note: data.note,
       updatedAt: FieldValue.serverTimestamp(),
-    },
-    {
-      merge: false,
-    },
-  );
+    });
+  });
 
-  return getRescueAssignmentById(
-    assignmentRef.id,
-  );
+  return getRescueAssignmentById(normalizedId);
 }
 
 module.exports = {
