@@ -4,6 +4,7 @@ const {
   createSos,
   listRescueRequests,
   getRescueRequestDetail,
+  getRescueRequestHistory,
   acceptRescueRequest,
 } = require("../controllers/rescue-request.controller");
 
@@ -22,6 +23,13 @@ router.get(
   authenticateToken,
   authorizeRoles("resident", "rescue", "admin"),
   listRescueRequests,
+);
+
+router.get(
+  "/:requestId/history",
+  authenticateToken,
+  authorizeRoles("resident", "rescue", "admin"),
+  getRescueRequestHistory,
 );
 
 router.get(

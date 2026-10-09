@@ -1,5 +1,6 @@
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
+
 const {
   getRescueRequestById,
 } = require("./rescue-request.service");
@@ -93,7 +94,7 @@ function normalizeRescueRequestStatusHistoryData(
     changedBy: historyData.changedBy.trim(),
     note: normalizeOptionalString(
       historyData.note,
-      "Rescue request status history note",
+      "Rescue request note",
     ),
   };
 }
@@ -111,8 +112,8 @@ async function getRescueRequestStatusHistoryById(
   }
 
   return {
-    id: historyDoc.id,
     ...historyDoc.data(),
+    id: historyDoc.id,
   };
 }
 
@@ -191,11 +192,13 @@ async function getRescueRequestStatusHistoryByRequestId(
 ) {
   if (
     typeof requestId !== "string" ||
-    !requestId.trim()
+    !requestId.trim() ||
+    requestId.trim().includes("/") ||
+    requestId.trim() === "." ||
+    requestId.trim() === ".." ||
+    Buffer.byteLength(requestId.trim(), "utf8") > 1500
   ) {
-    throw new Error(
-      "Rescue request ID is required",
-    );
+    throw new Error("Invalid rescue request ID");
   }
 
   const snapshot = await db
@@ -207,17 +210,36 @@ async function getRescueRequestStatusHistoryByRequestId(
 
   return snapshot.docs
     .map((historyDoc) => ({
-      id: historyDoc.id,
       ...historyDoc.data(),
+      id: historyDoc.id,
     }))
     .sort((firstHistory, secondHistory) => {
-      const firstTime =
-        firstHistory.changedAt?.toMillis?.() || 0;
+      const firstTime = firstHistory.changedAt;
+      const secondTime = secondHistory.changedAt;
 
-      const secondTime =
-        secondHistory.changedAt?.toMillis?.() || 0;
+      const secondsDifference =
+        firstTime.seconds - secondTime.seconds;
 
-      return firstTime - secondTime;
+      if (secondsDifference !== 0) {
+        return secondsDifference;
+      }
+
+      const nanosDifference =
+        firstTime.nanoseconds - secondTime.nanoseconds;
+
+      if (nanosDifference !== 0) {
+        return nanosDifference;
+      }
+
+      if (firstHistory.id < secondHistory.id) {
+        return -1;
+      }
+
+      if (firstHistory.id > secondHistory.id) {
+        return 1;
+      }
+
+      return 0;
     });
 }
 
