@@ -6,6 +6,7 @@ const {
   getRescueRequestDetail,
   getRescueRequestHistory,
   acceptRescueRequest,
+  updateRescueRequestStatus,
 } = require("../controllers/rescue-request.controller");
 
 const {
@@ -44,6 +45,13 @@ router.post(
   authenticateToken,
   authorizeRoles("rescue"),
   acceptRescueRequest,
+);
+
+router.patch(
+  "/:requestId/status",
+  authenticateToken,
+  authorizeRoles("rescue"),
+  updateRescueRequestStatus,
 );
 
 router.post(
