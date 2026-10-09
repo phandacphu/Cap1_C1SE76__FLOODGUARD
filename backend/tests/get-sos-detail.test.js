@@ -98,6 +98,15 @@ records.set(
   },
 );
 
+records.set("rescue_assignments/request-own", {
+  requestId: "request-own",
+  rescueStaffId: "rescue",
+  status: "in_progress",
+  note: null,
+  assignedAt: firstChangedAt,
+  updatedAt: secondChangedAt,
+});
+
 const db = {
   collection(collectionName) {
     const prefix = `${collectionName}/`;
@@ -233,6 +242,29 @@ async function runTests() {
     assert.equal(ownRequest.id, "request-own");
     assert.equal(ownRequest.residentId, "resident-1");
     assert.equal(ownRequest.status, "in_progress");
+        assert.deepEqual(ownRequest.assignment, {
+      id: "request-own",
+      requestId: "request-own",
+      rescueStaffId: "rescue",
+      status: "in_progress",
+      note: null,
+      assignedAt: firstChangedAt.toDate().toISOString(),
+      updatedAt: secondChangedAt.toDate().toISOString(),
+    });
+
+    // A fresh GET must recover assignment without client state.
+    for (const role of ["rescue", "admin"]) {
+      const assignedResponse = await get(
+        "request-own",
+        tokenFor(role, role),
+      );
+
+      assert.equal(assignedResponse.status, 200);
+      assert.deepEqual(
+        assignedResponse.body.data.rescueRequest.assignment,
+        ownRequest.assignment,
+      );
+    }
     assert.equal(ownRequest.statusHistory.length, 2);
     assert.equal(
       ownRequest.statusHistory[0].newStatus,
@@ -256,6 +288,11 @@ async function runTests() {
     );
 
     assert.equal(rescueResponse.status, 200);
+    // This SOS has not been assigned.
+    assert.equal(
+      rescueResponse.body.data.rescueRequest.assignment,
+      null,
+    );
     assert.equal(
       rescueResponse.body.data.rescueRequest.id,
       "request-other",

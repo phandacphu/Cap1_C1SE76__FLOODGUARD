@@ -9,9 +9,7 @@ const {
 
 const {
   getRescueRequestStatusHistoryByRequestId,
-} = require(
-  "../services/rescue-request-status-history.service",
-);
+} = require("../services/rescue-request-status-history.service");
 
 const {
   getUserById,
@@ -25,6 +23,10 @@ const {
   updateRescueStatusWithHistory,
 } = require("../services/update-rescue-status.service");
 
+const {
+  getRescueAssignmentByRequestId,
+} = require("../services/rescue-assignment.service");
+
 function toClientRescueRequest(request) {
   return {
     id: request.id,
@@ -34,12 +36,8 @@ function toClientRescueRequest(request) {
     numberOfPeople: request.numberOfPeople,
     note: request.note,
     status: request.status,
-    createdAt: request.createdAt
-      .toDate()
-      .toISOString(),
-    updatedAt: request.updatedAt
-      .toDate()
-      .toISOString(),
+    createdAt: request.createdAt.toDate().toISOString(),
+    updatedAt: request.updatedAt.toDate().toISOString(),
   };
 }
 
@@ -50,9 +48,23 @@ function toClientStatusHistory(history) {
     newStatus: history.newStatus,
     changedBy: history.changedBy,
     note: history.note,
-    changedAt: history.changedAt
-      .toDate()
-      .toISOString(),
+    changedAt: history.changedAt.toDate().toISOString(),
+  };
+}
+
+function toClientRescueAssignment(assignment) {
+  if (!assignment) {
+    return null;
+  }
+
+  return {
+    id: assignment.id,
+    requestId: assignment.requestId,
+    rescueStaffId: assignment.rescueStaffId,
+    status: assignment.status,
+    note: assignment.note,
+    assignedAt: assignment.assignedAt.toDate().toISOString(),
+    updatedAt: assignment.updatedAt.toDate().toISOString(),
   };
 }
 
@@ -85,14 +97,13 @@ async function listRescueRequests(req, res) {
       });
     }
 
-    const rescueRequests =
-  await getRescueRequestsForUser(
-    {
-      id: req.user.id,
-      role: user.role,
-    },
-    req.query,
-  );
+    const rescueRequests = await getRescueRequestsForUser(
+      {
+        id: req.user.id,
+        role: user.role,
+      },
+      req.query,
+    );
 
     return res.status(200).json({
       success: true,
@@ -103,11 +114,8 @@ async function listRescueRequests(req, res) {
         ),
       },
     });
-    } catch (error) {
-    if (
-      error.code ===
-      "INVALID_RESCUE_REQUEST_FILTER"
-    ) {
+  } catch (error) {
+    if (error.code === "INVALID_RESCUE_REQUEST_FILTER") {
       return res.status(400).json({
         success: false,
         message: error.message,
@@ -164,8 +172,9 @@ async function getRescueRequestDetail(req, res) {
       });
     }
 
-    const rescueRequest =
-      await getRescueRequestById(requestId.trim());
+    const rescueRequest = await getRescueRequestById(
+      requestId.trim(),
+    );
 
     if (!rescueRequest) {
       return res.status(404).json({
@@ -185,8 +194,14 @@ async function getRescueRequestDetail(req, res) {
       });
     }
 
+    // Read related data only after checking SOS access.
     const statusHistory =
       await getRescueRequestStatusHistoryByRequestId(
+        rescueRequest.id,
+      );
+
+    const assignment =
+      await getRescueAssignmentByRequestId(
         rescueRequest.id,
       );
 
@@ -196,6 +211,9 @@ async function getRescueRequestDetail(req, res) {
       data: {
         rescueRequest: {
           ...toClientRescueRequest(rescueRequest),
+          assignment: toClientRescueAssignment(
+            assignment,
+          ),
           statusHistory: statusHistory.map(
             toClientStatusHistory,
           ),
@@ -203,10 +221,7 @@ async function getRescueRequestDetail(req, res) {
       },
     });
   } catch (error) {
-    console.error(
-      "Get rescue request detail error:",
-      error,
-    );
+    console.error("Get rescue request detail error:", error);
 
     return res.status(500).json({
       success: false,
@@ -302,7 +317,6 @@ async function acceptRescueRequest(req, res) {
       });
     }
 
-    // This endpoint accepts no client-controlled fields.
     // The staff ID comes from the verified JWT.
     if (
       req.body !== undefined &&
@@ -320,13 +334,10 @@ async function acceptRescueRequest(req, res) {
       });
     }
 
-    const result =
-      await acceptRescueRequestWithHistory(
-        req.params.requestId,
-        req.user.id,
-      );
-
-    const assignment = result.assignment;
+    const result = await acceptRescueRequestWithHistory(
+      req.params.requestId,
+      req.user.id,
+    );
 
     return res.status(200).json({
       success: true,
@@ -335,19 +346,9 @@ async function acceptRescueRequest(req, res) {
         rescueRequest: toClientRescueRequest(
           result.rescueRequest,
         ),
-        assignment: {
-          id: assignment.id,
-          requestId: assignment.requestId,
-          rescueStaffId: assignment.rescueStaffId,
-          status: assignment.status,
-          note: assignment.note,
-          assignedAt: assignment.assignedAt
-            .toDate()
-            .toISOString(),
-          updatedAt: assignment.updatedAt
-            .toDate()
-            .toISOString(),
-        },
+        assignment: toClientRescueAssignment(
+          result.assignment,
+        ),
       },
     });
   } catch (error) {
@@ -413,7 +414,8 @@ async function getRescueRequestHistory(req, res) {
     ) {
       return res.status(403).json({
         success: false,
-        message: "You do not have permission to access rescue request history",
+        message:
+          "You do not have permission to access rescue request history",
       });
     }
 
@@ -433,8 +435,9 @@ async function getRescueRequestHistory(req, res) {
       });
     }
 
-    const rescueRequest =
-      await getRescueRequestById(requestId.trim());
+    const rescueRequest = await getRescueRequestById(
+      requestId.trim(),
+    );
 
     if (!rescueRequest) {
       return res.status(404).json({
@@ -449,7 +452,8 @@ async function getRescueRequestHistory(req, res) {
     ) {
       return res.status(403).json({
         success: false,
-        message: "You do not have permission to access this rescue request",
+        message:
+          "You do not have permission to access this rescue request",
       });
     }
 
@@ -470,10 +474,7 @@ async function getRescueRequestHistory(req, res) {
       },
     });
   } catch (error) {
-    console.error(
-      "Get rescue request history error:",
-      error,
-    );
+    console.error("Get rescue request history error:", error);
 
     return res.status(500).json({
       success: false,
@@ -501,8 +502,6 @@ async function updateRescueRequestStatus(req, res) {
       req.body,
     );
 
-    const assignment = result.assignment;
-
     return res.status(200).json({
       success: true,
       message: "Rescue request status updated successfully",
@@ -510,19 +509,9 @@ async function updateRescueRequestStatus(req, res) {
         rescueRequest: toClientRescueRequest(
           result.rescueRequest,
         ),
-        assignment: {
-          id: assignment.id,
-          requestId: assignment.requestId,
-          rescueStaffId: assignment.rescueStaffId,
-          status: assignment.status,
-          note: assignment.note,
-          assignedAt: assignment.assignedAt
-            .toDate()
-            .toISOString(),
-          updatedAt: assignment.updatedAt
-            .toDate()
-            .toISOString(),
-        },
+        assignment: toClientRescueAssignment(
+          result.assignment,
+        ),
       },
     });
   } catch (error) {
@@ -566,4 +555,5 @@ module.exports = {
   updateRescueRequestStatus,
   toClientRescueRequest,
   toClientStatusHistory,
+  toClientRescueAssignment,
 };
