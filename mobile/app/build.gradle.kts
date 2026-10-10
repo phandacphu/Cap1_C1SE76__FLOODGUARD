@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.secrets.gradle.plugin)
 }
 
 android {
@@ -104,7 +105,7 @@ dependencies {
     // =========================
 
     implementation(
-        "androidx.lifecycle:lifecycle-viewmodel-compose:2.9.3"
+        "androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0"
     )
 
 
@@ -113,7 +114,7 @@ dependencies {
     // =========================
 
     implementation(
-        "androidx.lifecycle:lifecycle-runtime-compose:2.9.3"
+        "androidx.lifecycle:lifecycle-runtime-compose:2.11.0"
     )
 
 
@@ -158,6 +159,13 @@ dependencies {
 
     implementation(
         "androidx.datastore:datastore-preferences:1.1.7"
+    )
+    // =========================
+    // GOOGLE MAPS
+    // =========================
+
+    implementation(
+        libs.maps.compose
     )
 
 
