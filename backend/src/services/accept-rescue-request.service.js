@@ -17,6 +17,10 @@ const {
   normalizeRescueRequestStatusHistoryData,
 } = require("./rescue-request-status-history.service");
 
+const {
+  logAuditEvent,
+} = require("./audit-logging.service");
+
 function createAcceptError(code, message, statusCode) {
   const error = new Error(message);
   error.code = code;
@@ -164,6 +168,27 @@ async function acceptRescueRequestWithHistory(
       ...history,
       changedAt: FieldValue.serverTimestamp(),
     });
+  });
+
+  // Audit only after the transaction commits successfully.
+  // Keep this outside the callback so transaction retries
+  // do not create duplicate audit records.
+  // The logging service contains write failures and timeouts.
+  await logAuditEvent({
+    actor: {
+      id: normalizedStaffId,
+      role: "rescue",
+    },
+    action: "rescue_request.accept",
+    target: {
+      type: "rescue_request",
+      id: normalizedRequestId,
+    },
+    metadata: {
+      source: "api",
+      outcome: "success",
+      changedFields: ["status"],
+    },
   });
 
   const rescueRequest = await getRescueRequestById(
