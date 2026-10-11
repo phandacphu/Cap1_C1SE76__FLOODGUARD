@@ -13,8 +13,10 @@ const ALLOWED_STATUSES = ["active", "inactive"];
 function validatePoint(point, index) {
   if (
     !point ||
-    typeof point.latitude !== "number" ||
-    typeof point.longitude !== "number"
+    typeof point !== "object" ||
+    Array.isArray(point) ||
+    !Number.isFinite(point.latitude) ||
+    !Number.isFinite(point.longitude)
   ) {
     throw new Error(
       `Geometry point ${index} must contain numeric latitude and longitude`,
@@ -42,6 +44,8 @@ function validatePoint(point, index) {
 function normalizeFloodAreaData(areaData) {
   if (
     !areaData ||
+    typeof areaData !== "object" ||
+    Array.isArray(areaData) ||
     typeof areaData.name !== "string" ||
     !areaData.name.trim()
   ) {

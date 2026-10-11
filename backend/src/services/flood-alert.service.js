@@ -3,18 +3,22 @@ const {
   FieldValue,
   Timestamp,
 } = require("firebase-admin/firestore");
+
 const {
   FLOOD_AREAS_COLLECTION,
 } = require("./flood-area.service");
 
 const FLOOD_ALERTS_COLLECTION = "flood_alerts";
+
 const ALLOWED_SEVERITIES = [
   "low",
   "medium",
   "high",
   "critical",
 ];
+
 const ALLOWED_STATUSES = ["active", "inactive"];
+
 const SEVERITY_PRIORITY = {
   critical: 4,
   high: 3,
@@ -82,6 +86,7 @@ function normalizeFloodAlertData(alertData) {
     alertData.startAt,
     "startAt",
   );
+
   const endAt = normalizeTimestamp(
     alertData.endAt,
     "endAt",
@@ -104,31 +109,33 @@ function normalizeFloodAlertData(alertData) {
   };
 }
 
-async function ensureFloodAreaExists(areaId) {
-  const areaDoc = await db
-    .collection(FLOOD_AREAS_COLLECTION)
-    .doc(areaId)
-    .get();
-
-  if (!areaDoc.exists) {
-    throw new Error("Referenced flood area does not exist");
-  }
-}
-
 async function createFloodAlert(alertData) {
   const normalizedData =
     normalizeFloodAlertData(alertData);
 
-  await ensureFloodAreaExists(normalizedData.areaId);
+  const areaRef = db
+    .collection(FLOOD_AREAS_COLLECTION)
+    .doc(normalizedData.areaId);
 
+  // Allocate once, outside the retryable transaction callback.
   const alertRef = db
     .collection(FLOOD_ALERTS_COLLECTION)
     .doc();
 
-  await alertRef.set({
-    ...normalizedData,
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
+  await db.runTransaction(async (transaction) => {
+    const areaDoc = await transaction.get(areaRef);
+
+    if (!areaDoc.exists) {
+      throw new Error(
+        "Referenced flood area does not exist",
+      );
+    }
+
+    transaction.create(alertRef, {
+      ...normalizedData,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   });
 
   return getFloodAlertById(alertRef.id);
@@ -145,25 +152,35 @@ async function setFloodAlertById(alertId, alertData) {
   const normalizedData =
     normalizeFloodAlertData(alertData);
 
-  await ensureFloodAreaExists(normalizedData.areaId);
+  const areaRef = db
+    .collection(FLOOD_AREAS_COLLECTION)
+    .doc(normalizedData.areaId);
 
   const alertRef = db
     .collection(FLOOD_ALERTS_COLLECTION)
     .doc(alertId.trim());
-  const existingAlert = await alertRef.get();
 
-  await alertRef.set(
-    {
+  await db.runTransaction(async (transaction) => {
+    const areaDoc = await transaction.get(areaRef);
+
+    if (!areaDoc.exists) {
+      throw new Error(
+        "Referenced flood area does not exist",
+      );
+    }
+
+    const existingAlert =
+      await transaction.get(alertRef);
+
+    // All reads are completed before writing.
+    transaction.set(alertRef, {
       ...normalizedData,
       createdAt: existingAlert.exists
         ? existingAlert.data().createdAt
         : FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-    },
-    {
-      merge: false,
-    },
-  );
+    });
+  });
 
   return getFloodAlertById(alertRef.id);
 }
@@ -191,6 +208,7 @@ async function getActiveFloodAlerts(
     currentTime,
     "currentTime",
   );
+
   const currentTimeMillis =
     normalizedCurrentTime.toMillis();
 
@@ -295,6 +313,7 @@ async function getFloodAlerts(filters = {}) {
         firstAlert.startAt instanceof Timestamp
           ? firstAlert.startAt.toMillis()
           : 0;
+
       const secondStartAt =
         secondAlert.startAt instanceof Timestamp
           ? secondAlert.startAt.toMillis()
