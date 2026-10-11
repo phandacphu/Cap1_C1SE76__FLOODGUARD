@@ -22,6 +22,11 @@ const ALLOWED_CHANGED_FIELDS = [
   "urgency",
   "status",
   "capacity",
+  "title",
+  "content",
+  "areaId",
+  "startAt",
+  "endAt",
 ];
 
 function invalidAuditData(message) {
