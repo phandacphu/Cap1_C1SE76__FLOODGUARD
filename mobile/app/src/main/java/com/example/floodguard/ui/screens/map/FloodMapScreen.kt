@@ -22,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sos
@@ -45,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.Navigation
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
@@ -150,14 +150,13 @@ fun FloodMapScreen(
                 onProfileClick = onProfileClick
             )
 
-            FloodGpsInfo(
-                state = state
-            )
+            FloodGpsInfo()
 
             Spacer(
                 modifier = Modifier.height(10.dp)
             )
 
+            /*
             FloodLayerRow(
                 state = state,
                 onToggleFloodLayer = onToggleFloodLayer,
@@ -169,6 +168,7 @@ fun FloodMapScreen(
             Spacer(
                 modifier = Modifier.height(12.dp)
             )
+            */
 
             FloodGoogleMap()
 
@@ -191,7 +191,7 @@ fun FloodMapScreen(
             Spacer(
                 modifier = Modifier.height(18.dp)
             )
-
+            /*
             Button(
                 onClick = onSafeRouteClick,
 
@@ -224,10 +224,8 @@ fun FloodMapScreen(
                     fontSize = 15.sp
                 )
             }
+            */
 
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
 
             Row(
                 modifier = Modifier
@@ -284,7 +282,7 @@ fun FloodMapScreen(
                     )
 
                     Text(
-                        text = "PHÁT SOS VỊ TRÍ NÀY",
+                        text = "PHÁT SOS",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
@@ -347,7 +345,7 @@ private fun FloodMapHeader(
             )
 
             Text(
-                text = state.realtimeStatus,
+                text = "Dữ liệu minh họa • Chưa kết nối dữ liệu thời gian thực",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -382,9 +380,7 @@ private fun FloodMapHeader(
 // =====================================================
 
 @Composable
-private fun FloodGpsInfo(
-    state: FloodMapUiState
-) {
+private fun FloodGpsInfo() {
 
     Row(
         modifier = Modifier
@@ -393,7 +389,6 @@ private fun FloodGpsInfo(
                 horizontal = 18.dp,
                 vertical = 10.dp
             ),
-
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -402,7 +397,6 @@ private fun FloodGpsInfo(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF12354A)),
-
             contentAlignment = Alignment.Center
         ) {
 
@@ -423,7 +417,7 @@ private fun FloodGpsInfo(
         ) {
 
             Text(
-                text = state.currentLocation,
+                text = "Vị trí minh họa",
                 color = MapText,
                 fontSize = 13.sp
             )
@@ -432,28 +426,12 @@ private fun FloodGpsInfo(
                 modifier = Modifier.height(2.dp)
             )
 
-            Row {
-
-                Text(
-                    text = state.gpsAccuracy,
-                    color = MapGreen,
-                    fontSize = 10.sp
-                )
-
-                Text(
-                    text = "  •  ${state.updateTime}",
-                    color = MapSecondary,
-                    fontSize = 10.sp
-                )
-            }
+            Text(
+                text = "GPS thực tế sẽ được triển khai ở CCF-53",
+                color = MapSecondary,
+                fontSize = 10.sp
+            )
         }
-
-        Text(
-            text = state.satelliteInfo,
-            color = MapText,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium
-        )
     }
 }
 
@@ -600,7 +578,7 @@ private fun FloodAreaSummary(
         ) {
 
             Text(
-                text = "KHU VỰC GIÁM SÁT",
+                text = "DỮ LIỆU NGẬP MINH HỌA",
                 color = MapSecondary,
                 fontSize = 9.sp
             )
@@ -629,6 +607,16 @@ private fun FloodAreaSummary(
                     )
             )
         }
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
+
+        Text(
+            text = "Thông tin bên dưới chưa được lấy từ API thời gian thực",
+            color = MapSecondary,
+            fontSize = 9.sp
+        )
 
         Spacer(
             modifier = Modifier.height(6.dp)
@@ -791,7 +779,7 @@ private fun FloodShelterCard(
                 ) {
 
                     Text(
-                        text = "Điểm sơ tán: ${state.shelterName}",
+                        text = "Điểm sơ tán minh họa: ${state.shelterName}",
                         color = MapText,
                         fontSize = 14.sp,
                         modifier = Modifier.weight(1f)
