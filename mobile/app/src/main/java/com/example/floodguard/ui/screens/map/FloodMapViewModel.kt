@@ -1,11 +1,16 @@
 package com.example.floodguard.ui.screens.map
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.floodguard.data.repository.FloodAreaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-class FloodMapViewModel : ViewModel() {
+class FloodMapViewModel(
+    private val floodAreaRepository: FloodAreaRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         FloodMapUiState()
@@ -13,6 +18,46 @@ class FloodMapViewModel : ViewModel() {
 
     val uiState: StateFlow<FloodMapUiState> =
         _uiState.asStateFlow()
+
+    init {
+        loadFloodAreas()
+    }
+
+    private fun loadFloodAreas() {
+
+        viewModelScope.launch {
+
+            _uiState.value =
+                _uiState.value.copy(
+                    isLoadingFloodAreas = true,
+                    floodAreasError = null
+                )
+
+            val result =
+                floodAreaRepository.getFloodAreas()
+
+            result
+                .onSuccess { floodAreas ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            floodAreas = floodAreas,
+                            isLoadingFloodAreas = false,
+                            floodAreasError = null
+                        )
+                }
+                .onFailure { error ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            isLoadingFloodAreas = false,
+                            floodAreasError =
+                                error.message
+                                    ?: "Không thể tải dữ liệu vùng ngập"
+                        )
+                }
+        }
+    }
 
     fun toggleFloodLayer() {
         _uiState.value =

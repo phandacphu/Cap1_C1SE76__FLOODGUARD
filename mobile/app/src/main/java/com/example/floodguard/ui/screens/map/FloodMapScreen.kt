@@ -72,6 +72,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
+import com.google.maps.android.compose.Polygon
 
 // =====================================================
 // COLORS
@@ -191,7 +192,65 @@ fun FloodMapScreen(
             )
             */
 
-            FloodGoogleMap()
+            FloodGoogleMap(
+                state = state
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 18.dp,
+                        vertical = 8.dp
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                FloodSeverityLegend(
+                    color = Color(0xFF4CAF50),
+                    text = "Thấp"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFFFA000),
+                    text = "Trung bình"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFF44336),
+                    text = "Cao"
+                )
+            }
+
+            if (state.isLoadingFloodAreas) {
+                Text(
+                    text = "Đang tải dữ liệu vùng ngập...",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+            }
+
+            state.floodAreasError?.let { error ->
+
+                Text(
+                    text = "Không thể tải vùng ngập: $error",
+                    color = Color(0xFFE57373),
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(20.dp)
@@ -535,7 +594,9 @@ private fun FloodLayerItem(
 
 @SuppressLint("MissingPermission")
 @Composable
-private fun FloodGoogleMap() {
+private fun FloodGoogleMap(
+    state: FloodMapUiState
+) {
 
     val context = LocalContext.current
 
@@ -711,6 +772,77 @@ private fun FloodGoogleMap() {
                     isMyLocationEnabled = hasLocationPermission
                 )
             ) {
+
+                if (state.isFloodLayerEnabled) {
+
+                    state.floodAreas
+                        .filter {
+                            it.geometry.type.equals(
+                                "polygon",
+                                ignoreCase = true
+                            ) &&
+                                    it.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    )
+                        }
+                        .forEach { floodArea ->
+
+                            val polygonPoints =
+                                floodArea.geometry.points.map { point ->
+                                    LatLng(
+                                        point.latitude,
+                                        point.longitude
+                                    )
+                                }
+
+                            if (polygonPoints.size >= 3) {
+
+                                val fillColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "high" ->
+                                            Color(0x66F44336)
+
+                                        "medium" ->
+                                            Color(0x66FFA000)
+
+                                        "low" ->
+                                            Color(0x664CAF50)
+
+                                        else ->
+                                            Color(0x665F6368)
+                                    }
+
+                                val strokeColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "high" ->
+                                            Color(0xFFF44336)
+
+                                        "medium" ->
+                                            Color(0xFFFFA000)
+
+                                        "low" ->
+                                            Color(0xFF4CAF50)
+
+                                        else ->
+                                            Color(0xFF5F6368)
+                                    }
+
+                                Polygon(
+                                    points = polygonPoints,
+                                    fillColor = fillColor,
+                                    strokeColor = strokeColor,
+                                    strokeWidth = 4f
+                                )
+                            }
+                        }
+                }
 
                 userLocation?.let { location ->
 
@@ -994,5 +1126,38 @@ private fun FloodShelterCard(
                 )
             }
         }
+    }
+}
+
+// =====================================================
+// FLOOD SEVERITY LEGEND
+// =====================================================
+
+@Composable
+private fun FloodSeverityLegend(
+    color: Color,
+    text: String
+) {
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+
+        Spacer(
+            modifier = Modifier.width(5.dp)
+        )
+
+        Text(
+            text = text,
+            color = MapSecondary,
+            fontSize = 10.sp
+        )
     }
 }
