@@ -120,7 +120,8 @@ fun FloodMapRoute(
         onSafeRouteClick = onSafeRouteClick,
         onShelterDetailClick = onShelterDetailClick,
         onSosClick = onSosClick,
-        onBottomNavigate = onBottomNavigate
+        onBottomNavigate = onBottomNavigate,
+        onSelectFloodAlert = viewModel::selectFloodAlert
     )
 }
 
@@ -141,7 +142,8 @@ fun FloodMapScreen(
     onSafeRouteClick: () -> Unit,
     onShelterDetailClick: () -> Unit,
     onSosClick: () -> Unit,
-    onBottomNavigate: (String) -> Unit
+    onBottomNavigate: (String) -> Unit,
+    onSelectFloodAlert: (String?) -> Unit
 ) {
 
     Scaffold(
@@ -193,7 +195,8 @@ fun FloodMapScreen(
             */
 
             FloodGoogleMap(
-                state = state
+                state = state,
+                onSelectFloodAlert = onSelectFloodAlert
             )
 
             Row(
@@ -249,6 +252,20 @@ fun FloodMapScreen(
                             horizontal = 18.dp,
                             vertical = 8.dp
                         )
+                )
+            }
+
+            val selectedFloodAlert =
+                state.floodAlerts.firstOrNull { alert ->
+                    alert.id == state.selectedFloodAlertId
+                }
+
+            selectedFloodAlert?.let { alert ->
+
+                FloodWarningInfoCard(
+                    title = alert.title,
+                    content = alert.content,
+                    severity = alert.severity
                 )
             }
 
@@ -595,7 +612,8 @@ private fun FloodLayerItem(
 @SuppressLint("MissingPermission")
 @Composable
 private fun FloodGoogleMap(
-    state: FloodMapUiState
+    state: FloodMapUiState,
+    onSelectFloodAlert: (String?) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -834,11 +852,26 @@ private fun FloodGoogleMap(
                                             Color(0xFF5F6368)
                                     }
 
+                                val matchingAlert =
+                                    state.floodAlerts.firstOrNull { alert ->
+                                        alert.areaId == floodArea.id &&
+                                                alert.status.equals(
+                                                    "active",
+                                                    ignoreCase = true
+                                                )
+                                    }
+
                                 Polygon(
                                     points = polygonPoints,
                                     fillColor = fillColor,
                                     strokeColor = strokeColor,
-                                    strokeWidth = 4f
+                                    strokeWidth = 4f,
+                                    clickable = true,
+                                    onClick = {
+                                        onSelectFloodAlert(
+                                            matchingAlert?.id
+                                        )
+                                    }
                                 )
                             }
                         }
@@ -1159,5 +1192,73 @@ private fun FloodSeverityLegend(
             color = MapSecondary,
             fontSize = 10.sp
         )
+    }
+}
+
+@Composable
+private fun FloodWarningInfoCard(
+    title: String,
+    content: String,
+    severity: String
+) {
+
+    val severityColor =
+        when (severity.lowercase()) {
+            "high" -> Color(0xFFF44336)
+            "medium" -> Color(0xFFFFA000)
+            "low" -> Color(0xFF4CAF50)
+            else -> MapSecondary
+        }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = 18.dp,
+                vertical = 8.dp
+            ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MapCard
+        ),
+        border = BorderStroke(
+            1.dp,
+            severityColor.copy(alpha = 0.6f)
+        )
+    ) {
+
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+
+            Text(
+                text = title,
+                color = MapText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(
+                modifier = Modifier.height(6.dp)
+            )
+
+            Text(
+                text = content,
+                color = MapSecondary,
+                fontSize = 11.sp,
+                lineHeight = 16.sp
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            Text(
+                text = "Mức độ: ${severity.uppercase()}",
+                color = severityColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }

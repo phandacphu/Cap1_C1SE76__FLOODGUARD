@@ -1,6 +1,7 @@
 package com.example.floodguard.ui.screens.map
 
 import com.example.floodguard.data.model.FloodAreaDto
+import com.example.floodguard.data.model.FloodAlertDto
 
 data class FloodMapUiState(
     val title: String = "Bản đồ ngập & vị trí",
@@ -45,5 +46,9 @@ data class FloodMapUiState(
 
     val floodAreas: List<FloodAreaDto> = emptyList(),
     val isLoadingFloodAreas: Boolean = false,
-    val floodAreasError: String? = null
+    val floodAreasError: String? = null,
+    val floodAlerts: List<FloodAlertDto> = emptyList(),
+    val isLoadingFloodAlerts: Boolean = false,
+    val floodAlertsError: String? = null,
+    val selectedFloodAlertId: String? = null
 )
