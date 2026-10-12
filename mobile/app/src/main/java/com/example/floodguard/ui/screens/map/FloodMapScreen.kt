@@ -2,7 +2,6 @@ package com.example.floodguard.ui.screens.map
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,27 +20,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apartment
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sos
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -52,12 +41,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.Navigation
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.rememberCameraPositionState
 
 // =====================================================
 // COLORS
@@ -74,7 +67,6 @@ private val MapSecondary = Color(0xFF8FA6B8)
 private val MapCyan = Color(0xFF00E5FF)
 private val MapGreen = Color(0xFF16C784)
 private val MapOrange = Color(0xFFFFA000)
-private val MapRed = Color(0xFFFF4D4D)
 
 // =====================================================
 // ROUTE
@@ -158,14 +150,13 @@ fun FloodMapScreen(
                 onProfileClick = onProfileClick
             )
 
-            FloodGpsInfo(
-                state = state
-            )
+            FloodGpsInfo()
 
             Spacer(
                 modifier = Modifier.height(10.dp)
             )
 
+            /*
             FloodLayerRow(
                 state = state,
                 onToggleFloodLayer = onToggleFloodLayer,
@@ -177,10 +168,9 @@ fun FloodMapScreen(
             Spacer(
                 modifier = Modifier.height(12.dp)
             )
+            */
 
-            FloodMockMap(
-                state = state
-            )
+            FloodGoogleMap()
 
             Spacer(
                 modifier = Modifier.height(20.dp)
@@ -201,7 +191,7 @@ fun FloodMapScreen(
             Spacer(
                 modifier = Modifier.height(18.dp)
             )
-
+            /*
             Button(
                 onClick = onSafeRouteClick,
 
@@ -234,10 +224,8 @@ fun FloodMapScreen(
                     fontSize = 15.sp
                 )
             }
+            */
 
-            Spacer(
-                modifier = Modifier.height(14.dp)
-            )
 
             Row(
                 modifier = Modifier
@@ -294,7 +282,7 @@ fun FloodMapScreen(
                     )
 
                     Text(
-                        text = "PHÁT SOS VỊ TRÍ NÀY",
+                        text = "PHÁT SOS",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp
@@ -357,7 +345,7 @@ private fun FloodMapHeader(
             )
 
             Text(
-                text = state.realtimeStatus,
+                text = "Dữ liệu minh họa • Chưa kết nối dữ liệu thời gian thực",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -392,9 +380,7 @@ private fun FloodMapHeader(
 // =====================================================
 
 @Composable
-private fun FloodGpsInfo(
-    state: FloodMapUiState
-) {
+private fun FloodGpsInfo() {
 
     Row(
         modifier = Modifier
@@ -403,7 +389,6 @@ private fun FloodGpsInfo(
                 horizontal = 18.dp,
                 vertical = 10.dp
             ),
-
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -412,7 +397,6 @@ private fun FloodGpsInfo(
                 .size(36.dp)
                 .clip(CircleShape)
                 .background(Color(0xFF12354A)),
-
             contentAlignment = Alignment.Center
         ) {
 
@@ -433,7 +417,7 @@ private fun FloodGpsInfo(
         ) {
 
             Text(
-                text = state.currentLocation,
+                text = "Vị trí minh họa",
                 color = MapText,
                 fontSize = 13.sp
             )
@@ -442,28 +426,12 @@ private fun FloodGpsInfo(
                 modifier = Modifier.height(2.dp)
             )
 
-            Row {
-
-                Text(
-                    text = state.gpsAccuracy,
-                    color = MapGreen,
-                    fontSize = 10.sp
-                )
-
-                Text(
-                    text = "  •  ${state.updateTime}",
-                    color = MapSecondary,
-                    fontSize = 10.sp
-                )
-            }
+            Text(
+                text = "GPS thực tế sẽ được triển khai ở CCF-53",
+                color = MapSecondary,
+                fontSize = 10.sp
+            )
         }
-
-        Text(
-            text = state.satelliteInfo,
-            color = MapText,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium
-        )
     }
 }
 
@@ -540,15 +508,28 @@ private fun FloodLayerItem(
             .padding(6.dp)
     )
 }
-
 // =====================================================
-// MOCK MAP
+// GOOGLE MAP
 // =====================================================
 
 @Composable
-private fun FloodMockMap(
-    state: FloodMapUiState
-) {
+private fun FloodGoogleMap() {
+
+    // Chỉ là vị trí camera ban đầu.
+    // GPS thật của người dùng sẽ làm ở CCF-53.
+    val daNang = LatLng(
+        16.0544,
+        108.2022
+    )
+
+    val cameraPositionState =
+        rememberCameraPositionState {
+            position =
+                CameraPosition.fromLatLngZoom(
+                    daNang,
+                    12f
+                )
+        }
 
     Card(
         modifier = Modifier
@@ -568,350 +549,13 @@ private fun FloodMockMap(
         )
     ) {
 
-        Box(
-            modifier = Modifier.fillMaxSize()
-        ) {
-
-            // MOCK RIVER
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .align(Alignment.Center)
-                    .background(
-                        Color(0xFF087A8B)
-                    )
-            )
-
-            // FLOOD ZONE
-
-            if (state.isFloodLayerEnabled) {
-
-                Box(
-                    modifier = Modifier
-                        .width(145.dp)
-                        .height(130.dp)
-                        .align(Alignment.Center)
-                        .background(
-                            MapRed.copy(alpha = 0.25f),
-                            RoundedCornerShape(24.dp)
-                        )
-                        .border(
-                            2.dp,
-                            MapRed,
-                            RoundedCornerShape(24.dp)
-                        ),
-
-                    contentAlignment = Alignment.Center
-                ) {
-
-                    Column(
-                        horizontalAlignment =
-                            Alignment.CenterHorizontally
-                    ) {
-
-                        Icon(
-                            imageVector =
-                                Icons.Default.Warning,
-
-                            contentDescription = null,
-
-                            tint = Color.White
-                        )
-
-                        Spacer(
-                            modifier = Modifier.height(6.dp)
-                        )
-
-                        Text(
-                            text = state.floodedAreaLabel,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-
-            // OVERFLOW
-
-            Box(
-                modifier = Modifier
-                    .width(145.dp)
-                    .height(92.dp)
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 14.dp)
-                    .background(
-                        MapOrange.copy(alpha = 0.20f),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .border(
-                        2.dp,
-                        MapOrange,
-                        RoundedCornerShape(20.dp)
-                    ),
-
-                contentAlignment = Alignment.Center
-            ) {
-
-                Text(
-                    text = state.overflowLabel,
-                    color = MapText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // SHELTER
-
-            if (state.isShelterLayerEnabled) {
-
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(
-                            top = 54.dp,
-                            end = 70.dp
-                        ),
-
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(MapGreen),
-
-                        contentAlignment = Alignment.Center
-                    ) {
-
-                        Icon(
-                            imageVector =
-                                Icons.Default.Security,
-
-                            contentDescription = null,
-
-                            tint = Color.White
-                        )
-                    }
-
-                    Spacer(
-                        modifier = Modifier.height(4.dp)
-                    )
-
-                    Text(
-                        text = state.shelterMarkerLabel,
-                        color = MapGreen,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-
-            // CURRENT USER
-
-            if (state.isUserLayerEnabled) {
-
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(
-                            start = 54.dp,
-                            bottom = 82.dp
-                        ),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .border(
-                                3.dp,
-                                Color.White,
-                                CircleShape
-                            )
-                            .clip(CircleShape)
-                            .background(
-                                Color(0xFF1C2D3A)
-                            )
-                    )
-
-                    Spacer(
-                        modifier = Modifier.width(8.dp)
-                    )
-
-                    Column {
-
-                        Text(
-                            text = state.userMarkerLabel,
-                            color = MapText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Text(
-                            text = "Độ cao: 4.2m",
-                            color = MapSecondary,
-                            fontSize = 9.sp
-                        )
-                    }
-                }
-            }
-
-            // SAFE ROUTE LABEL
-
-            if (state.isSafeRouteLayerEnabled) {
-
-                Text(
-                    text = state.safeRouteLabel,
-                    color = MapText,
-                    fontSize = 10.sp,
-
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(
-                            start = 42.dp,
-                            top = 120.dp
-                        )
-                        .background(
-                            Color(0xFF12354A),
-                            RoundedCornerShape(20.dp)
-                        )
-                        .border(
-                            1.dp,
-                            MapText,
-                            RoundedCornerShape(20.dp)
-                        )
-                        .padding(
-                            horizontal = 12.dp,
-                            vertical = 6.dp
-                        )
-                )
-            }
-
-            // RIGHT MAP CONTROLS
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(
-                        top = 20.dp,
-                        end = 10.dp
-                    ),
-
-                verticalArrangement =
-                    Arrangement.spacedBy(6.dp)
-            ) {
-
-                MapControlButton(
-                    icon = Icons.Default.Add
-                )
-
-                MapControlButton(
-                    icon = Icons.Default.Remove
-                )
-
-                MapControlButton(
-                    icon = Icons.Default.CenterFocusStrong
-                )
-
-                MapControlButton(
-                    icon = Icons.Default.Layers
-                )
-
-                MapControlButton(
-                    icon = Icons.Default.Navigation
-                )
-            }
-
-            // LEGEND
-
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(14.dp),
-
-                horizontalArrangement =
-                    Arrangement.spacedBy(14.dp)
-            ) {
-
-                MapLegend(
-                    color = MapGreen,
-                    text = "An toàn"
-                )
-
-                MapLegend(
-                    color = MapOrange,
-                    text = "0.3-0.5m"
-                )
-
-                MapLegend(
-                    color = MapRed,
-                    text = ">0.8m"
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MapControlButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector
-) {
-
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(Color(0xFF0A1A29)),
-
-        contentAlignment = Alignment.Center
-    ) {
-
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MapText,
-            modifier = Modifier.size(19.dp)
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState
         )
     }
 }
 
-@Composable
-private fun MapLegend(
-    color: Color,
-    text: String
-) {
-
-    Row(
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(
-                    color,
-                    RoundedCornerShape(2.dp)
-                )
-        )
-
-        Spacer(
-            modifier = Modifier.width(5.dp)
-        )
-
-        Text(
-            text = text,
-            color = MapSecondary,
-            fontSize = 9.sp
-        )
-    }
-}
 
 // =====================================================
 // AREA SUMMARY
@@ -934,7 +578,7 @@ private fun FloodAreaSummary(
         ) {
 
             Text(
-                text = "KHU VỰC GIÁM SÁT",
+                text = "DỮ LIỆU NGẬP MINH HỌA",
                 color = MapSecondary,
                 fontSize = 9.sp
             )
@@ -963,6 +607,16 @@ private fun FloodAreaSummary(
                     )
             )
         }
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
+
+        Text(
+            text = "Thông tin bên dưới chưa được lấy từ API thời gian thực",
+            color = MapSecondary,
+            fontSize = 9.sp
+        )
 
         Spacer(
             modifier = Modifier.height(6.dp)
@@ -1125,7 +779,7 @@ private fun FloodShelterCard(
                 ) {
 
                     Text(
-                        text = "Điểm sơ tán: ${state.shelterName}",
+                        text = "Điểm sơ tán minh họa: ${state.shelterName}",
                         color = MapText,
                         fontSize = 14.sp,
                         modifier = Modifier.weight(1f)
