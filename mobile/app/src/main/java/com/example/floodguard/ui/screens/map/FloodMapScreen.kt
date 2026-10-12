@@ -1,5 +1,9 @@
 package com.example.floodguard.ui.screens.map
 
+import android.Manifest
+import android.os.Looper
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,13 +48,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.filled.Navigation
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 
 // =====================================================
 // COLORS
@@ -417,7 +438,7 @@ private fun FloodGpsInfo() {
         ) {
 
             Text(
-                text = "Vị trí minh họa",
+                text = "Vị trí thiết bị",
                 color = MapText,
                 fontSize = 13.sp
             )
@@ -427,7 +448,7 @@ private fun FloodGpsInfo() {
             )
 
             Text(
-                text = "GPS thực tế sẽ được triển khai ở CCF-53",
+                text = "GPS được lấy khi người dùng cấp quyền vị trí",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -512,24 +533,154 @@ private fun FloodLayerItem(
 // GOOGLE MAP
 // =====================================================
 
+@SuppressLint("MissingPermission")
 @Composable
 private fun FloodGoogleMap() {
 
-    // Chỉ là vị trí camera ban đầu.
-    // GPS thật của người dùng sẽ làm ở CCF-53.
-    val daNang = LatLng(
+    val context = LocalContext.current
+
+    val defaultLocation = LatLng(
         16.0544,
         108.2022
     )
 
     val cameraPositionState =
         rememberCameraPositionState {
-            position =
-                CameraPosition.fromLatLngZoom(
-                    daNang,
-                    12f
-                )
+            position = CameraPosition.fromLatLngZoom(
+                defaultLocation,
+                12f
+            )
         }
+
+    var userLocation by remember {
+        mutableStateOf<LatLng?>(null)
+    }
+
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var locationMessage by remember {
+        mutableStateOf("Đang kiểm tra quyền vị trí...")
+    }
+
+    val fusedLocationClient = remember {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            hasLocationPermission =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            locationMessage =
+                if (hasLocationPermission) {
+                    "Đang lấy vị trí hiện tại..."
+                } else {
+                    "Chưa được cấp quyền vị trí"
+                }
+        }
+
+    LaunchedEffect(Unit) {
+
+        if (!hasLocationPermission) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    DisposableEffect(hasLocationPermission) {
+
+        if (!hasLocationPermission) {
+
+            locationMessage =
+                "Chưa được cấp quyền vị trí"
+
+            onDispose { }
+
+        } else {
+
+            locationMessage =
+                "Đang theo dõi vị trí hiện tại..."
+
+            val locationRequest =
+                LocationRequest.Builder(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    5000L
+                )
+                    .setMinUpdateIntervalMillis(
+                        2000L
+                    )
+                    .build()
+
+            val locationCallback =
+                object : LocationCallback() {
+
+                    override fun onLocationResult(
+                        result: LocationResult
+                    ) {
+
+                        val location =
+                            result.lastLocation
+                                ?: return
+
+                        userLocation =
+                            LatLng(
+                                location.latitude,
+                                location.longitude
+                            )
+
+                        locationMessage =
+                            "Đã cập nhật vị trí"
+                    }
+                }
+
+            fusedLocationClient
+                .requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+
+            onDispose {
+
+                fusedLocationClient
+                    .removeLocationUpdates(
+                        locationCallback
+                    )
+            }
+        }
+    }
+
+    LaunchedEffect(userLocation) {
+
+        userLocation?.let { location ->
+
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    location,
+                    16f
+                )
+            )
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -549,10 +700,49 @@ private fun FloodGoogleMap() {
         )
     ) {
 
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState
-        )
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                properties = MapProperties(
+                    isMyLocationEnabled = hasLocationPermission
+                )
+            ) {
+
+                userLocation?.let { location ->
+
+                    Marker(
+                        state = MarkerState(
+                            position = location
+                        ),
+                        title = "Vị trí của bạn"
+                    )
+                }
+            }
+
+            if (!hasLocationPermission || userLocation == null) {
+
+                Text(
+                    text = locationMessage,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
+                        .background(
+                            Color.Black.copy(alpha = 0.70f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = 7.dp
+                        )
+                )
+            }
+        }
     }
 }
 
