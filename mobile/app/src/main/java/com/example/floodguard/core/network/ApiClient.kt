@@ -3,6 +3,7 @@ package com.example.floodguard.core.network
 import com.example.floodguard.core.config.AppConfig
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
+import com.example.floodguard.data.remote.api.FloodAlertApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -52,6 +53,15 @@ object ApiClient {
     val authApi: AuthApi =
         publicRetrofit.create(
             AuthApi::class.java
+        )
+
+    // =================================================
+    // FLOOD ALERT API
+    // =================================================
+
+    val floodAlertApi: FloodAlertApi =
+        publicRetrofit.create(
+            FloodAlertApi::class.java
         )
 
 
