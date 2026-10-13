@@ -29,6 +29,9 @@ const adminFloodAlertRoutes = require(
 const adminSafeLocationRoutes = require(
   "./routes/admin-safe-location.routes",
 );
+const adminSosMonitoringRoutes = require(
+  "./routes/admin-sos-monitoring.routes",
+);
 
 // Middleware
 app.use(helmet());
@@ -56,6 +59,10 @@ app.use("/api/admin/flood-alerts", adminFloodAlertRoutes);
 app.use(
   "/api/admin/safe-locations",
   adminSafeLocationRoutes,
+);
+app.use(
+  "/api/admin/rescue-requests",
+  adminSosMonitoringRoutes,
 );
 
 module.exports = app;
