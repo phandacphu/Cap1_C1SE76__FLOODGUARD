@@ -3,11 +3,7 @@ const { FieldValue } = require("firebase-admin/firestore");
 
 const AUDIT_LOGS_COLLECTION = "audit_logs";
 
-const ALLOWED_ACTOR_ROLES = [
-  "resident",
-  "rescue",
-  "admin",
-];
+const ALLOWED_ACTOR_ROLES = ["resident", "rescue", "admin"];
 
 const ALLOWED_CHANGED_FIELDS = [
   "fullName",
@@ -27,6 +23,10 @@ const ALLOWED_CHANGED_FIELDS = [
   "areaId",
   "startAt",
   "endAt",
+  "address",
+  "type",
+  "capacityNote",
+  "contactPhone",
 ];
 
 function invalidAuditData(message) {
@@ -42,21 +42,13 @@ function ensurePlainObject(value, fieldName) {
     Array.isArray(value) ||
     Object.getPrototypeOf(value) !== Object.prototype
   ) {
-    throw invalidAuditData(
-      `${fieldName} must be a plain object`,
-    );
+    throw invalidAuditData(`${fieldName} must be a plain object`);
   }
 }
 
 function ensureAllowedKeys(value, allowedKeys, fieldName) {
-  if (
-    Object.keys(value).some(
-      (key) => !allowedKeys.includes(key),
-    )
-  ) {
-    throw invalidAuditData(
-      `${fieldName} contains unsupported fields`,
-    );
+  if (Object.keys(value).some((key) => !allowedKeys.includes(key))) {
+    throw invalidAuditData(`${fieldName} contains unsupported fields`);
   }
 }
 
@@ -129,15 +121,11 @@ function normalizeAuditMetadata(value) {
         (field) => !ALLOWED_CHANGED_FIELDS.includes(field),
       )
     ) {
-      throw invalidAuditData(
-        "Invalid audit changedFields",
-      );
+      throw invalidAuditData("Invalid audit changedFields");
     }
 
     // Store field names only, never their old/new values.
-    metadata.changedFields = [
-      ...new Set(value.changedFields),
-    ];
+    metadata.changedFields = [...new Set(value.changedFields)];
   }
 
   return metadata;
@@ -153,44 +141,24 @@ function normalizeAuditLogData(logData) {
   );
 
   ensurePlainObject(logData.actor, "Audit actor");
-  ensureAllowedKeys(
-    logData.actor,
-    ["id", "role"],
-    "Audit actor",
-  );
+  ensureAllowedKeys(logData.actor, ["id", "role"], "Audit actor");
 
   if (!ALLOWED_ACTOR_ROLES.includes(logData.actor.role)) {
     throw invalidAuditData("Invalid audit actor role");
   }
 
   ensurePlainObject(logData.target, "Audit target");
-  ensureAllowedKeys(
-    logData.target,
-    ["type", "id"],
-    "Audit target",
-  );
+  ensureAllowedKeys(logData.target, ["type", "id"], "Audit target");
 
   return {
     actor: {
-      id: normalizeDocumentId(
-        logData.actor.id,
-        "Audit actor ID",
-      ),
+      id: normalizeDocumentId(logData.actor.id, "Audit actor ID"),
       role: logData.actor.role,
     },
-    action: normalizeLabel(
-      logData.action,
-      "Audit action",
-    ),
+    action: normalizeLabel(logData.action, "Audit action"),
     target: {
-      type: normalizeLabel(
-        logData.target.type,
-        "Audit target type",
-      ),
-      id: normalizeDocumentId(
-        logData.target.id,
-        "Audit target ID",
-      ),
+      type: normalizeLabel(logData.target.type, "Audit target type"),
+      id: normalizeDocumentId(logData.target.id, "Audit target ID"),
     },
     metadata: normalizeAuditMetadata(logData.metadata),
   };
@@ -203,9 +171,7 @@ function normalizeAuditLogData(logData) {
 async function createAuditLog(logData) {
   const data = normalizeAuditLogData(logData);
 
-  const logRef = db
-    .collection(AUDIT_LOGS_COLLECTION)
-    .doc();
+  const logRef = db.collection(AUDIT_LOGS_COLLECTION).doc();
 
   await logRef.create({
     ...data,
