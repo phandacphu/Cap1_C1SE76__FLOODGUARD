@@ -24,6 +24,9 @@ import com.example.floodguard.ui.screens.warning.WarningDetailViewModel
 import com.example.floodguard.ui.screens.auth.register.RegisterViewModel
 import com.example.floodguard.ui.screens.map.FloodMapRoute
 import com.example.floodguard.ui.screens.map.FloodMapViewModel
+import com.example.floodguard.core.network.ApiClient
+import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.FloodAlertRepository
 
 @Composable
 fun AppNavGraph(
@@ -437,7 +440,20 @@ fun AppNavGraph(
         ) {
 
             val floodMapViewModel: FloodMapViewModel =
-                viewModel()
+                viewModel {
+                    FloodMapViewModel(
+                        floodAreaRepository =
+                            FloodAreaRepository(
+                                floodAreaApi =
+                                    ApiClient.floodAreaApi
+                            ),
+                        floodAlertRepository =
+                            FloodAlertRepository(
+                                floodAlertApi =
+                                    ApiClient.floodAlertApi
+                            )
+                    )
+                }
 
             FloodMapRoute(
                 viewModel = floodMapViewModel,
