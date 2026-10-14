@@ -13,7 +13,7 @@ data class FloodAreasData(
 data class FloodAreaDto(
     val id: String,
     val name: String,
-    val description: String,
+    val description: String?,
     val geometry: FloodGeometryDto,
     val severity: String,
     val status: String,

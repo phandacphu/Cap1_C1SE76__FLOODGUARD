@@ -131,7 +131,8 @@ fun FloodMapRoute(
         onSafeRouteClick = onSafeRouteClick,
         onShelterDetailClick = onShelterDetailClick,
         onSosClick = onSosClick,
-        onBottomNavigate = onBottomNavigate
+        onBottomNavigate = onBottomNavigate,
+        onRetryFloodAreas = viewModel::loadFloodAreas,
     )
 }
 
@@ -152,7 +153,8 @@ fun FloodMapScreen(
     onSafeRouteClick: () -> Unit,
     onShelterDetailClick: () -> Unit,
     onSosClick: () -> Unit,
-    onBottomNavigate: (String) -> Unit
+    onBottomNavigate: (String) -> Unit,
+    onRetryFloodAreas: () -> Unit,
 ) {
 
     Scaffold(
@@ -214,7 +216,7 @@ fun FloodMapScreen(
                         horizontal = 18.dp,
                         vertical = 8.dp
                     ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
@@ -229,12 +231,18 @@ fun FloodMapScreen(
                 )
 
                 FloodSeverityLegend(
+                    color = Color(0xFFB71C1C),
+                    text = "Critical"
+                )
+
+                FloodSeverityLegend(
                     color = Color(0xFFF44336),
                     text = "Cao"
                 )
             }
 
             if (state.isLoadingFloodAreas) {
+
                 Text(
                     text = "Đang tải dữ liệu vùng ngập...",
                     color = MapSecondary,
@@ -246,13 +254,45 @@ fun FloodMapScreen(
                             vertical = 8.dp
                         )
                 )
-            }
 
-            state.floodAreasError?.let { error ->
+            } else if (state.floodAreasError != null) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = "Không thể tải vùng ngập: ${state.floodAreasError}",
+                        color = Color(0xFFE57373),
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    OutlinedButton(
+                        onClick = onRetryFloodAreas
+                    ) {
+
+                        Text(
+                            text = "Thử lại",
+                            color = MapText
+                        )
+                    }
+                }
+
+            } else if (state.floodAreas.isEmpty()) {
 
                 Text(
-                    text = "Không thể tải vùng ngập: $error",
-                    color = Color(0xFFE57373),
+                    text = "Hiện chưa có dữ liệu vùng ngập.",
+                    color = MapSecondary,
                     fontSize = 11.sp,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -982,6 +1022,9 @@ private fun FloodGoogleMap(
                                         floodArea.severity.lowercase()
                                     ) {
 
+                                        "critical" ->
+                                            Color(0x66B71C1C)
+
                                         "high" ->
                                             Color(0x66F44336)
 
@@ -999,6 +1042,9 @@ private fun FloodGoogleMap(
                                     when (
                                         floodArea.severity.lowercase()
                                     ) {
+
+                                        "critical" ->
+                                            Color(0xFFB71C1C)
 
                                         "high" ->
                                             Color(0xFFF44336)

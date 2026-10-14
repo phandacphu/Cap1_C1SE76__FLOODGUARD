@@ -23,7 +23,7 @@ class FloodMapViewModel(
         loadFloodAreas()
     }
 
-    private fun loadFloodAreas() {
+    fun loadFloodAreas() {
 
         viewModelScope.launch {
 
