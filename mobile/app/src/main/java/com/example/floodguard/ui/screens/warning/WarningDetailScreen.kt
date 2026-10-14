@@ -80,18 +80,74 @@ fun WarningDetailRoute(
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    val detail = uiState.warningDetail ?: return
+    when {
 
-    WarningDetailScreen(
-        detail = detail,
-        onBack = onBack,
-        onNotificationClick = onNotificationClick,
-        onProfileClick = onProfileClick,
-        onFloodMapClick = onFloodMapClick,
-        onSafeLocationClick = onSafeLocationClick,
-        onSosClick = onSosClick,
-        onBottomNavigate = onBottomNavigate
-    )
+        uiState.isLoading -> {
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(WarningDetailBackground),
+                contentAlignment = Alignment.Center
+            ) {
+
+                Text(
+                    text = "Đang tải chi tiết cảnh báo...",
+                    color = WarningDetailText
+                )
+            }
+        }
+
+        uiState.errorMessage != null -> {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(WarningDetailBackground)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+
+                Text(
+                    text = uiState.errorMessage
+                        ?: "Không thể tải chi tiết cảnh báo",
+                    color = WarningDetailRed,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(
+                    modifier = Modifier.height(16.dp)
+                )
+
+                OutlinedButton(
+                    onClick = {
+                        viewModel.loadWarningDetail()
+                    }
+                ) {
+
+                    Text(
+                        text = "Thử lại",
+                        color = WarningDetailText
+                    )
+                }
+            }
+        }
+
+        uiState.warningDetail != null -> {
+
+            WarningDetailScreen(
+                detail = uiState.warningDetail!!,
+                onBack = onBack,
+                onNotificationClick = onNotificationClick,
+                onProfileClick = onProfileClick,
+                onFloodMapClick = onFloodMapClick,
+                onSafeLocationClick = onSafeLocationClick,
+                onSosClick = onSosClick,
+                onBottomNavigate = onBottomNavigate
+            )
+        }
+    }
 }
 
 
@@ -161,85 +217,112 @@ fun WarningDetailScreen(
             // SECTION 1
             // =====================================================
 
-            WarningSectionTitle(
-                number = "1",
-                title = "KHU VỰC VÀ PHẠM VI ẢNH HƯỞNG"
-            )
+            if (
+                detail.keyAreas.isNotBlank() ||
+                detail.basinInfo.isNotBlank()
+            ) {
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+                WarningSectionTitle(
+                    number = "1",
+                    title = "KHU VỰC VÀ PHẠM VI ẢNH HƯỞNG"
+                )
 
-            WarningImpactCard(
-                detail = detail
-            )
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+                WarningImpactCard(
+                    detail = detail
+                )
+
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
+            }
 
             // =====================================================
             // SECTION 2
             // =====================================================
 
-            WarningSectionTitle(
-                number = "2",
-                title = "CHỈ SỐ ĐO ĐẠC & QUAN TRẮC THỰC ĐỊA"
-            )
+            if (
+                detail.rainfall6h.isNotBlank() ||
+                detail.currentWaterLevel.isNotBlank() ||
+                detail.spillDischarge.isNotBlank() ||
+                detail.floodDepthForecast.isNotBlank()
+            ) {
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+                WarningSectionTitle(
+                    number = "2",
+                    title = "CHỈ SỐ ĐO ĐẠC & QUAN TRẮC THỰC ĐỊA"
+                )
 
-            WarningMetricsSection(
-                detail = detail
-            )
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+                WarningMetricsSection(
+                    detail = detail
+                )
+
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
+            }
 
             // =====================================================
             // SECTION 3
             // =====================================================
 
-            WarningSectionTitle(
-                number = "3",
-                title = "NGUY CƠ & ĐỊA ĐIỂM CHÚ Ý"
-            )
+            if (
+                detail.riskyRoads.isNotBlank() ||
+                detail.floodedResidentialAreas.isNotBlank() ||
+                detail.riverbankLandslideRisk.isNotBlank()
+            ) {
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+                WarningSectionTitle(
+                    number = "3",
+                    title = "NGUY CƠ & ĐỊA ĐIỂM CHÚ Ý"
+                )
 
-            WarningRiskSection(
-                detail = detail
-            )
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+                WarningRiskSection(
+                    detail = detail
+                )
+
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
+            }
 
             // =====================================================
             // SECTION 4
             // =====================================================
 
-            WarningSectionTitle(
-                number = "4",
-                title = "HƯỚNG DẪN HÀNH ĐỘNG DÀNH CHO CƯ DÂN"
-            )
+            if (
+                detail.safetyGuides.isNotEmpty() ||
+                detail.emergencyNote.isNotBlank()
+            ) {
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+                WarningSectionTitle(
+                    number = "4",
+                    title = "HƯỚNG DẪN HÀNH ĐỘNG DÀNH CHO CƯ DÂN"
+                )
 
-            WarningSafetyCard(
-                detail = detail
-            )
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
 
-            Spacer(
-                modifier = Modifier.height(24.dp)
-            )
+                WarningSafetyCard(
+                    detail = detail
+                )
+
+                Spacer(
+                    modifier = Modifier.height(24.dp)
+                )
+            }
 
             // =====================================================
             // QUICK ACTIONS

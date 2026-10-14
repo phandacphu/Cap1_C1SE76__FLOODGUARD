@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.lifecycle.createSavedStateHandle
 
 import com.example.floodguard.data.repository.AuthRepository
 
@@ -24,6 +25,9 @@ import com.example.floodguard.ui.screens.warning.WarningDetailViewModel
 import com.example.floodguard.ui.screens.auth.register.RegisterViewModel
 import com.example.floodguard.ui.screens.map.FloodMapRoute
 import com.example.floodguard.ui.screens.map.FloodMapViewModel
+import com.example.floodguard.core.network.ApiClient
+import com.example.floodguard.data.repository.FloodAlertRepository
+import com.example.floodguard.ui.screens.warning.WarningViewModel
 
 @Composable
 fun AppNavGraph(
@@ -238,7 +242,19 @@ fun AppNavGraph(
             route = AppRoutes.WARNING_LIST
         ) {
 
+            val warningViewModel: WarningViewModel =
+                viewModel {
+                    WarningViewModel(
+                        floodAlertRepository =
+                            FloodAlertRepository(
+                                floodAlertApi =
+                                    ApiClient.floodAlertApi
+                            )
+                    )
+                }
+
             WarningListScreen(
+                viewModel = warningViewModel,
 
                 onBackClick = {
                     navController.popBackStack()
@@ -332,7 +348,16 @@ fun AppNavGraph(
             val warningDetailViewModel: WarningDetailViewModel =
                 viewModel(
                     viewModelStoreOwner = backStackEntry
-                )
+                ) {
+                    WarningDetailViewModel(
+                        savedStateHandle = createSavedStateHandle(),
+                        floodAlertRepository =
+                            FloodAlertRepository(
+                                floodAlertApi =
+                                    ApiClient.floodAlertApi
+                            )
+                    )
+                }
 
             WarningDetailRoute(
                 viewModel = warningDetailViewModel,
