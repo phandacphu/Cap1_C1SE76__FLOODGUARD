@@ -62,7 +62,7 @@ class FloodMapViewModel(
         }
     }
 
-    private fun loadFloodAlerts() {
+    fun loadFloodAlerts() {
 
         viewModelScope.launch {
 
@@ -73,7 +73,7 @@ class FloodMapViewModel(
                 )
 
             val result =
-                floodAlertRepository.getFloodAlerts()
+                floodAlertRepository.getActiveFloodAlerts()
 
             result
                 .onSuccess { floodAlerts ->

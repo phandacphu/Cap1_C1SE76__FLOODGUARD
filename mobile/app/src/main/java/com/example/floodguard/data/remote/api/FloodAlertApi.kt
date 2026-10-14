@@ -8,4 +8,7 @@ interface FloodAlertApi {
 
     @GET("api/flood-alerts")
     suspend fun getFloodAlerts(): Response<FloodAlertsResponse>
+
+    @GET("api/flood-alerts/active")
+    suspend fun getActiveFloodAlerts(): Response<FloodAlertsResponse>
 }

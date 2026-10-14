@@ -18,5 +18,5 @@ data class FloodAlertDto(
     val status: String,
     val areaId: String,
     val startAt: String,
-    val endAt: String
+    val endAt: String?
 )
