@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Instant
 
 sealed class WarningUiState {
 
@@ -61,13 +62,20 @@ class WarningViewModel(
                                 title = alert.title,
                                 content = alert.content,
                                 severity = alert.severity,
-                                area = alert.areaId,
+                                area = "Mã khu vực: ${alert.areaId}",
                                 startTime = alert.startAt,
                                 endTime = alert.endAt,
-                                isActive =
+                                isEnabled =
                                     alert.status.equals(
                                         "active",
                                         ignoreCase = true
+                                    ),
+
+                                isEffectiveNow =
+                                    isAlertEffectiveNow(
+                                        status = alert.status,
+                                        startAt = alert.startAt,
+                                        endAt = alert.endAt
                                     )
                             )
                         }
@@ -99,4 +107,40 @@ class WarningViewModel(
     fun retry() {
         loadWarnings()
     }
+}
+
+private fun isAlertEffectiveNow(
+    status: String,
+    startAt: String,
+    endAt: String?
+): Boolean {
+
+    if (!status.equals("active", ignoreCase = true)) {
+        return false
+    }
+
+    val now = Instant.now()
+
+    val start =
+        runCatching {
+            Instant.parse(startAt)
+        }.getOrNull()
+            ?: return false
+
+    val end =
+        endAt
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                runCatching {
+                    Instant.parse(it)
+                }.getOrNull()
+            }
+
+    val hasStarted =
+        !now.isBefore(start)
+
+    val hasNotEnded =
+        end == null || !now.isAfter(end)
+
+    return hasStarted && hasNotEnded
 }

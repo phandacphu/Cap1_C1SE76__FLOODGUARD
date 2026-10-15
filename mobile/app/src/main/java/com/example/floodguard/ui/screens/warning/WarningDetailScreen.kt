@@ -495,7 +495,7 @@ private fun WarningMainCard(
             // TIME
 
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
 
                 Icon(
@@ -509,11 +509,24 @@ private fun WarningMainCard(
                     modifier = Modifier.width(6.dp)
                 )
 
-                Text(
-                    text = "${detail.updatedTime} • ${detail.updatedAgo}",
-                    color = WarningDetailSecondary,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Column {
+
+                    Text(
+                        text = "Bắt đầu: ${detail.startTime}",
+                        color = WarningDetailSecondary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(4.dp)
+                    )
+
+                    Text(
+                        text = "Kết thúc: ${detail.endTime ?: "Không xác định"}",
+                        color = WarningDetailSecondary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
 
             Spacer(
@@ -681,43 +694,49 @@ private fun WarningImpactCard(
                 value = detail.basinInfo
             )
 
-            Spacer(
-                modifier = Modifier.height(20.dp)
-            )
-
-            Text(
-                text = "KHUNG GIỜ ĐỈNH LŨ",
-                color = WarningDetailSecondary,
-                style = MaterialTheme.typography.labelMedium
-            )
-
-            Spacer(
-                modifier = Modifier.height(8.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
+            if (
+                detail.peakWindow.isNotBlank() ||
+                detail.peakWindowNote.isNotBlank()
             ) {
 
+                Spacer(
+                    modifier = Modifier.height(20.dp)
+                )
+
                 Text(
-                    text = detail.peakWindow,
-                    color = WarningDetailText,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
+                    text = "KHUNG GIỜ ĐỈNH LŨ",
+                    color = WarningDetailSecondary,
+                    style = MaterialTheme.typography.labelMedium
                 )
 
                 Spacer(
-                    modifier = Modifier.width(10.dp)
+                    modifier = Modifier.height(8.dp)
                 )
 
-                Text(
-                    text = detail.peakWindowNote,
-                    color = WarningDetailSecondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+
+                    Text(
+                        text = detail.peakWindow,
+                        color = WarningDetailText,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(
+                        modifier = Modifier.width(10.dp)
+                    )
+
+                    Text(
+                        text = detail.peakWindowNote,
+                        color = WarningDetailSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }

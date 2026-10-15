@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 data class WarningDetailUiState(
     val isLoading: Boolean = false,
     val warningDetail: WarningDetail? = null,
@@ -74,15 +76,26 @@ class WarningDetailViewModel(
                             id = alert.id,
 
                             systemStatus =
-                                if (
-                                    alert.status.equals(
+                                when {
+
+                                    !alert.status.equals(
                                         "active",
                                         ignoreCase = true
-                                    )
-                                ) {
-                                    "CẢNH BÁO ĐANG HOẠT ĐỘNG"
-                                } else {
-                                    "CẢNH BÁO KHÔNG HOẠT ĐỘNG"
+                                    ) -> {
+                                        "CẢNH BÁO ĐÃ TẮT"
+                                    }
+
+                                    isAlertEffectiveNow(
+                                        status = alert.status,
+                                        startAt = alert.startAt,
+                                        endAt = alert.endAt
+                                    ) -> {
+                                        "CẢNH BÁO ĐANG CÓ HIỆU LỰC"
+                                    }
+
+                                    else -> {
+                                        "CẢNH BÁO ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
+                                    }
                                 },
 
                             screenTitle = "Chi tiết cảnh báo",
@@ -90,10 +103,15 @@ class WarningDetailViewModel(
                             levelText =
                                 alert.severity.uppercase(),
 
-                            updatedTime =
-                                alert.startAt,
+                            startTime =
+                                formatWarningDateTime(
+                                    alert.startAt
+                                ),
 
-                            updatedAgo = "",
+                            endTime =
+                                alert.endAt?.let {
+                                    formatWarningDateTime(it)
+                                },
 
                             bulletinNo =
                                 alert.id,
@@ -102,7 +120,7 @@ class WarningDetailViewModel(
                                 alert.title,
 
                             locationSummary =
-                                alert.areaId,
+                                "Mã khu vực: ${alert.areaId}",
 
                             description =
                                 alert.content,
@@ -110,9 +128,7 @@ class WarningDetailViewModel(
                             keyAreas = "",
                             basinInfo = "",
 
-                            peakWindow =
-                                alert.endAt ?: "",
-
+                            peakWindow = "",
                             peakWindowNote = "",
 
                             rainfall6h = "",
@@ -159,4 +175,59 @@ class WarningDetailViewModel(
                 }
         }
     }
+}
+
+private fun formatWarningDateTime(
+    isoTime: String
+): String {
+
+    return runCatching {
+
+        Instant
+            .parse(isoTime)
+            .atZone(
+                ZoneId.systemDefault()
+            )
+            .format(
+                DateTimeFormatter
+                    .ofPattern("dd/MM/yyyy HH:mm")
+            )
+
+    }.getOrDefault(isoTime)
+}
+
+private fun isAlertEffectiveNow(
+    status: String,
+    startAt: String,
+    endAt: String?
+): Boolean {
+
+    if (!status.equals("active", ignoreCase = true)) {
+        return false
+    }
+
+    val now = Instant.now()
+
+    val start =
+        runCatching {
+            Instant.parse(startAt)
+        }.getOrNull()
+            ?: return false
+
+    val end =
+        endAt
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                runCatching {
+                    Instant.parse(it)
+                }.getOrNull()
+            }
+
+    val hasStarted =
+        !now.isBefore(start)
+
+    val hasNotEnded =
+        end == null || !now.isAfter(end)
+
+    return hasStarted && hasNotEnded
 }
