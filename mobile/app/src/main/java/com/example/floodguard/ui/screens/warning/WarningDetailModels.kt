@@ -7,8 +7,8 @@ data class WarningDetail(
     val screenTitle: String,
 
     val levelText: String,
-    val updatedTime: String,
-    val updatedAgo: String,
+    val startTime: String,
+    val endTime: String?,
 
     val bulletinNo: String,
     val headline: String,
