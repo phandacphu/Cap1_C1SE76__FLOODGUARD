@@ -13,18 +13,10 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    // =================================================
-    // LOGGING
-    // =================================================
-
     private val loggingInterceptor =
         HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
         }
-
-    // =================================================
-    // PUBLIC CLIENT
-    // =================================================
 
     private val publicOkHttpClient =
         OkHttpClient.Builder()
@@ -38,51 +30,23 @@ object ApiClient {
         Retrofit.Builder()
             .baseUrl(AppConfig.BASE_URL)
             .client(publicOkHttpClient)
-            .addConverterFactory(
-                GsonConverterFactory.create()
-            )
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
 
-    // =================================================
-    // AUTH API
-    // =================================================
-
     val authApi: AuthApi =
-        publicRetrofit.create(
-            AuthApi::class.java
-        )
-
-    // =================================================
-    // FLOOD ALERT API
-    // =================================================
+        publicRetrofit.create(AuthApi::class.java)
 
     val floodAlertApi: FloodAlertApi =
-        publicRetrofit.create(
-            FloodAlertApi::class.java
-        )
-
-    // =================================================
-    // FLOOD AREA API
-    // =================================================
+        publicRetrofit.create(FloodAlertApi::class.java)
 
     val floodAreaApi: FloodAreaApi =
-        publicRetrofit.create(
-            FloodAreaApi::class.java
-        )
-
-    // =================================================
-    // AUTHENTICATED RETROFIT
-    // Dùng cho API cần Bearer Token
-    // =================================================
+        publicRetrofit.create(FloodAreaApi::class.java)
 
     fun createAuthenticatedRetrofit(
         sessionManager: SessionManager
     ): Retrofit {
-
         val authInterceptor =
-            AuthInterceptor(
-                sessionManager = sessionManager
-            )
+            AuthInterceptor(sessionManager = sessionManager)
 
         val authenticatedClient =
             OkHttpClient.Builder()
@@ -96,9 +60,7 @@ object ApiClient {
         return Retrofit.Builder()
             .baseUrl(AppConfig.BASE_URL)
             .client(authenticatedClient)
-            .addConverterFactory(
-                GsonConverterFactory.create()
-            )
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
 }

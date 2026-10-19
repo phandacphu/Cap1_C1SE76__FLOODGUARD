@@ -344,6 +344,9 @@ fun AppNavGraph(
                 FloodMapViewModel(
                     floodAreaRepository = FloodAreaRepository(
                         floodAreaApi = ApiClient.floodAreaApi
+                    ),
+                    floodAlertRepository = FloodAlertRepository(
+                        floodAlertApi = ApiClient.floodAlertApi
                     )
                 )
             }
