@@ -83,6 +83,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
+import com.google.maps.android.compose.Polygon
 
 // =====================================================
 // COLORS
@@ -130,7 +131,8 @@ fun FloodMapRoute(
         onSafeRouteClick = onSafeRouteClick,
         onShelterDetailClick = onShelterDetailClick,
         onSosClick = onSosClick,
-        onBottomNavigate = onBottomNavigate
+        onBottomNavigate = onBottomNavigate,
+        onRetryFloodAreas = viewModel::loadFloodAreas,
     )
 }
 
@@ -151,7 +153,8 @@ fun FloodMapScreen(
     onSafeRouteClick: () -> Unit,
     onShelterDetailClick: () -> Unit,
     onSosClick: () -> Unit,
-    onBottomNavigate: (String) -> Unit
+    onBottomNavigate: (String) -> Unit,
+    onRetryFloodAreas: () -> Unit,
 ) {
 
     Scaffold(
@@ -202,7 +205,103 @@ fun FloodMapScreen(
             )
             */
 
-            FloodGoogleMap()
+            FloodGoogleMap(
+                state = state
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 18.dp,
+                        vertical = 8.dp
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                FloodSeverityLegend(
+                    color = Color(0xFF4CAF50),
+                    text = "Thấp"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFFFA000),
+                    text = "Trung bình"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFB71C1C),
+                    text = "Critical"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFF44336),
+                    text = "Cao"
+                )
+            }
+
+            if (state.isLoadingFloodAreas) {
+
+                Text(
+                    text = "Đang tải dữ liệu vùng ngập...",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+
+            } else if (state.floodAreasError != null) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = "Không thể tải vùng ngập: ${state.floodAreasError}",
+                        color = Color(0xFFE57373),
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    OutlinedButton(
+                        onClick = onRetryFloodAreas
+                    ) {
+
+                        Text(
+                            text = "Thử lại",
+                            color = MapText
+                        )
+                    }
+                }
+
+            } else if (state.floodAreas.isEmpty()) {
+
+                Text(
+                    text = "Hiện chưa có dữ liệu vùng ngập.",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(20.dp)
@@ -546,7 +645,9 @@ private fun FloodLayerItem(
 
 @SuppressLint("MissingPermission")
 @Composable
-private fun FloodGoogleMap() {
+private fun FloodGoogleMap(
+    state: FloodMapUiState
+) {
 
     val context = LocalContext.current
 
@@ -891,6 +992,83 @@ private fun FloodGoogleMap() {
                 )
             ) {
 
+                if (state.isFloodLayerEnabled) {
+
+                    state.floodAreas
+                        .filter {
+                            it.geometry.type.equals(
+                                "polygon",
+                                ignoreCase = true
+                            ) &&
+                                    it.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    )
+                        }
+                        .forEach { floodArea ->
+
+                            val polygonPoints =
+                                floodArea.geometry.points.map { point ->
+                                    LatLng(
+                                        point.latitude,
+                                        point.longitude
+                                    )
+                                }
+
+                            if (polygonPoints.size >= 3) {
+
+                                val fillColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "critical" ->
+                                            Color(0x66B71C1C)
+
+                                        "high" ->
+                                            Color(0x66F44336)
+
+                                        "medium" ->
+                                            Color(0x66FFA000)
+
+                                        "low" ->
+                                            Color(0x664CAF50)
+
+                                        else ->
+                                            Color(0x665F6368)
+                                    }
+
+                                val strokeColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "critical" ->
+                                            Color(0xFFB71C1C)
+
+                                        "high" ->
+                                            Color(0xFFF44336)
+
+                                        "medium" ->
+                                            Color(0xFFFFA000)
+
+                                        "low" ->
+                                            Color(0xFF4CAF50)
+
+                                        else ->
+                                            Color(0xFF5F6368)
+                                    }
+
+                                Polygon(
+                                    points = polygonPoints,
+                                    fillColor = fillColor,
+                                    strokeColor = strokeColor,
+                                    strokeWidth = 4f
+                                )
+                            }
+                        }
+                }
+
                 userLocation?.let { location ->
 
                     Marker(
@@ -1232,18 +1410,46 @@ private fun FloodShelterCard(
     }
 }
 
-private fun Context.findActivity(): Activity? {
+// =====================================================
+// FLOOD SEVERITY LEGEND
+// =====================================================
 
+@Composable
+private fun FloodSeverityLegend(
+    color: Color,
+    text: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+
+        Spacer(
+            modifier = Modifier.width(5.dp)
+        )
+
+        Text(
+            text = text,
+            color = MapSecondary,
+            fontSize = 10.sp
+        )
+    }
+}
+
+private fun Context.findActivity(): Activity? {
     var currentContext = this
 
     while (currentContext is ContextWrapper) {
-
         if (currentContext is Activity) {
             return currentContext
         }
 
-        currentContext =
-            currentContext.baseContext
+        currentContext = currentContext.baseContext
     }
 
     return null

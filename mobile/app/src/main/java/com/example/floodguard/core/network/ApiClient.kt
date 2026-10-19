@@ -4,6 +4,7 @@ import com.example.floodguard.core.config.AppConfig
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.api.FloodAlertApi
+import com.example.floodguard.data.remote.api.FloodAreaApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -21,10 +22,8 @@ object ApiClient {
             level = HttpLoggingInterceptor.Level.NONE
         }
 
-
     // =================================================
     // PUBLIC CLIENT
-    // Dùng cho Login / Register
     // =================================================
 
     private val publicOkHttpClient =
@@ -35,7 +34,6 @@ object ApiClient {
             .addInterceptor(loggingInterceptor)
             .build()
 
-
     private val publicRetrofit =
         Retrofit.Builder()
             .baseUrl(AppConfig.BASE_URL)
@@ -44,7 +42,6 @@ object ApiClient {
                 GsonConverterFactory.create()
             )
             .build()
-
 
     // =================================================
     // AUTH API
@@ -64,6 +61,14 @@ object ApiClient {
             FloodAlertApi::class.java
         )
 
+    // =================================================
+    // FLOOD AREA API
+    // =================================================
+
+    val floodAreaApi: FloodAreaApi =
+        publicRetrofit.create(
+            FloodAreaApi::class.java
+        )
 
     // =================================================
     // AUTHENTICATED RETROFIT
