@@ -1,5 +1,9 @@
 package com.example.floodguard.ui.screens.map
 
+import android.Manifest
+import android.os.Looper
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,13 +48,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.filled.Navigation
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.location.LocationManager
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.app.ActivityCompat
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 
 // =====================================================
 // COLORS
@@ -417,7 +449,7 @@ private fun FloodGpsInfo() {
         ) {
 
             Text(
-                text = "Vị trí minh họa",
+                text = "Vị trí thiết bị",
                 color = MapText,
                 fontSize = 13.sp
             )
@@ -427,7 +459,7 @@ private fun FloodGpsInfo() {
             )
 
             Text(
-                text = "GPS thực tế sẽ được triển khai ở CCF-53",
+                text = "GPS được lấy khi người dùng cấp quyền vị trí",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -512,24 +544,322 @@ private fun FloodLayerItem(
 // GOOGLE MAP
 // =====================================================
 
+@SuppressLint("MissingPermission")
 @Composable
 private fun FloodGoogleMap() {
 
-    // Chỉ là vị trí camera ban đầu.
-    // GPS thật của người dùng sẽ làm ở CCF-53.
-    val daNang = LatLng(
+    val context = LocalContext.current
+
+    val permissionPrefs =
+        remember {
+            context.getSharedPreferences(
+                "location_permission_prefs",
+                Context.MODE_PRIVATE
+            )
+        }
+
+    var hasRequestedLocationPermissionBefore by remember {
+        mutableStateOf(
+            permissionPrefs.getBoolean(
+                "has_requested_location_permission",
+                false
+            )
+        )
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isScreenActive by remember {
+        mutableStateOf(false)
+    }
+
+    var isLocationServiceEnabled by remember {
+        mutableStateOf(
+            (context.getSystemService(LocationManager::class.java))
+                ?.let { locationManager ->
+                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                } == true
+        )
+    }
+
+    val defaultLocation = LatLng(
         16.0544,
         108.2022
     )
 
     val cameraPositionState =
         rememberCameraPositionState {
-            position =
-                CameraPosition.fromLatLngZoom(
-                    daNang,
-                    12f
-                )
+            position = CameraPosition.fromLatLngZoom(
+                defaultLocation,
+                12f
+            )
         }
+
+    var userLocation by remember {
+        mutableStateOf<LatLng?>(null)
+    }
+
+    var hasCenteredOnUserLocation by remember {
+        mutableStateOf(false)
+    }
+
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var permissionPermanentlyDenied by remember {
+        mutableStateOf(false)
+    }
+
+    var locationMessage by remember {
+        mutableStateOf("Đang kiểm tra quyền vị trí...")
+    }
+
+    val fusedLocationClient = remember {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            hasLocationPermission =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            val activity = context.findActivity()
+
+            permissionPermanentlyDenied =
+                !hasLocationPermission &&
+                        hasRequestedLocationPermissionBefore &&
+                        activity != null &&
+                        !ActivityCompat.shouldShowRequestPermissionRationale(
+                            activity,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        ) &&
+                        !ActivityCompat.shouldShowRequestPermissionRationale(
+                            activity,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+
+            if (!hasRequestedLocationPermissionBefore) {
+
+                hasRequestedLocationPermissionBefore = true
+
+                permissionPrefs.edit()
+                    .putBoolean(
+                        "has_requested_location_permission",
+                        true
+                    )
+                    .apply()
+            }
+
+            locationMessage =
+                when {
+
+                    hasLocationPermission -> {
+                        "Đang lấy vị trí hiện tại..."
+                    }
+
+                    permissionPermanentlyDenied -> {
+                        "Quyền vị trí đã bị chặn. Vui lòng mở Cài đặt để cấp lại quyền."
+                    }
+
+                    else -> {
+                        "Chưa được cấp quyền vị trí"
+                    }
+                }
+        }
+
+    DisposableEffect(lifecycleOwner) {
+
+        val observer =
+            LifecycleEventObserver { _, event ->
+
+                when (event) {
+
+                    Lifecycle.Event.ON_START -> {
+                        isScreenActive = true
+                    }
+
+                    Lifecycle.Event.ON_RESUME -> {
+
+                        hasLocationPermission =
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.ACCESS_FINE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED ||
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    ) == PackageManager.PERMISSION_GRANTED
+
+                        val locationManager =
+                            context.getSystemService(LocationManager::class.java)
+
+                        isLocationServiceEnabled =
+                            locationManager?.let {
+                                it.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                                        it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                            } == true
+
+                        when {
+                            !hasLocationPermission -> {
+                                locationMessage =
+                                    "Chưa được cấp quyền vị trí"
+                            }
+
+                            !isLocationServiceEnabled -> {
+                                locationMessage =
+                                    "Dịch vụ vị trí đang tắt"
+                            }
+                        }
+                    }
+
+                    Lifecycle.Event.ON_STOP -> {
+                        isScreenActive = false
+                    }
+
+                    else -> Unit
+                }
+            }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+
+        if (!hasLocationPermission) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    DisposableEffect(
+        hasLocationPermission,
+        isScreenActive,
+        isLocationServiceEnabled
+    ) {
+
+        if (
+            !hasLocationPermission ||
+            !isScreenActive ||
+            !isLocationServiceEnabled
+        ) {
+
+            if (!hasLocationPermission) {
+                locationMessage =
+                    "Chưa được cấp quyền vị trí"
+            } else if (!isLocationServiceEnabled) {
+                locationMessage =
+                    "Dịch vụ vị trí đang tắt"
+            }
+
+            onDispose { }
+
+        } else {
+
+            locationMessage =
+                "Đang theo dõi vị trí hiện tại..."
+
+            val locationRequest =
+                LocationRequest.Builder(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    5000L
+                )
+                    .setMinUpdateIntervalMillis(
+                        2000L
+                    )
+                    .build()
+
+            val locationCallback =
+                object : LocationCallback() {
+
+                    override fun onLocationResult(
+                        result: LocationResult
+                    ) {
+
+                        val location =
+                            result.lastLocation
+
+                        if (location == null) {
+                            locationMessage =
+                                "Chưa có dữ liệu vị trí"
+                            return
+                        }
+
+                        userLocation =
+                            LatLng(
+                                location.latitude,
+                                location.longitude
+                            )
+
+                        locationMessage =
+                            "Đã cập nhật vị trí"
+                    }
+                }
+
+            fusedLocationClient
+                .requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+                .addOnFailureListener { error ->
+
+                    locationMessage =
+                        error.message
+                            ?: "Không thể lấy vị trí hiện tại"
+                }
+
+            onDispose {
+
+                fusedLocationClient
+                    .removeLocationUpdates(
+                        locationCallback
+                    )
+            }
+        }
+    }
+
+    LaunchedEffect(userLocation) {
+
+        val location = userLocation
+
+        if (
+            location != null &&
+            !hasCenteredOnUserLocation
+        ) {
+
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    location,
+                    16f
+                )
+            )
+
+            hasCenteredOnUserLocation = true
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -549,10 +879,105 @@ private fun FloodGoogleMap() {
         )
     ) {
 
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState
-        )
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                properties = MapProperties(
+                    isMyLocationEnabled = hasLocationPermission
+                )
+            ) {
+
+                userLocation?.let { location ->
+
+                    Marker(
+                        state = MarkerState(
+                            position = location
+                        ),
+                        title = "Vị trí của bạn"
+                    )
+                }
+            }
+
+            if (
+                !hasLocationPermission ||
+                !isLocationServiceEnabled ||
+                userLocation == null
+            ) {
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
+                        .background(
+                            Color.Black.copy(alpha = 0.70f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = locationMessage,
+                        color = Color.White,
+                        fontSize = 11.sp
+                    )
+
+                    if (!hasLocationPermission) {
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+
+                                if (permissionPermanentlyDenied) {
+
+                                    val intent =
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.fromParts(
+                                                "package",
+                                                context.packageName,
+                                                null
+                                            )
+                                        )
+
+                                    context.startActivity(intent)
+
+                                } else {
+
+                                    permissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                }
+                            }
+                        ) {
+
+                            Text(
+                                text =
+                                    if (permissionPermanentlyDenied) {
+                                        "Mở Cài đặt"
+                                    } else {
+                                        "Cấp quyền vị trí"
+                                    },
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -805,4 +1230,21 @@ private fun FloodShelterCard(
             }
         }
     }
+}
+
+private fun Context.findActivity(): Activity? {
+
+    var currentContext = this
+
+    while (currentContext is ContextWrapper) {
+
+        if (currentContext is Activity) {
+            return currentContext
+        }
+
+        currentContext =
+            currentContext.baseContext
+    }
+
+    return null
 }
