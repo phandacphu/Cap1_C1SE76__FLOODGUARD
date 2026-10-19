@@ -2,10 +2,15 @@ package com.example.floodguard.ui.screens.warning
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.floodguard.data.repository.FloodAlertRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 data class WarningDetailUiState(
     val isLoading: Boolean = false,
     val warningDetail: WarningDetail? = null,
@@ -13,98 +18,216 @@ data class WarningDetailUiState(
 )
 
 class WarningDetailViewModel(
-    savedStateHandle: SavedStateHandle
+    savedStateHandle: SavedStateHandle,
+    private val floodAlertRepository: FloodAlertRepository
 ) : ViewModel() {
 
     private val warningId: String =
-        savedStateHandle["warningId"] ?: "warning_1"
+        savedStateHandle["warningId"] ?: ""
 
-    private val _uiState = MutableStateFlow(
-        WarningDetailUiState(
-            warningDetail = createFakeWarningDetail(warningId)
+    private val _uiState =
+        MutableStateFlow(
+            WarningDetailUiState(
+                isLoading = true
+            )
         )
-    )
 
     val uiState: StateFlow<WarningDetailUiState> =
         _uiState.asStateFlow()
+
+    init {
+        loadWarningDetail()
+    }
+
+    fun loadWarningDetail() {
+
+        viewModelScope.launch {
+
+            _uiState.value =
+                WarningDetailUiState(
+                    isLoading = true
+                )
+
+            val result =
+                floodAlertRepository.getFloodAlerts()
+
+            result
+                .onSuccess { floodAlerts ->
+
+                    val alert =
+                        floodAlerts.firstOrNull {
+                            it.id == warningId
+                        }
+
+                    if (alert == null) {
+
+                        _uiState.value =
+                            WarningDetailUiState(
+                                isLoading = false,
+                                errorMessage =
+                                    "Không tìm thấy cảnh báo"
+                            )
+
+                        return@onSuccess
+                    }
+
+                    val detail =
+                        WarningDetail(
+                            id = alert.id,
+
+                            systemStatus =
+                                when {
+
+                                    !alert.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    ) -> {
+                                        "CẢNH BÁO ĐÃ TẮT"
+                                    }
+
+                                    isAlertEffectiveNow(
+                                        status = alert.status,
+                                        startAt = alert.startAt,
+                                        endAt = alert.endAt
+                                    ) -> {
+                                        "CẢNH BÁO ĐANG CÓ HIỆU LỰC"
+                                    }
+
+                                    else -> {
+                                        "CẢNH BÁO ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
+                                    }
+                                },
+
+                            screenTitle = "Chi tiết cảnh báo",
+
+                            levelText =
+                                alert.severity.uppercase(),
+
+                            startTime =
+                                formatWarningDateTime(
+                                    alert.startAt
+                                ),
+
+                            endTime =
+                                alert.endAt?.let {
+                                    formatWarningDateTime(it)
+                                },
+
+                            bulletinNo =
+                                alert.id,
+
+                            headline =
+                                alert.title,
+
+                            locationSummary =
+                                "Mã khu vực: ${alert.areaId}",
+
+                            description =
+                                alert.content,
+
+                            keyAreas = "",
+                            basinInfo = "",
+
+                            peakWindow = "",
+                            peakWindowNote = "",
+
+                            rainfall6h = "",
+                            rainfallNote = "",
+
+                            currentWaterLevel = "",
+                            currentWaterLevelNote = "",
+
+                            spillDischarge = "",
+                            spillDischargeNote = "",
+
+                            floodDepthForecast = "",
+                            floodDepthForecastNote = "",
+
+                            riskyRoads = "",
+                            floodedResidentialAreas = "",
+                            riverbankLandslideRisk = "",
+
+                            safetyGuides =
+                                emptyList(),
+
+                            emergencyNote = "",
+
+                            sourceInfo =
+                                "Dữ liệu từ FloodGuard Backend API"
+                        )
+
+                    _uiState.value =
+                        WarningDetailUiState(
+                            isLoading = false,
+                            warningDetail = detail,
+                            errorMessage = null
+                        )
+                }
+                .onFailure { error ->
+
+                    _uiState.value =
+                        WarningDetailUiState(
+                            isLoading = false,
+                            errorMessage =
+                                error.message
+                                    ?: "Không thể tải chi tiết cảnh báo"
+                        )
+                }
+        }
+    }
 }
 
-private fun createFakeWarningDetail(
-    warningId: String
-): WarningDetail {
-    return WarningDetail(
-        id = warningId,
+private fun formatWarningDateTime(
+    isoTime: String
+): String {
 
-        systemStatus = "HỆ THỐNG SẴN SÀNG • TRỰC TUYẾN",
-        screenTitle = "Chi tiết cảnh báo",
+    return runCatching {
 
-        levelText = "BÁO ĐỘNG CẤP 3 • NGUY CẤP",
+        Instant
+            .parse(isoTime)
+            .atZone(
+                ZoneId.systemDefault()
+            )
+            .format(
+                DateTimeFormatter
+                    .ofPattern("dd/MM/yyyy HH:mm")
+            )
 
-        updatedTime = "17:30",
-        updatedAgo = "Cập nhật 15p trước",
+    }.getOrDefault(isoTime)
+}
 
-        bulletinNo = "VN-DN-0924-FL3",
+private fun isAlertEffectiveNow(
+    status: String,
+    startAt: String,
+    endAt: String?
+): Boolean {
 
-        headline =
-            "LŨ QUÉT & NGẬP LỤT ĐẶC BIỆT LỚN HẠ DU SÔNG VU GIA - THU BỒN",
+    if (!status.equals("active", ignoreCase = true)) {
+        return false
+    }
 
-        locationSummary =
-            "Huyện Hòa Vang (Đà Nẵng), Đại Lộc & Điện Bàn (Quảng Nam)",
+    val now = Instant.now()
 
-        description =
-            "Mực nước sông dâng rất nhanh do mưa lớn kết hợp hồ xả lũ. " +
-                    "Nguy cơ ngập sâu diện rộng từ 1.2m - 2.5m tại vùng trũng thấp. " +
-                    "Yêu cầu khẩn trương kích hoạt phương án ứng phó.",
+    val start =
+        runCatching {
+            Instant.parse(startAt)
+        }.getOrNull()
+            ?: return false
 
-        keyAreas =
-            "Xã Hòa Khương, Hòa Tiến (Hòa Vang); " +
-                    "TT. Ái Nghĩa, Đại Cường (Đại Lộc); " +
-                    "Điện Hồng, Điện Tiến (Điện Bàn)",
+    val end =
+        endAt
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                runCatching {
+                    Instant.parse(it)
+                }.getOrNull()
+            }
 
-        basinInfo =
-            "Sông Vu Gia - Thu Bồn (Trạm Ái Nghĩa & Cẩm Lệ)",
+    val hasStarted =
+        !now.isBefore(start)
 
-        peakWindow = "18:30 - 23:00",
+    val hasNotEnded =
+        end == null || !now.isAfter(end)
 
-        peakWindowNote =
-            "Duy trì cao 12-18h tiếp theo",
-
-        rainfall6h = "185.4 mm",
-        rainfallNote = "Thượng lưu mưa rất to",
-
-        currentWaterLevel = "9.85 m",
-        currentWaterLevelNote = "+0.85m trên BĐ3",
-
-        spillDischarge = "1,850 m³/s",
-        spillDischargeNote = "Sông Bung 4 & hồ chứa thượng nguồn",
-
-        floodDepthForecast = "1.2 - 2.5 m",
-        floodDepthForecastNote = "Vùng hạ lưu, bãi bồi và vùng trũng thấp",
-
-        riskyRoads =
-            "Quốc lộ 14B (Đại Cường), ĐT 605 " +
-                    "(cầu Cẩm Lệ đi Hòa Tiến), ngập > 0.8m.",
-
-        floodedResidentialAreas =
-            "Quảng Lăng, Phú Hòa, Lạc Thành Nam, " +
-                    "bãi bồi ven sông Yên và Quá Giáng.",
-
-        riverbankLandslideRisk =
-            "Sạt lở taluy âm ven sông Vu Gia đoạn Đại Lộc " +
-                    "do dòng chảy xiết.",
-
-        safetyGuides = listOf(
-            "Kê cao tài sản, ngắt ngay nguồn điện tầng trệt.",
-            "Di chuyển người già, trẻ nhỏ đến điểm tránh trú an toàn trước 19h00.",
-            "Chuẩn bị nước uống, lương khô, sạc đầy pin và đèn pin.",
-            "Tuyệt đối không lội qua dòng nước xiết, ngầm tràn."
-        ),
-
-        emergencyNote =
-            "Nếu bị cô lập nguy hiểm: Bấm \"GỬI SOS\" hoặc gọi 114 / 112.",
-
-        sourceInfo =
-            "Nguồn: TT Dự báo KTTV Quốc gia & Cảm biến IoT Vu Gia - Thu Bồn " +
-                    "• Cập nhật mỗi 10 phút • Hotline: 114 / 112"
-    )
+    return hasStarted && hasNotEnded
 }
