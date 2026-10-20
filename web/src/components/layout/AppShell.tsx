@@ -9,6 +9,8 @@ interface AppShellProps {
   brandTag?: string;
   roleLabel: string;
   accent: "water" | "safe";
+  /** Count bubbles in the sidebar, keyed by route. */
+  badges?: Record<string, number>;
   /** Top bar content, rendered to the right of the mobile menu button. */
   header: ReactNode;
   children: ReactNode;
@@ -21,6 +23,7 @@ export function AppShell({
   brandTag,
   roleLabel,
   accent,
+  badges,
   header,
   children,
 }: AppShellProps) {
@@ -33,6 +36,7 @@ export function AppShell({
       brandTag={brandTag}
       roleLabel={roleLabel}
       accent={accent}
+      badges={badges}
       onNavigate={() => setDrawerOpen(false)}
     />
   );

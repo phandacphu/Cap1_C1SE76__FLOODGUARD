@@ -28,7 +28,7 @@ export const ADMIN_NAV: NavItem[] = [
 export const RESCUE_NAV: NavItem[] = [
   { label: "Tổng quan cứu hộ", icon: "dashboard", to: "/rescue/dashboard" },
   { label: "Bản đồ trực quan", icon: "map" },
-  { label: "Yêu cầu SOS", icon: "sos" },
+  { label: "Yêu cầu SOS", icon: "sos", to: "/rescue/sos" },
   { label: "Cảnh báo lũ", icon: "alert" },
   { label: "Địa điểm an toàn", icon: "shield" },
   { label: "Lịch sử cứu hộ", icon: "history" },
