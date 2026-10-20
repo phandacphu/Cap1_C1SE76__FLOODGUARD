@@ -1,11 +1,18 @@
 package com.example.floodguard.ui.screens.map
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.FloodAlertRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-class FloodMapViewModel : ViewModel() {
+class FloodMapViewModel(
+    private val floodAreaRepository: FloodAreaRepository,
+    private val floodAlertRepository: FloodAlertRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         FloodMapUiState()
@@ -13,6 +20,83 @@ class FloodMapViewModel : ViewModel() {
 
     val uiState: StateFlow<FloodMapUiState> =
         _uiState.asStateFlow()
+
+    init {
+        loadFloodAreas()
+        loadFloodAlerts()
+    }
+
+    fun loadFloodAreas() {
+
+        viewModelScope.launch {
+
+            _uiState.value =
+                _uiState.value.copy(
+                    isLoadingFloodAreas = true,
+                    floodAreasError = null
+                )
+
+            val result =
+                floodAreaRepository.getFloodAreas()
+
+            result
+                .onSuccess { floodAreas ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            floodAreas = floodAreas,
+                            isLoadingFloodAreas = false,
+                            floodAreasError = null
+                        )
+                }
+                .onFailure { error ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            isLoadingFloodAreas = false,
+                            floodAreasError =
+                                error.message
+                                    ?: "Không thể tải dữ liệu vùng ngập"
+                        )
+                }
+        }
+    }
+
+    fun loadFloodAlerts() {
+
+        viewModelScope.launch {
+
+            _uiState.value =
+                _uiState.value.copy(
+                    isLoadingFloodAlerts = true,
+                    floodAlertsError = null
+                )
+
+            val result =
+                floodAlertRepository.getActiveFloodAlerts()
+
+            result
+                .onSuccess { floodAlerts ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            floodAlerts = floodAlerts,
+                            isLoadingFloodAlerts = false,
+                            floodAlertsError = null
+                        )
+                }
+                .onFailure { error ->
+
+                    _uiState.value =
+                        _uiState.value.copy(
+                            isLoadingFloodAlerts = false,
+                            floodAlertsError =
+                                error.message
+                                    ?: "Không thể tải dữ liệu cảnh báo"
+                        )
+                }
+        }
+    }
 
     fun toggleFloodLayer() {
         _uiState.value =
@@ -43,6 +127,14 @@ class FloodMapViewModel : ViewModel() {
             _uiState.value.copy(
                 isSafeRouteLayerEnabled =
                     !_uiState.value.isSafeRouteLayerEnabled
+            )
+    }
+    fun selectFloodAlert(
+        alertId: String?
+    ) {
+        _uiState.value =
+            _uiState.value.copy(
+                selectedFloodAlertId = alertId
             )
     }
 }

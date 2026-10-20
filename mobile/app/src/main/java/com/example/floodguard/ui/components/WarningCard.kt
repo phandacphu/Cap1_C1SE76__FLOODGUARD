@@ -145,7 +145,7 @@ fun WarningCard(
                     }
 
                     Text(
-                        text = warning.startTime,
+                        text = "Bắt đầu: ${formatWarningTime(warning.startTime)}",
 
                         color =
                             Color(0xFF94A3B8),
@@ -338,16 +338,23 @@ fun WarningCard(
                     Text(
                         text =
                             warning.footerText
-                                ?: if (
-                                    warning.isActive
-                                ) {
-                                    "ĐANG HOẠT ĐỘNG"
-                                } else {
-                                    "ĐÃ KẾT THÚC"
+                                ?: when {
+
+                                    !warning.isEnabled -> {
+                                        "ĐÃ TẮT"
+                                    }
+
+                                    warning.isEffectiveNow -> {
+                                        "ĐANG CÓ HIỆU LỰC"
+                                    }
+
+                                    else -> {
+                                        "ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
+                                    }
                                 },
 
                         color =
-                            if (warning.isActive) {
+                            if (warning.isEffectiveNow) {
                                 severityInfo.color
                             } else {
                                 Color(0xFF64748B)
@@ -549,3 +556,26 @@ private fun getSeverityInfo(
         }
     }
 }
+
+    private fun formatWarningTime(
+        isoTime: String?
+    ): String {
+
+        if (isoTime.isNullOrBlank()) {
+            return "Không xác định"
+        }
+
+        return runCatching {
+
+            java.time.Instant
+                .parse(isoTime)
+                .atZone(
+                    java.time.ZoneId.systemDefault()
+                )
+                .format(
+                    java.time.format.DateTimeFormatter
+                        .ofPattern("dd/MM/yyyy HH:mm")
+                )
+
+        }.getOrDefault(isoTime)
+    }
