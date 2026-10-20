@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { RescueLayout } from "../../components/layout/RescueLayout";
 import { Icon } from "../../components/ui/Icon";
 import { useAuth } from "../../context/AuthContext";
@@ -202,7 +203,14 @@ export function RescueSosList() {
                         key={item.id}
                         className={`${hot ? "bg-sos/10" : ""} ${done ? "opacity-60" : ""}`}
                       >
-                        <td className="px-4 py-4 font-mono font-bold text-water">{sosCode(item.id)}</td>
+                        <td className="px-4 py-4 font-mono font-bold">
+                          <Link
+                            to={`/rescue/sos/${item.id}`}
+                            className="text-water underline-offset-2 hover:underline"
+                          >
+                            {sosCode(item.id)}
+                          </Link>
+                        </td>
                         <td className="px-4 py-4">
                           <p className="font-medium">Cư dân</p>
                           <p className="font-mono text-[11px] text-muted">

@@ -8,6 +8,7 @@ import { Unauthorized } from './pages/Unauthorized';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
+import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 
 /** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
@@ -28,6 +29,7 @@ export const App: React.FC = () => {
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
             <Route path="/rescue/dashboard" element={<RescueDashboard />} />
             <Route path="/rescue/sos" element={<RescueSosList />} />
+            <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
           </Route>
 
           {/* Only Admin may open the admin screens */}

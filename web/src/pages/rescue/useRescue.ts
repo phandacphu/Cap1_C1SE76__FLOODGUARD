@@ -108,40 +108,49 @@ export function useRescueActions(userId: string | undefined, refresh: () => void
     [userId],
   );
 
+  /** Resolves true when the server accepted the change. */
   const accept = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       setBusyId(id);
       setError(null);
+      let ok = false;
       try {
         await rescueService.acceptRequest(id);
         remember(id);
+        ok = true;
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Không thể tiếp nhận ca cứu hộ.");
       } finally {
         setBusyId(null);
         refresh();
       }
+      return ok;
     },
     [refresh, remember],
   );
 
+  /** `note` is optional; a default note is written to the history when it is empty. */
   const advance = useCallback(
-    async (id: string, next: "in_progress" | "assisted") => {
+    async (id: string, next: "in_progress" | "assisted", note?: string): Promise<boolean> => {
       setBusyId(id);
       setError(null);
+      let ok = false;
       try {
-        const note =
-          next === "in_progress"
+        const text =
+          note?.trim() ||
+          (next === "in_progress"
             ? "Đội cứu hộ đang có mặt tại hiện trường"
-            : "Đã hoàn tất hỗ trợ an toàn";
-        await rescueService.updateStatus(id, next, note);
+            : "Đã hoàn tất hỗ trợ an toàn");
+        await rescueService.updateStatus(id, next, text);
         remember(id);
+        ok = true;
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Cập nhật trạng thái thất bại.");
       } finally {
         setBusyId(null);
         refresh();
       }
+      return ok;
     },
     [refresh, remember],
   );
