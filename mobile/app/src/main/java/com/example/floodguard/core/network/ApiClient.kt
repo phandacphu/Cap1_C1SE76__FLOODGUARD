@@ -3,6 +3,8 @@ package com.example.floodguard.core.network
 import com.example.floodguard.core.config.AppConfig
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
+import com.example.floodguard.data.remote.api.FloodAlertApi
+import com.example.floodguard.data.remote.api.FloodAreaApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -11,20 +13,10 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    // =================================================
-    // LOGGING
-    // =================================================
-
     private val loggingInterceptor =
         HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
         }
-
-
-    // =================================================
-    // PUBLIC CLIENT
-    // Dùng cho Login / Register
-    // =================================================
 
     private val publicOkHttpClient =
         OkHttpClient.Builder()
@@ -34,40 +26,27 @@ object ApiClient {
             .addInterceptor(loggingInterceptor)
             .build()
 
-
     private val publicRetrofit =
         Retrofit.Builder()
             .baseUrl(AppConfig.BASE_URL)
             .client(publicOkHttpClient)
-            .addConverterFactory(
-                GsonConverterFactory.create()
-            )
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
 
-
-    // =================================================
-    // AUTH API
-    // =================================================
-
     val authApi: AuthApi =
-        publicRetrofit.create(
-            AuthApi::class.java
-        )
+        publicRetrofit.create(AuthApi::class.java)
 
+    val floodAlertApi: FloodAlertApi =
+        publicRetrofit.create(FloodAlertApi::class.java)
 
-    // =================================================
-    // AUTHENTICATED RETROFIT
-    // Dùng cho API cần Bearer Token
-    // =================================================
+    val floodAreaApi: FloodAreaApi =
+        publicRetrofit.create(FloodAreaApi::class.java)
 
     fun createAuthenticatedRetrofit(
         sessionManager: SessionManager
     ): Retrofit {
-
         val authInterceptor =
-            AuthInterceptor(
-                sessionManager = sessionManager
-            )
+            AuthInterceptor(sessionManager = sessionManager)
 
         val authenticatedClient =
             OkHttpClient.Builder()
@@ -81,9 +60,7 @@ object ApiClient {
         return Retrofit.Builder()
             .baseUrl(AppConfig.BASE_URL)
             .client(authenticatedClient)
-            .addConverterFactory(
-                GsonConverterFactory.create()
-            )
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
 }

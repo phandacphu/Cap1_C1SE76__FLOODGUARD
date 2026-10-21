@@ -8,7 +8,8 @@ data class Warning(
     val area: String,
     val startTime: String,
     val endTime: String? = null,
-    val isActive: Boolean = true,
+    val isEnabled: Boolean = true,
+    val isEffectiveNow: Boolean = true,
 
     // Chỉ dùng để mock giao diện trong giai đoạn phát triển.
     // Không xem đây là cấu trúc bắt buộc của Warning API.

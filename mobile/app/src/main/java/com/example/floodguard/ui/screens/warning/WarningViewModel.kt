@@ -1,10 +1,14 @@
 package com.example.floodguard.ui.screens.warning
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.domain.model.Warning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.time.Instant
 
 sealed class WarningUiState {
 
@@ -21,7 +25,9 @@ sealed class WarningUiState {
     ) : WarningUiState()
 }
 
-class WarningViewModel : ViewModel() {
+class WarningViewModel(
+    private val floodAlertRepository: FloodAlertRepository
+) : ViewModel() {
 
     private val _uiState =
         MutableStateFlow<WarningUiState>(
@@ -37,103 +43,104 @@ class WarningViewModel : ViewModel() {
 
     fun loadWarnings() {
 
-        // Mock data phục vụ phát triển giao diện.
-        // Sau này thay bằng WarningRepository.
+        viewModelScope.launch {
 
-        val mockWarnings = listOf(
+            _uiState.value =
+                WarningUiState.Loading
 
-            Warning(
-                id = "W001",
-                title = "Lũ quét & Ngập lụt sâu diện rộng hạ lưu",
-                content = "Nguy cơ ngập sâu tại một số khu vực thấp trũng. Người dân cần chủ động theo dõi cảnh báo và hướng dẫn sơ tán.",
-                severity = "high",
-                area = "Hòa Khương, Hòa Tiến - Hòa Vang",
-                startTime = "17:30",
-                endTime = "19:00",
-                isActive = true,
+            val result =
+                floodAlertRepository.getFloodAlerts()
 
-                metricLeftLabel = "MỰC NƯỚC",
-                metricLeftValue = "9.85 m",
+            result
+                .onSuccess { floodAlerts ->
 
-                metricRightLabel = "LƯU LƯỢNG XẢ",
-                metricRightValue = "1,250 m³/s",
+                    val warnings =
+                        floodAlerts.map { alert ->
 
-                footerText = "ƯU TIÊN CỨU NẠN"
-            ),
+                            Warning(
+                                id = alert.id,
+                                title = alert.title,
+                                content = alert.content,
+                                severity = alert.severity,
+                                area = "Mã khu vực: ${alert.areaId}",
+                                startTime = alert.startAt,
+                                endTime = alert.endAt,
+                                isEnabled =
+                                    alert.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    ),
 
-            Warning(
-                id = "W002",
-                title = "Ngập úng đô thị & Tắc nghẽn cục bộ",
-                content = "Một số tuyến đường thấp trũng có nguy cơ xảy ra ngập cục bộ. Hạn chế di chuyển qua khu vực có nước dâng.",
-                severity = "medium",
-                area = "Cẩm Lệ & Liên Chiểu",
-                startTime = "16:45",
-                endTime = null,
-                isActive = true,
+                                isEffectiveNow =
+                                    isAlertEffectiveNow(
+                                        status = alert.status,
+                                        startAt = alert.startAt,
+                                        endAt = alert.endAt
+                                    )
+                            )
+                        }
 
-                metricLeftLabel = "MƯA 3H",
-                metricLeftValue = "60 mm",
+                    _uiState.value =
+                        if (warnings.isEmpty()) {
 
-                metricRightLabel = "NGẬP ƯỚC TÍNH",
-                metricRightValue = "0.3 - 0.6 m",
+                            WarningUiState.Empty
 
-                footerText = "NGẬP ĐIỂM GIAO THÔNG"
-            ),
+                        } else {
 
-            Warning(
-                id = "W003",
-                title = "Theo dõi điều tiết lưu vực",
-                content = "Người dân khu vực hạ lưu cần tiếp tục theo dõi thông tin cảnh báo và chủ động phương án an toàn.",
-                severity = "low",
-                area = "Hạ du lưu vực Vu Gia",
-                startTime = "15:00",
-                endTime = null,
-                isActive = true,
+                            WarningUiState.Success(
+                                warnings = warnings
+                            )
+                        }
+                }
+                .onFailure { error ->
 
-                metricLeftLabel = "THÔNG SỐ MOCK",
-                metricLeftValue = "600",
-
-                metricRightLabel = "MỨC THAY ĐỔI",
-                metricRightValue = "+0.3 - 0.5",
-
-                footerText = "THEO DÕI CHỦ ĐỘNG"
-            )
-        )
-
-        _uiState.value =
-            if (mockWarnings.isEmpty()) {
-
-                WarningUiState.Empty
-
-            } else {
-
-                WarningUiState.Success(
-                    warnings = mockWarnings
-                )
-            }
+                    _uiState.value =
+                        WarningUiState.Error(
+                            message =
+                                error.message
+                                    ?: "Không thể tải danh sách cảnh báo"
+                        )
+                }
+        }
     }
 
     fun retry() {
-
-        _uiState.value =
-            WarningUiState.Loading
-
         loadWarnings()
     }
+}
 
-    // Chỉ dùng khi test giao diện.
-    fun showEmptyState() {
+private fun isAlertEffectiveNow(
+    status: String,
+    startAt: String,
+    endAt: String?
+): Boolean {
 
-        _uiState.value =
-            WarningUiState.Empty
+    if (!status.equals("active", ignoreCase = true)) {
+        return false
     }
 
-    // Chỉ dùng khi test giao diện.
-    fun showErrorState() {
+    val now = Instant.now()
 
-        _uiState.value =
-            WarningUiState.Error(
-                message = "Không thể tải danh sách cảnh báo."
-            )
-    }
+    val start =
+        runCatching {
+            Instant.parse(startAt)
+        }.getOrNull()
+            ?: return false
+
+    val end =
+        endAt
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                runCatching {
+                    Instant.parse(it)
+                }.getOrNull()
+            }
+
+    val hasStarted =
+        !now.isBefore(start)
+
+    val hasNotEnded =
+        end == null || !now.isAfter(end)
+
+    return hasStarted && hasNotEnded
 }

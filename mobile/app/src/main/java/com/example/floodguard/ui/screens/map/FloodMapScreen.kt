@@ -1,5 +1,16 @@
 package com.example.floodguard.ui.screens.map
 
+import android.Manifest
+import android.os.Looper
+import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.location.LocationManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,13 +55,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.filled.Navigation
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.app.ActivityCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.maps.android.compose.Polygon
 
 // =====================================================
 // COLORS
@@ -98,7 +131,10 @@ fun FloodMapRoute(
         onSafeRouteClick = onSafeRouteClick,
         onShelterDetailClick = onShelterDetailClick,
         onSosClick = onSosClick,
-        onBottomNavigate = onBottomNavigate
+        onBottomNavigate = onBottomNavigate,
+        onRetryFloodAreas = viewModel::loadFloodAreas,
+        onSelectFloodAlert = viewModel::selectFloodAlert,
+        onRetryFloodAlerts = viewModel::loadFloodAlerts,
     )
 }
 
@@ -119,7 +155,10 @@ fun FloodMapScreen(
     onSafeRouteClick: () -> Unit,
     onShelterDetailClick: () -> Unit,
     onSosClick: () -> Unit,
-    onBottomNavigate: (String) -> Unit
+    onBottomNavigate: (String) -> Unit,
+    onRetryFloodAreas: () -> Unit,
+    onSelectFloodAlert: (String?) -> Unit,
+    onRetryFloodAlerts: () -> Unit,
 ) {
 
     Scaffold(
@@ -170,7 +209,166 @@ fun FloodMapScreen(
             )
             */
 
-            FloodGoogleMap()
+            FloodGoogleMap(
+                state = state,
+                onSelectFloodAlert = onSelectFloodAlert
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = 18.dp,
+                        vertical = 8.dp
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                FloodSeverityLegend(
+                    color = Color(0xFF4CAF50),
+                    text = "Thấp"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFFFA000),
+                    text = "Trung bình"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFB71C1C),
+                    text = "Critical"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0xFFF44336),
+                    text = "Cao"
+                )
+            }
+
+            if (state.isLoadingFloodAreas) {
+
+                Text(
+                    text = "Đang tải dữ liệu vùng ngập...",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+
+            } else if (state.floodAreasError != null) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = "Không thể tải vùng ngập: ${state.floodAreasError}",
+                        color = Color(0xFFE57373),
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    OutlinedButton(
+                        onClick = onRetryFloodAreas
+                    ) {
+
+                        Text(
+                            text = "Thử lại",
+                            color = MapText
+                        )
+                    }
+                }
+
+            } else if (state.floodAreas.isEmpty()) {
+
+                Text(
+                    text = "Hiện chưa có dữ liệu vùng ngập.",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+            }
+
+            if (state.isLoadingFloodAlerts) {
+
+                Text(
+                    text = "Đang tải cảnh báo đang hoạt động...",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                )
+
+            } else if (state.floodAlertsError != null) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = "Không thể tải cảnh báo: ${state.floodAlertsError}",
+                        color = Color(0xFFE57373),
+                        fontSize = 11.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    OutlinedButton(
+                        onClick = onRetryFloodAlerts
+                    ) {
+
+                        Text(
+                            text = "Thử lại",
+                            color = MapText
+                        )
+                    }
+                }
+            }
+
+            val selectedFloodAlert =
+                state.floodAlerts.firstOrNull { alert ->
+                    alert.id == state.selectedFloodAlertId
+                }
+
+            selectedFloodAlert?.let { alert ->
+
+                FloodWarningInfoCard(
+                    title = alert.title,
+                    content = alert.content,
+                    severity = alert.severity
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(20.dp)
@@ -417,7 +615,7 @@ private fun FloodGpsInfo() {
         ) {
 
             Text(
-                text = "Vị trí minh họa",
+                text = "Vị trí thiết bị",
                 color = MapText,
                 fontSize = 13.sp
             )
@@ -427,7 +625,7 @@ private fun FloodGpsInfo() {
             )
 
             Text(
-                text = "GPS thực tế sẽ được triển khai ở CCF-53",
+                text = "GPS được lấy khi người dùng cấp quyền vị trí",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -512,24 +710,401 @@ private fun FloodLayerItem(
 // GOOGLE MAP
 // =====================================================
 
+@SuppressLint("MissingPermission")
 @Composable
-private fun FloodGoogleMap() {
+private fun FloodGoogleMap(
+    state: FloodMapUiState,
+    onSelectFloodAlert: (String?) -> Unit
+) {
 
-    // Chỉ là vị trí camera ban đầu.
-    // GPS thật của người dùng sẽ làm ở CCF-53.
-    val daNang = LatLng(
+    val context = LocalContext.current
+
+    val permissionPrefs =
+        remember {
+            context.getSharedPreferences(
+                "location_permission_prefs",
+                Context.MODE_PRIVATE
+            )
+        }
+
+    var hasRequestedLocationPermissionBefore by remember {
+        mutableStateOf(
+            permissionPrefs.getBoolean(
+                "has_requested_location_permission",
+                false
+            )
+        )
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isScreenActive by remember {
+        mutableStateOf(false)
+    }
+
+    var isLocationServiceEnabled by remember {
+        mutableStateOf(
+            (context.getSystemService(LocationManager::class.java))
+                ?.let { locationManager ->
+                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                } == true
+        )
+    }
+
+    val defaultLocation = LatLng(
         16.0544,
         108.2022
     )
 
     val cameraPositionState =
         rememberCameraPositionState {
-            position =
-                CameraPosition.fromLatLngZoom(
-                    daNang,
-                    12f
-                )
+            position = CameraPosition.fromLatLngZoom(
+                defaultLocation,
+                12f
+            )
         }
+
+    var userLocation by remember {
+        mutableStateOf<LatLng?>(null)
+    }
+
+    var hasCenteredOnUserLocation by remember {
+        mutableStateOf(false)
+    }
+
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var permissionPermanentlyDenied by remember {
+        mutableStateOf(false)
+    }
+
+    var locationMessage by remember {
+        mutableStateOf("Đang kiểm tra quyền vị trí...")
+    }
+
+    val fusedLocationClient = remember {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            hasLocationPermission =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            val activity = context.findActivity()
+
+            permissionPermanentlyDenied =
+                !hasLocationPermission &&
+                        hasRequestedLocationPermissionBefore &&
+                        activity != null &&
+                        !ActivityCompat.shouldShowRequestPermissionRationale(
+                            activity,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        ) &&
+                        !ActivityCompat.shouldShowRequestPermissionRationale(
+                            activity,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+
+            if (!hasRequestedLocationPermissionBefore) {
+
+                hasRequestedLocationPermissionBefore = true
+
+                permissionPrefs.edit()
+                    .putBoolean(
+                        "has_requested_location_permission",
+                        true
+                    )
+                    .apply()
+            }
+
+            locationMessage =
+                when {
+
+                    hasLocationPermission -> {
+                        "Đang lấy vị trí hiện tại..."
+                    }
+
+                    permissionPermanentlyDenied -> {
+                        "Quyền vị trí đã bị chặn. Vui lòng mở Cài đặt để cấp lại quyền."
+                    }
+
+                    else -> {
+                        "Chưa được cấp quyền vị trí"
+                    }
+                }
+        }
+
+    DisposableEffect(lifecycleOwner) {
+
+        val observer =
+            LifecycleEventObserver { _, event ->
+
+                when (event) {
+
+                    Lifecycle.Event.ON_START -> {
+                        isScreenActive = true
+                    }
+
+                    Lifecycle.Event.ON_RESUME -> {
+
+                        hasLocationPermission =
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.ACCESS_FINE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED ||
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    ) == PackageManager.PERMISSION_GRANTED
+
+                        val locationManager =
+                            context.getSystemService(LocationManager::class.java)
+
+                        isLocationServiceEnabled =
+                            locationManager?.let {
+                                it.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                                        it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                            } == true
+
+                        when {
+                            !hasLocationPermission -> {
+                                locationMessage =
+                                    "Chưa được cấp quyền vị trí"
+                            }
+
+                            !isLocationServiceEnabled -> {
+                                locationMessage =
+                                    "Dịch vụ vị trí đang tắt"
+                            }
+                        }
+                    }
+
+                    Lifecycle.Event.ON_STOP -> {
+                        isScreenActive = false
+                    }
+
+                    else -> Unit
+                }
+            }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+
+        if (!hasLocationPermission) {
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    DisposableEffect(
+        hasLocationPermission,
+        isScreenActive,
+        isLocationServiceEnabled
+    ) {
+
+        if (!hasLocationPermission) {
+
+            locationMessage =
+                if (permissionPermanentlyDenied) {
+                    "Quyền vị trí đã bị chặn. Vui lòng mở Cài đặt để cấp lại quyền."
+                } else {
+                    "Chưa được cấp quyền vị trí"
+                }
+
+            onDispose { }
+
+        } else if (!isLocationServiceEnabled) {
+
+            locationMessage =
+                "Dịch vụ vị trí đang tắt"
+
+            onDispose { }
+
+        } else if (!isScreenActive) {
+
+            onDispose { }
+
+        } else {
+
+            locationMessage =
+                "Đang theo dõi vị trí hiện tại..."
+
+            val locationRequest =
+                LocationRequest.Builder(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    5000L
+                )
+                    .setMinUpdateIntervalMillis(
+                        2000L
+                    )
+                    .build()
+
+            val locationCallback =
+                object : LocationCallback() {
+
+                    override fun onLocationResult(
+                        result: LocationResult
+                    ) {
+
+                        val location =
+                            result.lastLocation
+
+                        if (location == null) {
+
+                            locationMessage =
+                                "Chưa có dữ liệu vị trí"
+
+                            return
+                        }
+
+                        userLocation =
+                            LatLng(
+                                location.latitude,
+                                location.longitude
+                            )
+
+                        locationMessage =
+                            "Đã cập nhật vị trí"
+                    }
+                }
+
+            fusedLocationClient
+                .requestLocationUpdates(
+                    locationRequest,
+                    locationCallback,
+                    Looper.getMainLooper()
+                )
+                .addOnFailureListener {
+
+                    locationMessage =
+                        "Không thể lấy vị trí hiện tại"
+                }
+
+            onDispose {
+
+                fusedLocationClient
+                    .removeLocationUpdates(
+                        locationCallback
+                    )
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+
+        val observer =
+            LifecycleEventObserver { _, event ->
+
+                when (event) {
+
+                    Lifecycle.Event.ON_START -> {
+                        isScreenActive = true
+                    }
+
+                    Lifecycle.Event.ON_RESUME -> {
+
+                        hasLocationPermission =
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.ACCESS_FINE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED ||
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    ) == PackageManager.PERMISSION_GRANTED
+
+                        val locationManager =
+                            context.getSystemService(
+                                LocationManager::class.java
+                            )
+
+                        isLocationServiceEnabled =
+                            locationManager?.let {
+                                it.isProviderEnabled(
+                                    LocationManager.GPS_PROVIDER
+                                ) ||
+                                        it.isProviderEnabled(
+                                            LocationManager.NETWORK_PROVIDER
+                                        )
+                            } == true
+
+                        permissionPermanentlyDenied =
+                            !hasLocationPermission &&
+                                    hasRequestedLocationPermissionBefore &&
+                                    context.findActivity()?.let { activity ->
+
+                                        !ActivityCompat.shouldShowRequestPermissionRationale(
+                                            activity,
+                                            Manifest.permission.ACCESS_FINE_LOCATION
+                                        ) &&
+                                                !ActivityCompat.shouldShowRequestPermissionRationale(
+                                                    activity,
+                                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                                )
+                                    } == true
+                    }
+
+                    Lifecycle.Event.ON_STOP -> {
+                        isScreenActive = false
+                    }
+
+                    else -> Unit
+                }
+            }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(userLocation) {
+
+        val location = userLocation
+
+        if (
+            location != null &&
+            !hasCenteredOnUserLocation
+        ) {
+
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(
+                    location,
+                    16f
+                )
+            )
+
+            hasCenteredOnUserLocation = true
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -549,10 +1124,202 @@ private fun FloodGoogleMap() {
         )
     ) {
 
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState
-        )
+        Box(
+            modifier = Modifier.fillMaxSize()
+        ) {
+
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraPositionState,
+                properties = MapProperties(
+                    isMyLocationEnabled = hasLocationPermission
+                )
+            ) {
+
+                if (state.isFloodLayerEnabled) {
+
+                    state.floodAreas
+                        .filter {
+                            it.geometry.type.equals(
+                                "polygon",
+                                ignoreCase = true
+                            ) &&
+                                    it.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    )
+                        }
+                        .forEach { floodArea ->
+
+                            val polygonPoints =
+                                floodArea.geometry.points.map { point ->
+                                    LatLng(
+                                        point.latitude,
+                                        point.longitude
+                                    )
+                                }
+
+                            if (polygonPoints.size >= 3) {
+
+                                val fillColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "critical" ->
+                                            Color(0x66B71C1C)
+
+                                        "high" ->
+                                            Color(0x66F44336)
+
+                                        "medium" ->
+                                            Color(0x66FFA000)
+
+                                        "low" ->
+                                            Color(0x664CAF50)
+
+                                        else ->
+                                            Color(0x665F6368)
+                                    }
+
+                                val strokeColor =
+                                    when (
+                                        floodArea.severity.lowercase()
+                                    ) {
+
+                                        "critical" ->
+                                            Color(0xFFB71C1C)
+
+                                        "high" ->
+                                            Color(0xFFF44336)
+
+                                        "medium" ->
+                                            Color(0xFFFFA000)
+
+                                        "low" ->
+                                            Color(0xFF4CAF50)
+
+                                        else ->
+                                            Color(0xFF5F6368)
+                                    }
+
+                                val matchingAlert =
+                                    state.floodAlerts
+                                        .filter { alert ->
+                                            alert.areaId == floodArea.id
+                                        }
+                                        .maxByOrNull { alert ->
+                                            when (alert.severity.lowercase()) {
+                                                "critical" -> 4
+                                                "high" -> 3
+                                                "medium" -> 2
+                                                "low" -> 1
+                                                else -> 0
+                                            }
+                                        }
+
+                                Polygon(
+                                    points = polygonPoints,
+                                    fillColor = fillColor,
+                                    strokeColor = strokeColor,
+                                    strokeWidth = 4f,
+                                    clickable = true,
+                                    onClick = {
+                                        onSelectFloodAlert(
+                                            matchingAlert?.id
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                }
+
+                userLocation?.let { location ->
+
+                    Marker(
+                        state = MarkerState(
+                            position = location
+                        ),
+                        title = "Vị trí của bạn"
+                    )
+                }
+            }
+
+            if (
+                !hasLocationPermission ||
+                !isLocationServiceEnabled ||
+                userLocation == null
+            ) {
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp)
+                        .background(
+                            Color.Black.copy(alpha = 0.75f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(
+                            horizontal = 12.dp,
+                            vertical = 8.dp
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+
+                    Text(
+                        text = locationMessage,
+                        color = Color.White,
+                        fontSize = 11.sp
+                    )
+
+                    if (!hasLocationPermission) {
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+
+                                if (permissionPermanentlyDenied) {
+
+                                    val intent =
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.parse(
+                                                "package:${context.packageName}"
+                                            )
+                                        )
+
+                                    context.startActivity(intent)
+
+                                } else {
+
+                                    permissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
+                                }
+                            }
+                        ) {
+
+                            Text(
+                                text =
+                                    if (permissionPermanentlyDenied) {
+                                        "Mở Cài đặt"
+                                    } else {
+                                        "Cấp quyền vị trí"
+                                    },
+                                color = Color.White,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -805,4 +1572,119 @@ private fun FloodShelterCard(
             }
         }
     }
+}
+
+// =====================================================
+// FLOOD SEVERITY LEGEND
+// =====================================================
+
+@Composable
+private fun FloodSeverityLegend(
+    color: Color,
+    text: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+
+        Spacer(
+            modifier = Modifier.width(5.dp)
+        )
+
+        Text(
+            text = text,
+            color = MapSecondary,
+            fontSize = 10.sp
+        )
+    }
+}
+
+@Composable
+private fun FloodWarningInfoCard(
+    title: String,
+    content: String,
+    severity: String
+) {
+
+    val severityColor =
+        when (severity.lowercase()) {
+            "high" -> Color(0xFFF44336)
+            "medium" -> Color(0xFFFFA000)
+            "low" -> Color(0xFF4CAF50)
+            else -> MapSecondary
+        }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = 18.dp,
+                vertical = 8.dp
+            ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MapCard
+        ),
+        border = BorderStroke(
+            1.dp,
+            severityColor.copy(alpha = 0.6f)
+        )
+    ) {
+
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+
+            Text(
+                text = title,
+                color = MapText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(
+                modifier = Modifier.height(6.dp)
+            )
+
+            Text(
+                text = content,
+                color = MapSecondary,
+                fontSize = 11.sp,
+                lineHeight = 16.sp
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            Text(
+                text = "Mức độ: ${severity.uppercase()}",
+                color = severityColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+
+    var currentContext = this
+
+    while (currentContext is ContextWrapper) {
+
+        if (currentContext is Activity) {
+            return currentContext
+        }
+
+        currentContext = currentContext.baseContext
+    }
+
+    return null
 }
