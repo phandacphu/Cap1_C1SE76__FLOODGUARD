@@ -1,13 +1,9 @@
-import React, { useEffect, useState, useRef } from "react";
-import type {
-  RescueRequest,
-  SosStatus,
-  UrgencyLevel,
-} from "../../types/rescue";
-import { rescueService } from "../../api/rescueService";
-import { SosFilterBar } from "./components/SosFilterBar";
-import { SosPriorityBadge } from "./components/SosPriorityBadge";
-import { SosStatusBadge } from "./components/SosStatusBadge";
+import React, { useEffect, useState, useRef } from 'react';
+import type { RescueRequest, SosStatus, UrgencyLevel } from '../../types/rescue';
+import { rescueService } from '../../api/rescueService';
+import { SosFilterBar } from './components/SosFilterBar';
+import { SosPriorityBadge } from './components/SosPriorityBadge';
+import { SosStatusBadge } from './components/SosStatusBadge';
 
 export const RescueDashboard: React.FC = () => {
   const [requests, setRequests] = useState<RescueRequest[]>([]);
@@ -16,27 +12,27 @@ export const RescueDashboard: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [urgencyFilter, setUrgencyFilter] = useState<string>("");
+  // CCF-106: State bộ lọc
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [urgencyFilter, setUrgencyFilter] = useState<string>('');
   const [sortByPriority, setSortByPriority] = useState<boolean>(true);
 
   const latestRequestIdRef = useRef<number>(0);
 
-  let currentUserId = "";
-  let currentUserName = "Rescue Staff";
+  // Đọc thông tin người dùng từ localStorage an toàn
+  let currentUserId = '';
+  let currentUserName = 'Rescue Staff';
   try {
-    const userRaw = localStorage.getItem("floodguard_user");
+    const userRaw = localStorage.getItem('floodguard_user');
     if (userRaw) {
       const parsed = JSON.parse(userRaw) as Record<string, unknown>;
-      if (typeof parsed === "object" && parsed !== null) {
-        currentUserId = String(parsed.id || parsed.userId || "");
-        currentUserName = String(
-          parsed.name || parsed.fullName || currentUserId || "Rescue Staff",
-        );
+      if (typeof parsed === 'object' && parsed !== null) {
+        currentUserId = String(parsed.id || parsed.userId || '');
+        currentUserName = String(parsed.name || parsed.fullName || currentUserId || 'Rescue Staff');
       }
     }
   } catch {
-    currentUserId = "";
+    currentUserId = '';
   }
 
   useEffect(() => {
@@ -50,18 +46,37 @@ export const RescueDashboard: React.FC = () => {
         const data = await rescueService.getRescueRequests({
           status: statusFilter ? (statusFilter as SosStatus) : undefined,
           urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
-          sort: sortByPriority ? "priority" : undefined,
+          sort: sortByPriority ? 'priority' : undefined,
         });
 
+        // Điểm mấu chốt: Lấy assignment từ getRescueDetail cho các ca received/in_progress
+        const enrichedData = await Promise.all(
+          data.map(async (req) => {
+            if (req.status === 'received' || req.status === 'in_progress') {
+              try {
+                const detail = await rescueService.getRescueDetail(req.id);
+                return {
+                  ...req,
+                  assignment: detail.assignment || req.assignment,
+                  assignedStaffId:
+                    detail.assignment?.rescueStaffId ||
+                    detail.assignedStaffId ||
+                    req.assignedStaffId,
+                };
+              } catch {
+                return req;
+              }
+            }
+            return req;
+          })
+        );
+
         if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
-          setRequests(data);
+          setRequests(enrichedData);
         }
       } catch (err: unknown) {
         if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
-          const msg =
-            err instanceof Error
-              ? err.message
-              : "Lỗi khi tải danh sách SOS từ máy chủ";
+          const msg = err instanceof Error ? err.message : 'Lỗi khi tải danh sách SOS từ máy chủ';
           setErrorMsg(msg);
         }
       } finally {
@@ -82,6 +97,7 @@ export const RescueDashboard: React.FC = () => {
     setRefreshTrigger((prev) => prev + 1);
   };
 
+  // CCF-108: Tiếp nhận
   const handleAcceptRequest = async (id: string) => {
     try {
       setActionLoadingId(id);
@@ -89,32 +105,29 @@ export const RescueDashboard: React.FC = () => {
       await rescueService.acceptRequest(id);
       triggerReload();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Không thể tiếp nhận ca cứu hộ";
+      const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
       setErrorMsg(msg);
     } finally {
       setActionLoadingId(null);
     }
   };
 
+  // CCF-109: Cập nhật trạng thái
   const handleUpdateRescueStatus = async (
     id: string,
-    nextStatus: "in_progress" | "assisted",
+    nextStatus: 'in_progress' | 'assisted'
   ) => {
     try {
       setActionLoadingId(id);
       setErrorMsg(null);
       const note =
-        nextStatus === "in_progress"
-          ? "Tác chiến cứu hộ đang diễn ra tại hiện trường"
-          : "Đã hoàn tất hỗ trợ an toàn";
+        nextStatus === 'in_progress'
+          ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
+          : 'Đã hoàn tất hỗ trợ an toàn';
       await rescueService.updateStatus(id, nextStatus, note);
       triggerReload();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Cập nhật trạng thái tác chiến thất bại";
+      const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
       setErrorMsg(msg);
     } finally {
       setActionLoadingId(null);
@@ -122,8 +135,8 @@ export const RescueDashboard: React.FC = () => {
   };
 
   const handleResetFilters = () => {
-    setStatusFilter("");
-    setUrgencyFilter("");
+    setStatusFilter('');
+    setUrgencyFilter('');
     setSortByPriority(true);
   };
 
@@ -137,9 +150,7 @@ export const RescueDashboard: React.FC = () => {
               FLOODGUARD
             </span>
           </div>
-          <p className="text-[11px] font-mono text-slate-400 mt-1">
-            RESCUE OPERATION CENTER
-          </p>
+          <p className="text-[11px] font-mono text-slate-400 mt-1">RESCUE OPERATION CENTER</p>
         </div>
 
         <nav className="p-4 space-y-1 font-mono text-xs">
@@ -164,9 +175,7 @@ export const RescueDashboard: React.FC = () => {
         </nav>
 
         <div className="mt-auto p-4 border-t border-[#1E3A5F]/60 font-mono text-[11px] text-slate-400">
-          <div className="text-slate-300 font-bold truncate">
-            Staff: {currentUserName}
-          </div>
+          <div className="text-slate-300 font-bold truncate">Staff: {currentUserName}</div>
           <div className="text-emerald-400 mt-0.5">Trạng thái: Trực chiến</div>
         </div>
       </aside>
@@ -184,8 +193,7 @@ export const RescueDashboard: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs font-mono text-slate-400 mt-1">
-                Tiếp nhận yêu cầu SOS và cập nhật tiến độ điều phối theo thời
-                gian thực
+                Tiếp nhận yêu cầu SOS và cập nhật tiến độ điều phối theo thời gian thực
               </p>
             </div>
 
@@ -195,7 +203,7 @@ export const RescueDashboard: React.FC = () => {
               disabled={loading}
               className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-medium transition-colors shadow-lg shadow-cyan-950/50 flex items-center space-x-2 disabled:opacity-50"
             >
-              <span>{loading ? "Đang đồng bộ..." : "Làm mới dữ liệu"}</span>
+              <span>{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</span>
             </button>
           </div>
 
@@ -230,8 +238,7 @@ export const RescueDashboard: React.FC = () => {
               </div>
             ) : errorMsg ? (
               <div className="p-12 text-center font-mono text-xs text-red-400">
-                Không thể tải danh sách cứu hộ do sự cố máy chủ. Vui lòng bấm
-                &quot;Làm mới dữ liệu&quot; để thử lại.
+                Không thể tải danh sách cứu hộ do sự cố máy chủ. Vui lòng bấm &quot;Làm mới dữ liệu&quot; để thử lại.
               </div>
             ) : requests.length === 0 ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400">
@@ -242,142 +249,87 @@ export const RescueDashboard: React.FC = () => {
                 <table className="min-w-full divide-y divide-[#1E3A5F]/70 text-xs font-mono">
                   <thead className="bg-[#051424]">
                     <tr>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Mã SOS
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Độ Ưu Tiên
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Trạng Thái
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Số Người
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Tọa Độ GPS
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Ghi Chú
-                      </th>
-                      <th className="px-4 py-3.5 text-right text-slate-400 uppercase tracking-wider">
-                        Tác Chiến
-                      </th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Mã SOS</th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Độ Ưu Tiên</th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Trạng Thái</th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Số Người</th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Tọa Độ GPS</th>
+                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">Ghi Chú</th>
+                      <th className="px-4 py-3.5 text-right text-slate-400 uppercase tracking-wider">Tác Chiến</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#1E3A5F]/40 bg-[#07172A]/40">
                     {requests.map((item) => {
                       const isProcessing = actionLoadingId === item.id;
-                      const rawItem = item as unknown as Record<
-                        string,
-                        unknown
-                      >;
+                      const rawItem = item as unknown as Record<string, unknown>;
                       const assignedStaffId = String(
-                        item.assignment?.rescueStaffId ||
-                          rawItem.assignedStaffId ||
-                          rawItem.assignedTo ||
-                          "",
+                        item.assignment?.rescueStaffId || rawItem.assignedStaffId || rawItem.assignedTo || ''
                       );
 
                       const hasAssignment = Boolean(assignedStaffId);
                       const isAssignedToMe = Boolean(
-                        currentUserId &&
-                        assignedStaffId &&
-                        assignedStaffId === currentUserId,
+                        currentUserId && assignedStaffId && assignedStaffId === currentUserId
                       );
 
                       return (
-                        <tr
-                          key={item.id}
-                          className="hover:bg-[#0C243B]/60 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-cyan-300 font-bold">
-                            #{item.id.slice(0, 8)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <SosPriorityBadge urgency={item.urgency} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <SosStatusBadge status={item.status} />
-                          </td>
-                          <td className="px-4 py-3 text-slate-200 font-semibold">
-                            {item.numberOfPeople} người
-                          </td>
+                        <tr key={item.id} className="hover:bg-[#0C243B]/60 transition-colors">
+                          <td className="px-4 py-3 text-cyan-300 font-bold">#{item.id.slice(0, 8)}</td>
+                          <td className="px-4 py-3"><SosPriorityBadge urgency={item.urgency} /></td>
+                          <td className="px-4 py-3"><SosStatusBadge status={item.status} /></td>
+                          <td className="px-4 py-3 text-slate-200 font-semibold">{item.numberOfPeople} người</td>
                           <td className="px-4 py-3 text-slate-400">
-                            {item.location.latitude.toFixed(4)},{" "}
-                            {item.location.longitude.toFixed(4)}
+                            {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
                           </td>
-                          <td
-                            className="px-4 py-3 text-slate-300 max-w-xs truncate"
-                            title={item.note || ""}
-                          >
-                            {item.note || (
-                              <span className="text-slate-500 italic">
-                                Không có ghi chú
-                              </span>
-                            )}
+                          <td className="px-4 py-3 text-slate-300 max-w-xs truncate" title={item.note || ''}>
+                            {item.note || <span className="text-slate-500 italic">Không có ghi chú</span>}
                           </td>
                           <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                            {item.status === "submitted" && (
+                            {item.status === 'submitted' && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  void handleAcceptRequest(item.id);
-                                }}
+                                onClick={() => { void handleAcceptRequest(item.id); }}
                                 disabled={isProcessing}
                                 className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
                               >
-                                {isProcessing ? "Đang nhận..." : "Tiếp nhận"}
+                                {isProcessing ? 'Đang nhận...' : 'Tiếp nhận'}
                               </button>
                             )}
 
-                            {item.status === "received" &&
-                              (isAssignedToMe ? (
+                            {item.status === 'received' && (
+                              isAssignedToMe ? (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    void handleUpdateRescueStatus(
-                                      item.id,
-                                      "in_progress",
-                                    );
-                                  }}
+                                  onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
                                   disabled={isProcessing}
                                   className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
                                 >
-                                  {isProcessing ? "..." : "Bắt đầu cứu hộ"}
+                                  {isProcessing ? '...' : 'Bắt đầu cứu hộ'}
                                 </button>
                               ) : (
                                 <span className="text-[11px] font-mono text-slate-500 italic">
-                                  {hasAssignment
-                                    ? "Đã giao nhân sự khác"
-                                    : "Chờ phân công"}
+                                  {hasAssignment ? 'Đã giao nhân sự khác' : 'Chờ phân công'}
                                 </span>
-                              ))}
+                              )
+                            )}
 
-                            {item.status === "in_progress" &&
-                              (isAssignedToMe ? (
+                            {item.status === 'in_progress' && (
+                              isAssignedToMe ? (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    void handleUpdateRescueStatus(
-                                      item.id,
-                                      "assisted",
-                                    );
-                                  }}
+                                  onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
                                   disabled={isProcessing}
                                   className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
                                 >
-                                  {isProcessing ? "..." : "Hoàn tất"}
+                                  {isProcessing ? '...' : 'Hoàn tất'}
                                 </button>
                               ) : (
                                 <span className="text-[11px] font-mono text-slate-500 italic">
-                                  {hasAssignment
-                                    ? "Đã giao nhân sự khác"
-                                    : "Chờ phân công"}
+                                  {hasAssignment ? 'Đã giao nhân sự khác' : 'Chờ phân công'}
                                 </span>
-                              ))}
+                              )
+                            )}
 
-                            {item.status === "assisted" && (
+                            {item.status === 'assisted' && (
                               <span className="text-[11px] font-mono text-emerald-400">
                                 ✓ Hoàn tất tác chiến
                               </span>
