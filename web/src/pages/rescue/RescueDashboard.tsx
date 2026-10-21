@@ -17,13 +17,24 @@ export const RescueDashboard: React.FC = () => {
   const [urgencyFilter, setUrgencyFilter] = useState<string>('');
   const [sortByPriority, setSortByPriority] = useState<boolean>(true);
 
-  // Biến đếm request để chống race condition khi lọc liên tục
   const latestRequestIdRef = useRef<number>(0);
 
-  // Đọc thông tin người dùng từ localStorage
-  const userJson = localStorage.getItem('floodguard_user');
-  const currentUser = userJson ? (JSON.parse(userJson) as Record<string, string>) : {};
-  const currentUserId = currentUser.id || currentUser.userId;
+  // Điểm 3: Parse localStorage an toàn tuyệt đối
+  let currentUserId = '';
+  let currentUserName = 'Rescue Staff';
+  try {
+    const userRaw = localStorage.getItem('floodguard_user');
+    if (userRaw) {
+      const parsed = JSON.parse(userRaw) as Record<string, unknown>;
+      if (typeof parsed === 'object' && parsed !== null) {
+        currentUserId = String(parsed.id || parsed.userId || '');
+        currentUserName = String(parsed.name || parsed.fullName || currentUserId || 'Rescue Staff');
+      }
+    }
+  } catch {
+    // Dữ liệu localStorage bị lỗi/hỏng, reset về rỗng
+    currentUserId = '';
+  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -44,7 +55,7 @@ export const RescueDashboard: React.FC = () => {
         }
       } catch (err: unknown) {
         if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
-          const msg = err instanceof Error ? err.message : 'Lỗi khi tải dữ liệu cứu hộ từ máy chủ';
+          const msg = err instanceof Error ? err.message : 'Lỗi khi tải danh sách SOS từ máy chủ';
           setErrorMsg(msg);
         }
       } finally {
@@ -71,11 +82,11 @@ export const RescueDashboard: React.FC = () => {
       setActionLoadingId(id);
       setErrorMsg(null);
       await rescueService.acceptRequest(id);
-      triggerReload();
+      triggerReload(); // Chỉ reload khi thành công
     } catch (err: unknown) {
+      // Điểm 2: Giữ nguyên thông báo lỗi, KHÔNG gọi triggerReload để tránh bị ghi đè mất thông báo
       const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
       setErrorMsg(msg);
-      triggerReload();
     } finally {
       setActionLoadingId(null);
     }
@@ -94,11 +105,11 @@ export const RescueDashboard: React.FC = () => {
           ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
           : 'Đã hoàn tất hỗ trợ an toàn';
       await rescueService.updateStatus(id, nextStatus, note);
-      triggerReload();
+      triggerReload(); // Chỉ reload khi thành công
     } catch (err: unknown) {
+      // Điểm 2: Giữ nguyên thông báo lỗi, KHÔNG gọi triggerReload
       const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
       setErrorMsg(msg);
-      triggerReload();
     } finally {
       setActionLoadingId(null);
     }
@@ -145,7 +156,7 @@ export const RescueDashboard: React.FC = () => {
         </nav>
 
         <div className="mt-auto p-4 border-t border-[#1E3A5F]/60 font-mono text-[11px] text-slate-400">
-          <div className="text-slate-300 font-bold truncate">Staff: {currentUser.name || currentUserId || 'Rescue Staff'}</div>
+          <div className="text-slate-300 font-bold truncate">Staff: {currentUserName}</div>
           <div className="text-emerald-400 mt-0.5">Trạng thái: Trực chiến</div>
         </div>
       </aside>
@@ -177,7 +188,6 @@ export const RescueDashboard: React.FC = () => {
             </button>
           </div>
 
-          {/* Hộp thoại thông báo lỗi */}
           {errorMsg && (
             <div className="bg-red-950/60 border border-red-700/80 p-4 rounded text-red-200 text-xs font-mono flex items-center justify-between">
               <div>[LỖI HỆ THỐNG]: {errorMsg}</div>
@@ -191,7 +201,6 @@ export const RescueDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* Bộ lọc */}
           <SosFilterBar
             status={statusFilter}
             urgency={urgencyFilter}
@@ -202,7 +211,6 @@ export const RescueDashboard: React.FC = () => {
             onReset={handleResetFilters}
           />
 
-          {/* Bảng dữ liệu: Tách bạch rõ giữa Loading, Error và Empty */}
           <div className="bg-[#0A1A2F]/80 border border-[#1E3A5F] rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
             {loading ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400 space-y-3">
@@ -211,7 +219,7 @@ export const RescueDashboard: React.FC = () => {
               </div>
             ) : errorMsg ? (
               <div className="p-12 text-center font-mono text-xs text-red-400">
-                Không thể tải danh sách cứu hộ do lỗi kết nối máy chủ. Vui lòng nhấn &quot;Làm mới dữ liệu&quot; để thử lại.
+                Không thể tải danh sách cứu hộ do sự cố máy chủ. Vui lòng bấm &quot;Làm mới dữ liệu&quot; để thử lại.
               </div>
             ) : requests.length === 0 ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400">
@@ -234,11 +242,16 @@ export const RescueDashboard: React.FC = () => {
                   <tbody className="divide-y divide-[#1E3A5F]/40 bg-[#07172A]/40">
                     {requests.map((item) => {
                       const isProcessing = actionLoadingId === item.id;
-                      // Điểm 1: Chỉ nhân sự được phân công chính xác mới có quyền thao tác
+                      
+                      // Điểm 1: Linh hoạt giữa assignment lồng nhau hoặc assignedStaffId phẳng từ Backend contract
+                      const rawItem = item as unknown as Record<string, unknown>;
+                      const assignedStaffId = String(
+                        item.assignment?.rescueStaffId || rawItem.assignedStaffId || rawItem.assignedTo || ''
+                      );
+                      
+                      const hasAssignment = Boolean(assignedStaffId);
                       const isAssignedToMe = Boolean(
-                        item.assignment &&
-                        currentUserId &&
-                        item.assignment.rescueStaffId === currentUserId
+                        currentUserId && assignedStaffId && assignedStaffId === currentUserId
                       );
 
                       return (
@@ -254,7 +267,7 @@ export const RescueDashboard: React.FC = () => {
                             {item.note || <span className="text-slate-500 italic">Không có ghi chú</span>}
                           </td>
                           <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                            {/* CCF-108: Tiếp nhận SOS (ca mới chưa tiếp nhận) */}
+                            {/* CCF-108: Tiếp nhận SOS (ca submitted) */}
                             {item.status === 'submitted' && (
                               <button
                                 type="button"
@@ -266,40 +279,45 @@ export const RescueDashboard: React.FC = () => {
                               </button>
                             )}
 
-                            {/* CCF-109: Bắt đầu cứu hộ (Chỉ cho phép khi ĐÚNG người được phân công) */}
-                            {item.status === 'received' && isAssignedToMe && (
-                              <button
-                                type="button"
-                                onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
-                                disabled={isProcessing}
-                                className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
-                              >
-                                {isProcessing ? '...' : 'Bắt đầu cứu hộ'}
-                              </button>
+                            {/* CCF-109: Bắt đầu cứu hộ */}
+                            {item.status === 'received' && (
+                              isAssignedToMe ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
+                                  disabled={isProcessing}
+                                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
+                                >
+                                  {isProcessing ? '...' : 'Bắt đầu cứu hộ'}
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-500 italic">
+                                  {hasAssignment ? 'Đã giao nhân sự khác' : 'Chờ phân công'}
+                                </span>
+                              )
                             )}
 
-                            {/* CCF-109: Hoàn tất (Chỉ cho phép khi ĐÚNG người được phân công) */}
-                            {item.status === 'in_progress' && isAssignedToMe && (
-                              <button
-                                type="button"
-                                onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
-                                disabled={isProcessing}
-                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
-                              >
-                                {isProcessing ? '...' : 'Hoàn tất'}
-                              </button>
+                            {/* CCF-109: Hoàn tất */}
+                            {item.status === 'in_progress' && (
+                              isAssignedToMe ? (
+                                <button
+                                  type="button"
+                                  onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
+                                  disabled={isProcessing}
+                                  className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
+                                >
+                                  {isProcessing ? '...' : 'Hoàn tất'}
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-500 italic">
+                                  {hasAssignment ? 'Đã giao nhân sự khác' : 'Chờ phân công'}
+                                </span>
+                              )
                             )}
 
                             {item.status === 'assisted' && (
                               <span className="text-[11px] font-mono text-emerald-400">
                                 ✓ Hoàn tất tác chiến
-                              </span>
-                            )}
-
-                            {/* Nếu chưa có assignment hoặc không phải mình được giao */}
-                            {!isAssignedToMe && item.status !== 'submitted' && item.status !== 'assisted' && (
-                              <span className="text-[11px] font-mono text-slate-500 italic">
-                                {!item.assignment ? 'Chờ phân công' : 'Đã giao nhân sự khác'}
                               </span>
                             )}
                           </td>
