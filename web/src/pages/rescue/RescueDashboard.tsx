@@ -5,8 +5,12 @@ import { SosFilterBar } from './components/SosFilterBar';
 import { SosPriorityBadge } from './components/SosPriorityBadge';
 import { SosStatusBadge } from './components/SosStatusBadge';
 
+interface EnrichedRescueRequest extends RescueRequest {
+  assignmentFetchFailed?: boolean;
+}
+
 export const RescueDashboard: React.FC = () => {
-  const [requests, setRequests] = useState<RescueRequest[]>([]);
+  const [requests, setRequests] = useState<EnrichedRescueRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -49,8 +53,8 @@ export const RescueDashboard: React.FC = () => {
           sort: sortByPriority ? 'priority' : undefined,
         });
 
-        // Điểm mấu chốt: Lấy assignment từ getRescueDetail cho các ca received/in_progress
-        const enrichedData = await Promise.all(
+        // Điểm 1 & 2: Lấy assignment cho ca received / in_progress, đánh dấu nếu lỗi
+        const enrichedData: EnrichedRescueRequest[] = await Promise.all(
           data.map(async (req) => {
             if (req.status === 'received' || req.status === 'in_progress') {
               try {
@@ -62,9 +66,13 @@ export const RescueDashboard: React.FC = () => {
                     detail.assignment?.rescueStaffId ||
                     detail.assignedStaffId ||
                     req.assignedStaffId,
+                  assignmentFetchFailed: false,
                 };
               } catch {
-                return req;
+                return {
+                  ...req,
+                  assignmentFetchFailed: true,
+                };
               }
             }
             return req;
@@ -296,7 +304,11 @@ export const RescueDashboard: React.FC = () => {
                             )}
 
                             {item.status === 'received' && (
-                              isAssignedToMe ? (
+                              item.assignmentFetchFailed ? (
+                                <span className="text-[11px] font-mono text-amber-400 italic">
+                                  Lỗi tải thông tin ca
+                                </span>
+                              ) : isAssignedToMe ? (
                                 <button
                                   type="button"
                                   onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
@@ -313,7 +325,11 @@ export const RescueDashboard: React.FC = () => {
                             )}
 
                             {item.status === 'in_progress' && (
-                              isAssignedToMe ? (
+                              item.assignmentFetchFailed ? (
+                                <span className="text-[11px] font-mono text-amber-400 italic">
+                                  Lỗi tải thông tin ca
+                                </span>
+                              ) : isAssignedToMe ? (
                                 <button
                                   type="button"
                                   onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
