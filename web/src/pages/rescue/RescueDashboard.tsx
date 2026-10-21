@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import type { RescueRequest, SosStatus, UrgencyLevel } from '../../types/rescue';
 import { rescueService } from '../../api/rescueService';
 import { SosFilterBar } from './components/SosFilterBar';
@@ -10,74 +10,78 @@ export const RescueDashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
+  // CCF-106: State bộ lọc
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('');
   const [sortByPriority, setSortByPriority] = useState<boolean>(true);
 
+  // Biến đếm request để chống race condition khi lọc liên tục
   const latestRequestIdRef = useRef<number>(0);
 
+  // Đọc thông tin người dùng từ localStorage
   const userJson = localStorage.getItem('floodguard_user');
   const currentUser = userJson ? (JSON.parse(userJson) as Record<string, string>) : {};
   const currentUserId = currentUser.id || currentUser.userId;
 
-  const fetchRescueData = useCallback(async () => {
-    const currentRequestId = ++latestRequestIdRef.current;
-    try {
-      const data = await rescueService.getRescueRequests({
-        status: statusFilter ? (statusFilter as SosStatus) : undefined,
-        urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
-        sort: sortByPriority ? 'priority' : undefined,
-      });
-
-      if (currentRequestId === latestRequestIdRef.current) {
-        setRequests(data);
-        setErrorMsg(null);
-      }
-    } catch (err: unknown) {
-      if (currentRequestId === latestRequestIdRef.current) {
-        const msg = err instanceof Error ? err.message : 'Lỗi khi tải dữ liệu cứu hộ từ máy chủ';
-        setErrorMsg(msg);
-      }
-    } finally {
-      if (currentRequestId === latestRequestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [statusFilter, urgencyFilter, sortByPriority]);
-
   useEffect(() => {
-    let active = true;
-    const load = async () => {
+    let isCancelled = false;
+    const currentRequestId = ++latestRequestIdRef.current;
+
+    const loadData = async () => {
       try {
-        await fetchRescueData();
-      } catch {
-        // error handled in fetchRescueData
+        setLoading(true);
+        setErrorMsg(null);
+        const data = await rescueService.getRescueRequests({
+          status: statusFilter ? (statusFilter as SosStatus) : undefined,
+          urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
+          sort: sortByPriority ? 'priority' : undefined,
+        });
+
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          setRequests(data);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          const msg = err instanceof Error ? err.message : 'Lỗi khi tải dữ liệu cứu hộ từ máy chủ';
+          setErrorMsg(msg);
+        }
+      } finally {
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          setLoading(false);
+        }
       }
     };
-    if (active) {
-      void load();
-    }
-    return () => {
-      active = false;
-    };
-  }, [fetchRescueData]);
 
+    void loadData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [statusFilter, urgencyFilter, sortByPriority, refreshTrigger]);
+
+  const triggerReload = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
+
+  // CCF-108: Tiếp nhận
   const handleAcceptRequest = async (id: string) => {
     try {
       setActionLoadingId(id);
       setErrorMsg(null);
       await rescueService.acceptRequest(id);
-      await fetchRescueData();
+      triggerReload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
       setErrorMsg(msg);
-      await fetchRescueData();
+      triggerReload();
     } finally {
       setActionLoadingId(null);
     }
   };
 
+  // CCF-109: Cập nhật trạng thái
   const handleUpdateRescueStatus = async (
     id: string,
     nextStatus: 'in_progress' | 'assisted'
@@ -90,11 +94,11 @@ export const RescueDashboard: React.FC = () => {
           ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
           : 'Đã hoàn tất hỗ trợ an toàn';
       await rescueService.updateStatus(id, nextStatus, note);
-      await fetchRescueData();
+      triggerReload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
       setErrorMsg(msg);
-      await fetchRescueData();
+      triggerReload();
     } finally {
       setActionLoadingId(null);
     }
@@ -165,10 +169,7 @@ export const RescueDashboard: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => {
-                setLoading(true);
-                void fetchRescueData();
-              }}
+              onClick={triggerReload}
               disabled={loading}
               className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-medium transition-colors shadow-lg shadow-cyan-950/50 flex items-center space-x-2 disabled:opacity-50"
             >
@@ -176,6 +177,7 @@ export const RescueDashboard: React.FC = () => {
             </button>
           </div>
 
+          {/* Hộp thoại thông báo lỗi */}
           {errorMsg && (
             <div className="bg-red-950/60 border border-red-700/80 p-4 rounded text-red-200 text-xs font-mono flex items-center justify-between">
               <div>[LỖI HỆ THỐNG]: {errorMsg}</div>
@@ -189,30 +191,27 @@ export const RescueDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* Bộ lọc */}
           <SosFilterBar
             status={statusFilter}
             urgency={urgencyFilter}
             sortByPriority={sortByPriority}
-            onStatusChange={(val) => {
-              setLoading(true);
-              setStatusFilter(val);
-            }}
-            onUrgencyChange={(val) => {
-              setLoading(true);
-              setUrgencyFilter(val);
-            }}
-            onPrioritySortToggle={(val) => {
-              setLoading(true);
-              setSortByPriority(val);
-            }}
+            onStatusChange={setStatusFilter}
+            onUrgencyChange={setUrgencyFilter}
+            onPrioritySortToggle={setSortByPriority}
             onReset={handleResetFilters}
           />
 
+          {/* Bảng dữ liệu: Tách bạch rõ giữa Loading, Error và Empty */}
           <div className="bg-[#0A1A2F]/80 border border-[#1E3A5F] rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
             {loading ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400 space-y-3">
                 <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                 <div>Đang kết nối trung tâm điều phối Render...</div>
+              </div>
+            ) : errorMsg ? (
+              <div className="p-12 text-center font-mono text-xs text-red-400">
+                Không thể tải danh sách cứu hộ do lỗi kết nối máy chủ. Vui lòng nhấn &quot;Làm mới dữ liệu&quot; để thử lại.
               </div>
             ) : requests.length === 0 ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400">
@@ -235,8 +234,12 @@ export const RescueDashboard: React.FC = () => {
                   <tbody className="divide-y divide-[#1E3A5F]/40 bg-[#07172A]/40">
                     {requests.map((item) => {
                       const isProcessing = actionLoadingId === item.id;
-                      const isAssignedToMe = item.assignment?.rescueStaffId === currentUserId;
-                      const canAct = !item.assignment || isAssignedToMe;
+                      // Điểm 1: Chỉ nhân sự được phân công chính xác mới có quyền thao tác
+                      const isAssignedToMe = Boolean(
+                        item.assignment &&
+                        currentUserId &&
+                        item.assignment.rescueStaffId === currentUserId
+                      );
 
                       return (
                         <tr key={item.id} className="hover:bg-[#0C243B]/60 transition-colors">
@@ -251,6 +254,7 @@ export const RescueDashboard: React.FC = () => {
                             {item.note || <span className="text-slate-500 italic">Không có ghi chú</span>}
                           </td>
                           <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                            {/* CCF-108: Tiếp nhận SOS (ca mới chưa tiếp nhận) */}
                             {item.status === 'submitted' && (
                               <button
                                 type="button"
@@ -262,7 +266,8 @@ export const RescueDashboard: React.FC = () => {
                               </button>
                             )}
 
-                            {item.status === 'received' && canAct && (
+                            {/* CCF-109: Bắt đầu cứu hộ (Chỉ cho phép khi ĐÚNG người được phân công) */}
+                            {item.status === 'received' && isAssignedToMe && (
                               <button
                                 type="button"
                                 onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
@@ -273,7 +278,8 @@ export const RescueDashboard: React.FC = () => {
                               </button>
                             )}
 
-                            {item.status === 'in_progress' && canAct && (
+                            {/* CCF-109: Hoàn tất (Chỉ cho phép khi ĐÚNG người được phân công) */}
+                            {item.status === 'in_progress' && isAssignedToMe && (
                               <button
                                 type="button"
                                 onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
@@ -290,9 +296,10 @@ export const RescueDashboard: React.FC = () => {
                               </span>
                             )}
 
-                            {!canAct && item.status !== 'assisted' && (
+                            {/* Nếu chưa có assignment hoặc không phải mình được giao */}
+                            {!isAssignedToMe && item.status !== 'submitted' && item.status !== 'assisted' && (
                               <span className="text-[11px] font-mono text-slate-500 italic">
-                                Đã giao nhân sự khác
+                                {!item.assignment ? 'Chờ phân công' : 'Đã giao nhân sự khác'}
                               </span>
                             )}
                           </td>
