@@ -1,152 +1,206 @@
-import { useCallback, useEffect, useState } from "react";
-import { rescueService } from "../../api/rescueService";
-import type { RescueRequest, SosStatus, UrgencyLevel } from "../../types/rescue";
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { RescueRequest, SosStatus, UrgencyLevel } from '../../types/rescue';
+import { rescueService } from '../../api/rescueService';
 
-const AUTO_REFRESH_MS = 15_000;
-
-interface ListParams {
-  status?: SosStatus;
-  urgency?: UrgencyLevel;
-  sort?: "priority";
+interface EnrichedRescueRequest extends RescueRequest {
+  assignmentFetchFailed?: boolean;
+  assignedStaffId?: string;
 }
 
-interface ListState {
-  requests: RescueRequest[] | null;
-  error: string | null;
-  /** Which request (params + refresh round) the data belongs to. */
-  key: string;
-  updatedAt: Date | null;
-}
+export const useRescue = (
+  statusFilter?: string,
+  urgencyFilter?: string,
+  sortFilter?: string,
+  searchFilter?: string
+) => {
+  const [requests, setRequests] = useState<EnrichedRescueRequest[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-/** Loads GET /rescue-requests, refreshes every 15 s and on demand. */
-export function useRescueRequests(params: ListParams = {}) {
-  const { status, urgency, sort } = params;
-  const [round, setRound] = useState(0);
-  const [state, setState] = useState<ListState>({
-    requests: null,
-    error: null,
-    key: "",
-    updatedAt: null,
-  });
-  const key = `${status ?? ""}|${urgency ?? ""}|${sort ?? ""}|${round}`;
+  const latestRequestIdRef = useRef<number>(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    rescueService
-      .getRescueRequests({ status, urgency, sort })
-      .then((requests) => {
-        if (!cancelled) setState({ requests, error: null, key, updatedAt: new Date() });
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : "Không thể tải danh sách SOS.";
-        setState((prev) => ({ ...prev, error: message, key }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [status, urgency, sort, key]);
+  // Lấy currentUserId an toàn từ floodguard_user
+  let currentUserId = '';
+  try {
+    const userRaw = localStorage.getItem('floodguard_user');
+    if (userRaw) {
+      const parsed = JSON.parse(userRaw) as Record<string, unknown>;
+      if (typeof parsed === 'object' && parsed !== null) {
+        currentUserId = String(parsed.id || parsed.userId || '');
+      }
+    }
+  } catch {
+    currentUserId = '';
+  }
 
-  useEffect(() => {
-    const id = window.setInterval(() => setRound((r) => r + 1), AUTO_REFRESH_MS);
-    return () => window.clearInterval(id);
+  const triggerReload = useCallback(() => {
+    setRefreshTrigger((prev) => prev + 1);
   }, []);
 
-  const refresh = useCallback(() => setRound((r) => r + 1), []);
+  useEffect(() => {
+    let isCancelled = false;
+    const currentRequestId = ++latestRequestIdRef.current;
+
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setFetchError(null);
+        const data = await rescueService.getRescueRequests({
+          status: statusFilter ? (statusFilter as SosStatus) : undefined,
+          urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
+          sort: sortFilter || undefined,
+        });
+
+        // Làm giàu assignment thật từ Backend getRescueDetail
+        const enrichedData: EnrichedRescueRequest[] = await Promise.all(
+          data.map(async (req) => {
+            const raw = req as unknown as Record<string, unknown>;
+            if (req.status === 'received' || req.status === 'in_progress') {
+              try {
+                const detail = (await rescueService.getRescueDetail(req.id)) as unknown as Record<string, unknown>;
+                const detailAssignment = detail.assignment as Record<string, unknown> | undefined;
+                const assignedStaffId = String(
+                  detailAssignment?.rescueStaffId ||
+                  detail.assignedStaffId ||
+                  detail.assignedTo ||
+                  raw.assignedStaffId ||
+                  ''
+                );
+
+                return {
+                  ...req,
+                  assignment: (detail.assignment as typeof req.assignment) || req.assignment,
+                  assignedStaffId,
+                  assignmentFetchFailed: false,
+                };
+              } catch {
+                return {
+                  ...req,
+                  assignmentFetchFailed: true,
+                };
+              }
+            }
+            return {
+              ...req,
+              assignedStaffId: String(raw.assignedStaffId || raw.assignedTo || ''),
+            };
+          })
+        );
+
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          setRequests(enrichedData);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          const msg = err instanceof Error ? err.message : 'Lỗi khi tải dữ liệu cứu hộ từ máy chủ';
+          setFetchError(msg);
+        }
+      } finally {
+        if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadData();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [statusFilter, urgencyFilter, sortFilter, refreshTrigger]);
+
+  const handleAcceptRequest = async (id: string) => {
+    try {
+      setActionLoadingId(id);
+      setActionError(null);
+      await rescueService.acceptRequest(id);
+      triggerReload();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
+      setActionError(msg);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleUpdateRescueStatus = async (
+    id: string,
+    nextStatus: 'in_progress' | 'assisted'
+  ) => {
+    try {
+      setActionLoadingId(id);
+      setActionError(null);
+      const note =
+        nextStatus === 'in_progress'
+          ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
+          : 'Đã hoàn tất hỗ trợ an toàn';
+      await rescueService.updateStatus(id, nextStatus, note);
+      triggerReload();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
+      setActionError(msg);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Tính toán KPI chính xác theo thời gian thực
+  const now = new Date();
+  const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60 * 1000);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  const newRequestsCount = requests.filter((r) => r.status === 'submitted').length;
+  const newLast15MinCount = requests.filter((r) => {
+    if (r.status !== 'submitted') return false;
+    const createdAt = new Date(r.createdAt).getTime();
+    return !isNaN(createdAt) && createdAt >= fifteenMinutesAgo.getTime();
+  }).length;
+
+  const inProgressCount = requests.filter((r) => r.status === 'in_progress' || r.status === 'received').length;
+  
+  const assistedTodayCount = requests.filter((r) => {
+    if (r.status !== 'assisted') return false;
+    const updatedTime = new Date(r.updatedAt || r.createdAt).getTime();
+    return !isNaN(updatedTime) && updatedTime >= startOfToday;
+  }).length;
+
+  const myAssignedCount = requests.filter((r) => {
+    const raw = r as unknown as Record<string, unknown>;
+    const staffId = r.assignment?.rescueStaffId || r.assignedStaffId || raw.assignedTo;
+    return Boolean(currentUserId && staffId === currentUserId);
+  }).length;
+
+  // Lọc tìm kiếm
+  const displayedRequests = requests.filter((req) => {
+    if (!searchFilter?.trim()) return true;
+    const q = searchFilter.toLowerCase();
+    const raw = req as unknown as Record<string, unknown>;
+    const name = String(raw.senderName || raw.contactName || raw.name || '');
+    return name.toLowerCase().includes(q) || (req.note || '').toLowerCase().includes(q) || req.id.toLowerCase().includes(q);
+  });
 
   return {
-    requests: state.requests,
-    error: state.error,
-    updatedAt: state.updatedAt,
-    loading: state.key !== key,
-    refresh,
+    requests,
+    displayedRequests,
+    loading,
+    fetchError,
+    actionError,
+    setActionError,
+    actionLoadingId,
+    currentUserId,
+    triggerReload,
+    handleAcceptRequest,
+    handleUpdateRescueStatus,
+    kpi: {
+      newRequestsCount,
+      newLast15MinCount,
+      inProgressCount,
+      assistedTodayCount,
+      myAssignedCount,
+      totalRequests: requests.length,
+    },
   };
-}
-
-function storageKey(userId: string): string {
-  return `floodguard_my_sos_${userId}`;
-}
-
-function loadMine(userId: string | undefined): Set<string> {
-  if (!userId) return new Set();
-  try {
-    const raw = localStorage.getItem(storageKey(userId));
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveMine(userId: string | undefined, ids: Set<string>) {
-  if (!userId) return;
-  try {
-    localStorage.setItem(storageKey(userId), JSON.stringify([...ids]));
-  } catch {
-    // Storage unavailable: the list just won't be remembered after a reload.
-  }
-}
-
-/**
- * Accept / progress actions (CCF-108, CCF-109).
- * The list API may not return `assignment`, so the requests this rescuer accepted
- * are also remembered in the browser (`mineIds`).
- */
-export function useRescueActions(userId: string | undefined, refresh: () => void) {
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [mineIds, setMineIds] = useState<Set<string>>(() => loadMine(userId));
-
-  const remember = useCallback(
-    (id: string) => {
-      setMineIds((prev) => {
-        const next = new Set(prev).add(id);
-        saveMine(userId, next);
-        return next;
-      });
-    },
-    [userId],
-  );
-
-  const accept = useCallback(
-    async (id: string) => {
-      setBusyId(id);
-      setError(null);
-      try {
-        await rescueService.acceptRequest(id);
-        remember(id);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Không thể tiếp nhận ca cứu hộ.");
-      } finally {
-        setBusyId(null);
-        refresh();
-      }
-    },
-    [refresh, remember],
-  );
-
-  const advance = useCallback(
-    async (id: string, next: "in_progress" | "assisted") => {
-      setBusyId(id);
-      setError(null);
-      try {
-        const note =
-          next === "in_progress"
-            ? "Đội cứu hộ đang có mặt tại hiện trường"
-            : "Đã hoàn tất hỗ trợ an toàn";
-        await rescueService.updateStatus(id, next, note);
-        remember(id);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Cập nhật trạng thái thất bại.");
-      } finally {
-        setBusyId(null);
-        refresh();
-      }
-    },
-    [refresh, remember],
-  );
-
-  const clearError = useCallback(() => setError(null), []);
-
-  return { busyId, error, mineIds, accept, advance, clearError };
-}
+};
