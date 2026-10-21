@@ -1,5 +1,6 @@
 package com.example.floodguard.core.network
 
+import com.example.floodguard.BuildConfig
 import com.example.floodguard.core.config.AppConfig
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
@@ -15,7 +16,11 @@ object ApiClient {
 
     private val loggingInterceptor =
         HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BASIC
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
 
     private val publicOkHttpClient =

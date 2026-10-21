@@ -35,7 +35,7 @@ fun AppNavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = AppRoutes.LOGIN
+        startDestination = startDestination
     ) {
         // HOME
         composable(route = AppRoutes.HOME) {
