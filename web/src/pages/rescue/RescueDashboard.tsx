@@ -13,7 +13,11 @@ export const RescueDashboard: React.FC = () => {
   const [requests, setRequests] = useState<EnrichedRescueRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  // Điểm 1: Tách biệt rõ 2 loại lỗi
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   // CCF-106: State bộ lọc
@@ -46,14 +50,14 @@ export const RescueDashboard: React.FC = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        setErrorMsg(null);
+        setFetchError(null);
         const data = await rescueService.getRescueRequests({
           status: statusFilter ? (statusFilter as SosStatus) : undefined,
           urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
           sort: sortByPriority ? 'priority' : undefined,
         });
 
-        // Điểm 1 & 2: Lấy assignment cho ca received / in_progress, đánh dấu nếu lỗi
+        // Điểm 3: Tối ưu gọi song song API chi tiết chỉ cho các ca cần kiểm tra assignment
         const enrichedData: EnrichedRescueRequest[] = await Promise.all(
           data.map(async (req) => {
             if (req.status === 'received' || req.status === 'in_progress') {
@@ -85,7 +89,7 @@ export const RescueDashboard: React.FC = () => {
       } catch (err: unknown) {
         if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
           const msg = err instanceof Error ? err.message : 'Lỗi khi tải danh sách SOS từ máy chủ';
-          setErrorMsg(msg);
+          setFetchError(msg);
         }
       } finally {
         if (!isCancelled && currentRequestId === latestRequestIdRef.current) {
@@ -109,12 +113,12 @@ export const RescueDashboard: React.FC = () => {
   const handleAcceptRequest = async (id: string) => {
     try {
       setActionLoadingId(id);
-      setErrorMsg(null);
+      setActionError(null);
       await rescueService.acceptRequest(id);
       triggerReload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
-      setErrorMsg(msg);
+      setActionError(msg);
     } finally {
       setActionLoadingId(null);
     }
@@ -127,7 +131,7 @@ export const RescueDashboard: React.FC = () => {
   ) => {
     try {
       setActionLoadingId(id);
-      setErrorMsg(null);
+      setActionError(null);
       const note =
         nextStatus === 'in_progress'
           ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
@@ -136,7 +140,7 @@ export const RescueDashboard: React.FC = () => {
       triggerReload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
-      setErrorMsg(msg);
+      setActionError(msg);
     } finally {
       setActionLoadingId(null);
     }
@@ -150,6 +154,7 @@ export const RescueDashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#010F1F] text-slate-100 flex flex-col font-sans">
+      {/* Sidebar 260px cố định */}
       <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-[#051424] border-r border-[#1E3A5F]/60 flex flex-col z-20">
         <div className="p-6 border-b border-[#1E3A5F]/60">
           <div className="flex items-center space-x-2">
@@ -188,6 +193,7 @@ export const RescueDashboard: React.FC = () => {
         </div>
       </aside>
 
+      {/* Main Content Area */}
       <main className="pl-[260px] flex-1 flex flex-col min-w-0">
         <div className="max-w-[1280px] w-full mx-auto p-8 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#1E3A5F]/50 pb-5">
@@ -215,12 +221,13 @@ export const RescueDashboard: React.FC = () => {
             </button>
           </div>
 
-          {errorMsg && (
-            <div className="bg-red-950/60 border border-red-700/80 p-4 rounded text-red-200 text-xs font-mono flex items-center justify-between">
-              <div>[LỖI HỆ THỐNG]: {errorMsg}</div>
+          {/* Banner lỗi thao tác (Accept / Update thất bại) - KHÔNG làm mất bảng dữ liệu */}
+          {actionError && (
+            <div className="bg-red-950/70 border border-red-600 p-4 rounded text-red-200 text-xs font-mono flex items-center justify-between">
+              <div>[LỖI THAO TÁC]: {actionError}</div>
               <button
                 type="button"
-                onClick={() => setErrorMsg(null)}
+                onClick={() => setActionError(null)}
                 className="text-red-400 hover:text-red-200 text-sm ml-4"
               >
                 ✕
@@ -228,6 +235,21 @@ export const RescueDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* Banner lỗi tải danh sách */}
+          {fetchError && (
+            <div className="bg-red-950/60 border border-red-700/80 p-4 rounded text-red-200 text-xs font-mono flex items-center justify-between">
+              <div>[LỖI HỆ THỐNG]: {fetchError}</div>
+              <button
+                type="button"
+                onClick={() => setFetchError(null)}
+                className="text-red-400 hover:text-red-200 text-sm ml-4"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Bộ lọc */}
           <SosFilterBar
             status={statusFilter}
             urgency={urgencyFilter}
@@ -238,13 +260,14 @@ export const RescueDashboard: React.FC = () => {
             onReset={handleResetFilters}
           />
 
+          {/* Bảng dữ liệu */}
           <div className="bg-[#0A1A2F]/80 border border-[#1E3A5F] rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
             {loading ? (
               <div className="p-12 text-center font-mono text-xs text-slate-400 space-y-3">
                 <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                 <div>Đang kết nối trung tâm điều phối Render...</div>
               </div>
-            ) : errorMsg ? (
+            ) : fetchError ? (
               <div className="p-12 text-center font-mono text-xs text-red-400">
                 Không thể tải danh sách cứu hộ do sự cố máy chủ. Vui lòng bấm &quot;Làm mới dữ liệu&quot; để thử lại.
               </div>
