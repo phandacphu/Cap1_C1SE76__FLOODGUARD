@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface Props {
   status: string;
@@ -22,14 +22,15 @@ export const SosFilterBar: React.FC<Props> = ({
   return (
     <div className="bg-[#0A1A2F]/90 border border-[#1E3A5F] rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-4">
-        {/* Lọc Trạng thái */}
         <div className="flex items-center space-x-2">
           <span className="text-xs font-mono text-slate-400 tracking-wide uppercase">
             Trạng thái:
           </span>
           <select
             value={status}
-            onChange={(e) => { onStatusChange(e.target.value); }}
+            onChange={(e) => {
+              onStatusChange(e.target.value);
+            }}
             className="bg-[#051424] text-slate-200 border border-[#1E3A5F] text-xs font-mono rounded px-3 py-1.5 focus:outline-none focus:border-cyan-500"
           >
             <option value="">Tất cả trạng thái</option>
@@ -40,14 +41,15 @@ export const SosFilterBar: React.FC<Props> = ({
           </select>
         </div>
 
-        {/* Lọc Khẩn cấp */}
         <div className="flex items-center space-x-2">
           <span className="text-xs font-mono text-slate-400 tracking-wide uppercase">
             Mức độ:
           </span>
           <select
             value={urgency}
-            onChange={(e) => { onUrgencyChange(e.target.value); }}
+            onChange={(e) => {
+              onUrgencyChange(e.target.value);
+            }}
             className="bg-[#051424] text-slate-200 border border-[#1E3A5F] text-xs font-mono rounded px-3 py-1.5 focus:outline-none focus:border-cyan-500"
           >
             <option value="">Tất cả mức độ</option>
@@ -58,15 +60,15 @@ export const SosFilterBar: React.FC<Props> = ({
           </select>
         </div>
 
-        {/* Checkbox Sắp xếp ưu tiên */}
         <label className="flex items-center space-x-2 cursor-pointer text-xs font-mono text-cyan-400 select-none">
           <input
             type="checkbox"
             checked={sortByPriority}
-            onChange={(e) => { onPrioritySortToggle(e.target.checked); }}
+            onChange={(e) => {
+              onPrioritySortToggle(e.target.checked);
+            }}
             className="rounded bg-[#051424] border-[#1E3A5F] text-cyan-500 focus:ring-0 focus:ring-offset-0"
-          >
-          </input>
+          />
           <span>Ưu tiên cấp bách lên đầu</span>
         </label>
       </div>
