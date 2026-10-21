@@ -48,7 +48,31 @@ data class SafeLocation(
 
     // Thông tin hỗ trợ
     val safetyNote: String = "",
-    val isRouteSafe: Boolean = true
+    val isRouteSafe: Boolean = true,
+
+    // CCF-70: Thông tin chi tiết điểm tránh trú
+
+    // Thông tin công trình
+    val buildingFloors: Int? = null,
+    val elevationMeters: Double? = null,
+    val buildingDescription: String = "",
+    val accessDescription: String = "",
+
+    // Các khu vực tiếp nhận
+    val receptionAreas: List<SafeLocationReceptionArea> = emptyList(),
+
+    // Chi tiết hậu cần và dịch vụ
+    val facilityDetails: List<SafeLocationFacilityDetail> = emptyList(),
+
+    // Thông tin hướng dẫn an toàn
+    val evacuationAdvice: String = "",
+    val floodWarningNote: String = "",
+
+    // Thông tin liên hệ
+    val contacts: List<SafeLocationContact> = emptyList(),
+
+    // Trạng thái xác minh
+    val isVerified: Boolean = false
 ) {
     val availableSlots: Int
         get() = (capacity - currentOccupancy).coerceAtLeast(0)
@@ -66,3 +90,23 @@ data class SafeLocation(
                 status == SafeLocationStatus.LIMITED ||
                 status == SafeLocationStatus.MEDICAL
 }
+data class SafeLocationReceptionArea(
+    val name: String,
+    val capacity: Int,
+    val currentOccupancy: Int
+) {
+    val availableSlots: Int
+        get() = (capacity - currentOccupancy).coerceAtLeast(0)
+}
+
+data class SafeLocationFacilityDetail(
+    val facility: SafeLocationFacility,
+    val description: String = "",
+    val statusLabel: String = ""
+)
+
+data class SafeLocationContact(
+    val name: String,
+    val role: String = "",
+    val phoneNumber: String = ""
+)
