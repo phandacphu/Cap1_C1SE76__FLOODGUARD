@@ -1,6 +1,8 @@
+
 package com.example.floodguard.data.repository
 
 import com.example.floodguard.data.local.SessionManager
+import com.example.floodguard.data.local.SessionUser
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.dto.auth.LoginRequest
 import com.example.floodguard.data.remote.dto.auth.RegisterRequest
@@ -50,51 +52,63 @@ class AuthRepository(
                 if (token.isNullOrBlank()) {
                     return Result.failure(
                         Exception(
-                            body.message ?: "Không nhận được token từ máy chủ."
+                            body.message
+                                ?: "Không nhận được token từ máy chủ."
                         )
                     )
                 }
 
+                // Lấy thông tin người dùng từ API đăng nhập
+                val user = body.data?.user
+
+                // Lưu token
                 sessionManager.saveToken(token)
+
+                // Lưu thông tin tài khoản
+                sessionManager.saveUser(
+                    SessionUser(
+                        id = user?.id,
+                        fullName = user?.fullName,
+                        email = user?.email,
+                        phone = user?.phone,
+                        role = user?.role
+                    )
+                )
 
                 Result.success(Unit)
 
             } else {
 
-                val message =
-                    when (response.code()) {
+                val message = when (response.code()) {
+                    400 ->
+                        "Thông tin đăng nhập không hợp lệ."
 
-                        400 ->
-                            "Thông tin đăng nhập không hợp lệ."
+                    401 ->
+                        "Email/số điện thoại hoặc mật khẩu không đúng."
 
-                        401 ->
-                            "Email/số điện thoại hoặc mật khẩu không đúng."
+                    403 ->
+                        "Tài khoản không có quyền truy cập."
 
-                        403 ->
-                            "Tài khoản không có quyền truy cập."
+                    404 ->
+                        "Không tìm thấy tài khoản."
 
-                        404 ->
-                            "Không tìm thấy tài khoản."
+                    408 ->
+                        "Yêu cầu tới máy chủ quá thời gian."
 
-                        408 ->
-                            "Yêu cầu tới máy chủ quá thời gian."
+                    500 ->
+                        "Máy chủ đang gặp sự cố."
 
-                        500 ->
-                            "Máy chủ đang gặp sự cố."
+                    502 ->
+                        "Máy chủ trung gian đang gặp sự cố."
 
-                        502 ->
-                            "Máy chủ trung gian đang gặp sự cố."
+                    503 ->
+                        "Dịch vụ hiện không khả dụng."
 
-                        503 ->
-                            "Dịch vụ hiện không khả dụng."
+                    else ->
+                        "Đăng nhập thất bại (${response.code()})."
+                }
 
-                        else ->
-                            "Đăng nhập thất bại (${response.code()})."
-                    }
-
-                Result.failure(
-                    Exception(message)
-                )
+                Result.failure(Exception(message))
             }
 
         } catch (e: UnknownHostException) {
@@ -165,31 +179,28 @@ class AuthRepository(
 
             } else {
 
-                val message =
-                    when (response.code()) {
+                val message = when (response.code()) {
 
-                        400 ->
-                            "Thông tin đăng ký không hợp lệ."
+                    400 ->
+                        "Thông tin đăng ký không hợp lệ."
 
-                        409 ->
-                            "Email hoặc số điện thoại đã tồn tại."
+                    409 ->
+                        "Email hoặc số điện thoại đã tồn tại."
 
-                        500 ->
-                            "Máy chủ đang gặp sự cố."
+                    500 ->
+                        "Máy chủ đang gặp sự cố."
 
-                        502 ->
-                            "Máy chủ trung gian đang gặp sự cố."
+                    502 ->
+                        "Máy chủ trung gian đang gặp sự cố."
 
-                        503 ->
-                            "Dịch vụ hiện không khả dụng."
+                    503 ->
+                        "Dịch vụ hiện không khả dụng."
 
-                        else ->
-                            "Đăng ký thất bại (${response.code()})."
-                    }
+                    else ->
+                        "Đăng ký thất bại (${response.code()})."
+                }
 
-                Result.failure(
-                    Exception(message)
-                )
+                Result.failure(Exception(message))
             }
 
         } catch (e: UnknownHostException) {
@@ -219,7 +230,9 @@ class AuthRepository(
             )
         }
     }
+
     suspend fun logout(): Result<Unit> {
+
         return try {
 
             sessionManager.clearSession()
