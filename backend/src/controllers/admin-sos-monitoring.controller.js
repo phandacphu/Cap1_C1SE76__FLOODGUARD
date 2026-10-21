@@ -1,6 +1,7 @@
 const {
   listSosRequestsForAdmin,
   getSosRequestDetailForAdmin,
+  getSosSummaryStatisticsForAdmin,
 } = require("../services/admin-sos-monitoring.service");
 
 const ERROR_STATUSES = {
@@ -33,11 +34,7 @@ function handleError(res, error, operation) {
 }
 
 function ensureAuthenticated(req, res) {
-  if (
-    !req.user ||
-    typeof req.user.id !== "string" ||
-    !req.user.id.trim()
-  ) {
+  if (!req.user || typeof req.user.id !== "string" || !req.user.id.trim()) {
     res.status(401).json({
       success: false,
       message: "Authentication is required",
@@ -53,11 +50,10 @@ async function listAdminSosRequests(req, res) {
   try {
     if (!ensureAuthenticated(req, res)) return;
 
-    const rescueRequests =
-      await listSosRequestsForAdmin(
-        req.user.id,
-        req.query,
-      );
+    const rescueRequests = await listSosRequestsForAdmin(
+      req.user.id,
+      req.query,
+    );
 
     return res.status(200).json({
       success: true,
@@ -67,11 +63,7 @@ async function listAdminSosRequests(req, res) {
       },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "List admin SOS requests",
-    );
+    return handleError(res, error, "List admin SOS requests");
   }
 }
 
@@ -79,12 +71,11 @@ async function getAdminSosRequestDetail(req, res) {
   try {
     if (!ensureAuthenticated(req, res)) return;
 
-    const rescueRequest =
-      await getSosRequestDetailForAdmin(
-        req.user.id,
-        req.params.requestId,
-        req.query,
-      );
+    const rescueRequest = await getSosRequestDetailForAdmin(
+      req.user.id,
+      req.params.requestId,
+      req.query,
+    );
 
     return res.status(200).json({
       success: true,
@@ -94,15 +85,32 @@ async function getAdminSosRequestDetail(req, res) {
       },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "Get admin SOS request detail",
+    return handleError(res, error, "Get admin SOS request detail");
+  }
+}
+
+// CCF-158: Summary statistics for Admin dashboard.
+async function getAdminSosSummaryStatistics(req, res) {
+  try {
+    if (!ensureAuthenticated(req, res)) return;
+
+    const summary = await getSosSummaryStatisticsForAdmin(
+      req.user.id,
+      req.query,
     );
+
+    return res.status(200).json({
+      success: true,
+      message: "SOS summary statistics retrieved successfully",
+      data: summary,
+    });
+  } catch (error) {
+    return handleError(res, error, "Get admin SOS summary statistics");
   }
 }
 
 module.exports = {
   listAdminSosRequests,
   getAdminSosRequestDetail,
+  getAdminSosSummaryStatistics,
 };
