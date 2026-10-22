@@ -198,7 +198,8 @@ fun FloodMapScreen(
             FloodLayerRow(
                 state = state,
                 onToggleFloodLayer = onToggleFloodLayer,
-                onToggleUserLayer = onToggleUserLayer
+                onToggleUserLayer = onToggleUserLayer,
+                onToggleShelterLayer = onToggleShelterLayer
             )
 
             Spacer(
@@ -378,8 +379,15 @@ fun FloodMapScreen(
                 modifier = Modifier.height(18.dp)
             )
 
-            FloodShelterCard(
-                state = state
+            Text(
+                text = "Các điểm trú trên bản đồ hiện là dữ liệu thử nghiệm. " +
+                        "Chưa xác minh mức độ an toàn, sức chứa hoặc khả năng tiếp nhận.",
+                color = MapSecondary,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
             )
 
             Spacer(
@@ -633,11 +641,13 @@ private fun FloodGpsInfo() {
 // LAYERS
 // =====================================================
 
+
 @Composable
 private fun FloodLayerRow(
     state: FloodMapUiState,
     onToggleFloodLayer: () -> Unit,
-    onToggleUserLayer: () -> Unit
+    onToggleUserLayer: () -> Unit,
+    onToggleShelterLayer: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -656,8 +666,15 @@ private fun FloodLayerRow(
             selected = state.isUserLayerEnabled,
             onClick = onToggleUserLayer
         )
+
+        FloodLayerItem(
+            text = "Điểm trú",
+            selected = state.isShelterLayerEnabled,
+            onClick = onToggleShelterLayer
+        )
     }
 }
+
 
 @Composable
 private fun FloodLayerItem(
@@ -1185,6 +1202,38 @@ private fun FloodGoogleMap(
                         )
                     }
                 }
+
+                // CCF-71: Hiển thị Safe Locations từ Backend.
+                // Marker chỉ là dữ liệu thử nghiệm/chưa xác minh.
+                // Không dùng để quyết định sơ tán.
+                if (state.isShelterLayerEnabled) {
+                    state.safeLocations
+                        .filter { safeLocation ->
+                            safeLocation.status.equals(
+                                "active",
+                                ignoreCase = true
+                            ) &&
+                                    safeLocation.location.latitude.isFinite() &&
+                                    safeLocation.location.longitude.isFinite() &&
+                                    safeLocation.location.latitude in -90.0..90.0 &&
+                                    safeLocation.location.longitude in -180.0..180.0
+                        }
+                        .forEach { safeLocation ->
+
+                            Marker(
+                                state = MarkerState(
+                                    position = LatLng(
+                                        safeLocation.location.latitude,
+                                        safeLocation.location.longitude
+                                    )
+                                ),
+                                title = safeLocation.name,
+                                snippet = "DỮ LIỆU THỬ NGHIỆM — " +
+                                        "Chưa xác minh điểm tránh trú"
+                            )
+                        }
+                }
+
             }
 
             if (

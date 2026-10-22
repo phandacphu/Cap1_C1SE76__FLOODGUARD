@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.floodguard.data.repository.FloodAreaRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
+import com.example.floodguard.data.repository.SafeLocationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,7 +12,8 @@ import kotlinx.coroutines.launch
 
 class FloodMapViewModel(
     private val floodAreaRepository: FloodAreaRepository,
-    private val floodAlertRepository: FloodAlertRepository
+    private val floodAlertRepository: FloodAlertRepository,
+    private val safeLocationRepository: SafeLocationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -24,6 +26,7 @@ class FloodMapViewModel(
     init {
         loadFloodAreas()
         loadFloodAlerts()
+        loadSafeLocations()
     }
 
     fun loadFloodAreas() {
@@ -97,6 +100,41 @@ class FloodMapViewModel(
                 }
         }
     }
+
+
+    fun loadSafeLocations() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoadingSafeLocations = true,
+                safeLocationsError = null
+            )
+
+            safeLocationRepository.getSafeLocations()
+                .onSuccess { locations ->
+                    val validLocations = locations.filter { location ->
+                        location.location.latitude.isFinite() &&
+                                location.location.longitude.isFinite() &&
+                                location.location.latitude in -90.0..90.0 &&
+                                location.location.longitude in -180.0..180.0
+                    }
+
+                    _uiState.value = _uiState.value.copy(
+                        safeLocations = validLocations,
+                        isLoadingSafeLocations = false,
+                        safeLocationsError = null
+                    )
+                }
+                .onFailure { error ->
+                    _uiState.value = _uiState.value.copy(
+                        safeLocations = emptyList(),
+                        isLoadingSafeLocations = false,
+                        safeLocationsError = error.message
+                            ?: "Không thể tải điểm tránh trú"
+                    )
+                }
+        }
+    }
+
 
     fun toggleFloodLayer() {
         _uiState.value =
