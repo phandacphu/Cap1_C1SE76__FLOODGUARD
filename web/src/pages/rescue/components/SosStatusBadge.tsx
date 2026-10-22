@@ -16,6 +16,9 @@ export const SosStatusBadge: React.FC<Props> = ({ status }) => {
         return "bg-purple-900/40 text-purple-300 border-purple-500/50";
       case "assisted":
         return "bg-emerald-900/40 text-emerald-300 border-emerald-500/50";
+      case "rejected":
+      case "cancelled":
+        return "bg-slate-800 text-slate-400 border-slate-700";
       default:
         return "bg-slate-800 text-slate-300 border-slate-700";
     }
@@ -31,6 +34,10 @@ export const SosStatusBadge: React.FC<Props> = ({ status }) => {
         return "Đang cứu hộ";
       case "assisted":
         return "Đã hoàn tất";
+      case "rejected":
+        return "Từ chối";
+      case "cancelled":
+        return "Đã hủy";
       default:
         return status;
     }

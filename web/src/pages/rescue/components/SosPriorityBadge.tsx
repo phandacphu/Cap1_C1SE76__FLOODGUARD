@@ -6,7 +6,7 @@ interface Props {
 }
 
 export const SosPriorityBadge: React.FC<Props> = ({ urgency }) => {
-  const getStyle = () => {
+  const getStyle = (): string => {
     switch (urgency) {
       case "critical":
         return "bg-red-950/80 text-red-400 border-red-600/60 animate-pulse";
@@ -20,7 +20,7 @@ export const SosPriorityBadge: React.FC<Props> = ({ urgency }) => {
     }
   };
 
-  const getLabel = () => {
+  const getLabel = (): string => {
     switch (urgency) {
       case "critical":
         return "NGUY CẤP";

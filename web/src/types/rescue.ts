@@ -1,41 +1,47 @@
 export type UrgencyLevel = 'low' | 'medium' | 'high' | 'critical';
-export type SosStatus = 'submitted' | 'received' | 'in_progress' | 'assisted' | 'cancelled';
-export type AssignmentStatus = 'accepted' | 'in_progress' | 'completed';
 
-export interface LocationCoords {
+export type SosStatus = 'submitted' | 'received' | 'in_progress' | 'assisted' | 'rejected' | 'cancelled';
+
+export interface LocationCoordinates {
   latitude: number;
   longitude: number;
+  address?: string;
 }
 
 export interface Assignment {
-  id: string;
-  requestId: string;
   rescueStaffId: string;
-  status: AssignmentStatus;
-  note: string | null;
   assignedAt: string;
-  updatedAt: string;
+  note?: string;
 }
 
+export type RescueAssignment = Assignment;
+
 export interface StatusHistoryItem {
-  id: string;
-  oldStatus: string | null;
-  newStatus: string;
-  changedBy: string;
-  note: string | null;
+  status: SosStatus;
   changedAt: string;
+  changedBy?: string;
+  note?: string;
 }
 
 export interface RescueRequest {
   id: string;
-  residentId: string;
-  location: LocationCoords;
-  urgency: UrgencyLevel;
+  senderName: string;
+  phoneNumber: string;
+  location: LocationCoordinates;
   numberOfPeople: number;
-  note: string | null;
+  urgency: UrgencyLevel;
   status: SosStatus;
+  note?: string;
   createdAt: string;
   updatedAt: string;
-  assignment?: Assignment | null;
+  assignment?: Assignment;
+  assignedStaffId?: string;
+  assignedTo?: string;
   statusHistory?: StatusHistoryItem[];
+}
+
+export interface GetRescueRequestsParams {
+  status?: SosStatus;
+  urgency?: UrgencyLevel;
+  sort?: string;
 }
