@@ -43,12 +43,11 @@ export function useRescueRequests(params: ListParams = {}) {
           (r) => r.status === "received" || r.status === "in_progress"
         );
 
-        // Fetch API chi tiết song song, kèm log để bắt mạch dữ liệu
+        // Fetch API chi tiết song song
         const details = await Promise.all(
           activeRequests.map(async (r) => {
             try {
               const detailRes = await rescueService.getRescueDetail(r.id);
-              console.log(`[DEBUG] Dữ liệu chi tiết của SOS ${r.id}:`, detailRes);
               return { id: r.id, data: detailRes };
             } catch {
               return null;
@@ -66,9 +65,6 @@ export function useRescueRequests(params: ListParams = {}) {
           if (!assignmentObj && actualData?.rescueStaffId) {
             assignmentObj = { rescueStaffId: actualData.rescueStaffId };
           }
-
-          // Cố tình in ra log để bạn lấy bằng chứng (gửi cho Leader nếu cần)
-          console.log(`[DEBUG] Trạng thái quyền của SOS ${r.id}:`, assignmentObj);
 
           return assignmentObj ? { ...r, assignment: assignmentObj } : r;
         });
