@@ -38,7 +38,7 @@ export function RescueSosList() {
     urgency: urgency ? (urgency as UrgencyLevel) : undefined,
     sort: sort === "priority" ? "priority" : undefined,
   });
-  const actions = useRescueActions(user?.id, refresh);
+  const actions = useRescueActions(refresh);
 
   const view = useMemo(() => {
     if (!requests || !updatedAt) return null;
