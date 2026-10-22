@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { rescueService } from "../../api/rescueService";
-import type { RescueRequest, SosStatus, UrgencyLevel } from "../../types/rescue";
+import type { RescueRequest, SosStatus, UrgencyLevel, Assignment } from "../../types/rescue";
 
 const AUTO_REFRESH_MS = 15_000;
 
@@ -15,6 +15,15 @@ interface ListState {
   error: string | null;
   key: string;
   updatedAt: Date | null;
+}
+
+interface RescueDetailResponse {
+  data?: {
+    assignment?: Assignment;
+    rescueStaffId?: string | number;
+  };
+  assignment?: Assignment;
+  rescueStaffId?: string | number;
 }
 
 /** Loads SOS requests and refreshes every 15 seconds or on demand. */
@@ -55,15 +64,17 @@ export function useRescueRequests(params: ListParams = {}) {
           })
         );
 
-        // Gộp dữ liệu linh hoạt: Bắt cả dạng Nested (bọc trong assignment) và Dạng phẳng (Flat)
+        // Gộp dữ liệu linh hoạt, cast type chuẩn Assignment để TypeScript không phàn nàn
         const mergedRequests = requests.map((r) => {
           const detailObj = details.find((d) => d?.id === r.id);
-          const actualData = detailObj?.data?.data || detailObj?.data;
+          const rawData = detailObj?.data as unknown as RescueDetailResponse | undefined;
+          const actualData = rawData?.data || rawData;
           
-          // Tự động thích nghi: Nếu có assignment thì lấy, nếu Backend ném thẳng rescueStaffId ra ngoài thì tự bọc lại
           let assignmentObj = actualData?.assignment;
           if (!assignmentObj && actualData?.rescueStaffId) {
-            assignmentObj = { rescueStaffId: actualData.rescueStaffId };
+            assignmentObj = {
+              rescueStaffId: String(actualData.rescueStaffId),
+            } as Assignment;
           }
 
           return assignmentObj ? { ...r, assignment: assignmentObj } : r;

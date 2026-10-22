@@ -51,12 +51,17 @@ export function RescueDashboard() {
     };
   }, [token]);
 
+  const userId = user?.id;
+
   const view = useMemo(() => {
     if (!requests || !updatedAt) return null;
     
-    // Phân quyền Backend (Ép kiểu để sửa lỗi Type Mismatch)
     const isMine = (r: NonNullable<typeof requests>[number]) =>
-      String(r.assignment?.rescueStaffId) === String(user?.id);
+      Boolean(
+        r.assignment?.rescueStaffId &&
+        userId &&
+        String(r.assignment.rescueStaffId) === String(userId)
+      );
 
     return {
       now: updatedAt,
@@ -67,7 +72,7 @@ export function RescueDashboard() {
       ),
       openCount: requests.filter((r) => isOpen(r.status)).length,
     };
-  }, [requests, updatedAt, user?.id]);
+  }, [requests, updatedAt, userId]);
 
   const topAlert = useMemo(
     () => [...alertsState.alerts].sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])[0] ?? null,
@@ -76,10 +81,9 @@ export function RescueDashboard() {
 
   const kpis = view?.kpis;
   
-  // Logic phân quyền chặt chẽ: Phân biệt "Mới gửi" và "Đã có người nhận" (Ép kiểu String)
   const canProgress = (item: NonNullable<typeof requests>[number]) => {
     if (item.status === "submitted") return true; 
-    return !!item.assignment && String(item.assignment.rescueStaffId) === String(user?.id);
+    return Boolean(item.assignment?.rescueStaffId && userId && String(item.assignment.rescueStaffId) === String(userId));
   };
 
   return (
