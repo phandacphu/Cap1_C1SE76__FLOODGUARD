@@ -54,9 +54,9 @@ export function RescueDashboard() {
   const view = useMemo(() => {
     if (!requests || !updatedAt) return null;
     
-    // Phân quyền Backend
+    // Phân quyền Backend (Ép kiểu để sửa lỗi Type Mismatch)
     const isMine = (r: NonNullable<typeof requests>[number]) =>
-      r.assignment?.rescueStaffId === user?.id;
+      String(r.assignment?.rescueStaffId) === String(user?.id);
 
     return {
       now: updatedAt,
@@ -76,10 +76,10 @@ export function RescueDashboard() {
 
   const kpis = view?.kpis;
   
-  // Logic phân quyền chặt chẽ: Phân biệt "Mới gửi" và "Đã có người nhận"
+  // Logic phân quyền chặt chẽ: Phân biệt "Mới gửi" và "Đã có người nhận" (Ép kiểu String)
   const canProgress = (item: NonNullable<typeof requests>[number]) => {
     if (item.status === "submitted") return true; 
-    return !!item.assignment && item.assignment.rescueStaffId === user?.id;
+    return !!item.assignment && String(item.assignment.rescueStaffId) === String(user?.id);
   };
 
   return (
