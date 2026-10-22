@@ -342,6 +342,11 @@ fun AppNavGraph(
                 onBack = {
                     navController.popBackStack()
                 },
+                onMapClick = {
+                    navController.navigate(AppRoutes.MAP) {
+                        launchSingleTop = true
+                    }
+                },
 
                 onNotificationClick = {
                     Toast.makeText(
