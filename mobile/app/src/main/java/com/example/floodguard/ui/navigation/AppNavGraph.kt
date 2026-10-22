@@ -27,6 +27,7 @@ import com.example.floodguard.ui.screens.warning.WarningViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
+import com.example.floodguard.data.repository.SafeLocationRepository
 
 @Composable
 fun AppNavGraph(
@@ -36,7 +37,13 @@ fun AppNavGraph(
 ) {
     val context = LocalContext.current
 
-    val safeLocationViewModel: SafeLocationViewModel = viewModel()
+    val safeLocationViewModel: SafeLocationViewModel = viewModel {
+        SafeLocationViewModel(
+            repository = SafeLocationRepository(
+                safeLocationApi = ApiClient.safeLocationApi
+            )
+        )
+    }
 
     NavHost(
         navController = navController,
@@ -418,19 +425,21 @@ fun AppNavGraph(
                 ?.getString("locationId")
                 .orEmpty()
 
+
             val detailViewModel: SafeLocationDetailViewModel = viewModel(
                 viewModelStoreOwner = backStackEntry
-            )
-
-            androidx.compose.runtime.LaunchedEffect(locationId) {
-                detailViewModel.loadLocation(
-                    locationId = locationId,
-                    locations = safeLocationViewModel
-                        .getLocationById(locationId)
-                        ?.let { listOf(it) }
-                        ?: emptyList()
+            ) {
+                SafeLocationDetailViewModel(
+                    repository = SafeLocationRepository(
+                        safeLocationApi = ApiClient.safeLocationApi
+                    )
                 )
             }
+
+            androidx.compose.runtime.LaunchedEffect(locationId) {
+                detailViewModel.loadLocation(locationId)
+            }
+
 
             SafeLocationDetailScreen(
                 viewModel = detailViewModel,
