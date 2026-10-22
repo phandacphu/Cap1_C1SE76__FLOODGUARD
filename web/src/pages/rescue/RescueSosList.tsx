@@ -168,9 +168,13 @@ export function RescueSosList() {
             )}
           </header>
 
-          {!view ? (
+          {error ? (
+            <p className="p-8 text-center font-mono text-xs text-warn">
+              Lỗi kết nối: Không thể tải danh sách SOS.
+            </p>
+          ) : !view || loading ? (
             <p className="p-8 text-center font-mono text-xs text-muted">
-              {loading ? "Đang kết nối máy chủ..." : "Chưa có dữ liệu."}
+              Đang kết nối máy chủ...
             </p>
           ) : total === 0 ? (
             <p className="p-8 text-center font-mono text-xs text-muted">
@@ -195,8 +199,11 @@ export function RescueSosList() {
                   {pageRows.map((item) => {
                     const hot = item.urgency === "critical" && isOpen(item.status);
                     const done = item.status === "assisted" || item.status === "cancelled";
-                    const mine =
-                      item.assignment?.rescueStaffId === user?.id || actions.mineIds.has(item.id);
+                    
+                    // Quyền thao tác chặt chẽ theo Backend
+                    const isMine = !!item.assignment && item.assignment.rescueStaffId === user?.id;
+                    const canProgress = item.status === "submitted" || isMine;
+
                     return (
                       <tr
                         key={item.id}
@@ -230,7 +237,7 @@ export function RescueSosList() {
                         <td className="px-4 py-4 text-right">
                           <SosActionButtons
                             item={item}
-                            canProgress={!item.assignment || mine}
+                            canProgress={canProgress}
                             busy={actions.busyId === item.id}
                             onAccept={(id) => void actions.accept(id)}
                             onAdvance={(id, next) => void actions.advance(id, next)}

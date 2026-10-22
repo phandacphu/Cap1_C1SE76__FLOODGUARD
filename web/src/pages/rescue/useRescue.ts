@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { rescueService } from "../../api/rescueService";
 import type { RescueRequest, SosStatus, UrgencyLevel } from "../../types/rescue";
@@ -33,11 +32,6 @@ export function useRescueRequests(params: ListParams = {}) {
 
   useEffect(() => {
     let cancelled = false;
-
-    setState((prev) => ({
-      ...prev,
-      error: null,
-    }));
 
     rescueService
       .getRescueRequests({ status, urgency, sort })
