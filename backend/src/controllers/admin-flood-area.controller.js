@@ -27,6 +27,7 @@ function handleAreaError(res, error) {
   const errorStatuses = {
     INVALID_ADMIN_AREA_ID: 400,
     INVALID_ADMIN_AREA_DATA: 400,
+    INVALID_FLOOD_AREA_STATS_QUERY: 400,
     ADMIN_AREA_AUTH_REQUIRED: 401,
     ADMIN_AREA_ACCOUNT_INACTIVE: 403,
     ADMIN_AREA_ROLE_FORBIDDEN: 403,
@@ -164,20 +165,17 @@ async function deleteAdminFloodArea(req, res) {
   }
 }
 
+// CCF-161: Flood Area statistics with report filtering.
 async function getAdminFloodAreaSummaryStatistics(req, res) {
   try {
     if (!hasAuthenticatedUser(req, res)) {
       return;
     }
 
-    if (Object.keys(req.query || {}).length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Query parameters are not supported",
-      });
-    }
-
-    const summary = await getFloodAreaSummaryStatisticsForAdmin(req.user.id);
+    const summary = await getFloodAreaSummaryStatisticsForAdmin(
+      req.user.id,
+      req.query,
+    );
 
     return res.status(200).json({
       success: true,

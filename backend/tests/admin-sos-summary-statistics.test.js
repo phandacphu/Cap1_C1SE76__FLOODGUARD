@@ -354,6 +354,43 @@ async function runTests() {
     assert.equal(offset.status, 200);
     assert.deepEqual(offset.body.data, exact.body.data);
 
+    // CCF-161: Filter summary by status.
+    const byStatus = await request("?status=submitted");
+
+    assert.equal(byStatus.status, 200);
+    assert.deepEqual(
+      byStatus.body.data,
+      expectedSummary(1, { submitted: 1 }, { low: 1 }),
+    );
+
+    // CCF-161: Filter summary by urgency.
+    const byUrgency = await request("?urgency=low");
+
+    assert.equal(byUrgency.status, 200);
+    assert.deepEqual(
+      byUrgency.body.data,
+      expectedSummary(2, { submitted: 1, cancelled: 1 }, { low: 2 }),
+    );
+
+    // CCF-161: Combine status, urgency and date range.
+    const combined = await request(
+      "?status=received&urgency=high" +
+        "&from=2026-10-13T07:00:00.000Z" +
+        "&to=2026-10-13T07:00:00.000Z",
+    );
+
+    assert.equal(combined.status, 200);
+    assert.deepEqual(
+      combined.body.data,
+      expectedSummary(1, { received: 1 }, { high: 1 }),
+    );
+
+    // CCF-161: Valid filters with no matching records.
+    const filteredEmpty = await request("?status=received&urgency=critical");
+
+    assert.equal(filteredEmpty.status, 200);
+    assert.deepEqual(filteredEmpty.body.data, expectedSummary(0, {}, {}));
+
     // 6. No matching SOS.
     const noMatches = await request("?from=2026-10-14T00:00:00.000Z");
 
@@ -392,8 +429,9 @@ async function runTests() {
       "?from=2026-10-13",
       "?from=2026-10-13T25:00:00Z",
       "?from=2026-10-14T00:00:00Z" + "&to=2026-10-13T00:00:00Z",
-      "?status=submitted",
-      "?urgency=high",
+      "?status=invalid",
+      "?urgency=invalid",
+      "?status=submitted&status=received",
       "?page=1",
     ]) {
       await expectRejected(path, 400);

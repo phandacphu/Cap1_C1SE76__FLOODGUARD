@@ -91,8 +91,9 @@ function normalizeStatisticsQuery(query = {}) {
 
   const keys = Object.keys(query);
 
-  if (keys.some((key) => !["from", "to"].includes(key))) {
-    throw invalidQuery("Only from and to are supported");
+  // CCF-161: Support status and severity in addition to date range.
+  if (keys.some((key) => !["from", "to", "status", "severity"].includes(key))) {
+    throw invalidQuery("Only from, to, status and severity are supported");
   }
 
   const from = parseDateParameter(query.from, "from");
@@ -102,11 +103,28 @@ function normalizeStatisticsQuery(query = {}) {
     throw invalidQuery("from must not be later than to");
   }
 
-  return { from, to };
+  // CCF-161: Validate status and severity filters.
+  const { status, severity } = query;
+
+  if (
+    status !== undefined &&
+    (typeof status !== "string" || !STATUSES.includes(status))
+  ) {
+    throw invalidQuery("Invalid status filter");
+  }
+
+  if (
+    severity !== undefined &&
+    (typeof severity !== "string" || !SEVERITIES.includes(severity))
+  ) {
+    throw invalidQuery("Invalid severity filter");
+  }
+
+  return { from, to, status, severity };
 }
 
 async function getWarningSummaryStatisticsForAdmin(actorId, query = {}) {
-  const { from, to } = normalizeStatisticsQuery(query);
+  const { from, to, status, severity } = normalizeStatisticsQuery(query);
 
   // Reuse the existing Admin authorization and Firestore read.
   const alerts = await listFloodAlertsForAdmin(actorId);
@@ -126,6 +144,16 @@ async function getWarningSummaryStatisticsForAdmin(actorId, query = {}) {
   };
 
   for (const alert of alerts) {
+    // CCF-161: Apply status and severity filters.
+    if (status !== undefined && alert.status !== status) {
+      continue;
+    }
+
+    if (severity !== undefined && alert.severity !== severity) {
+      continue;
+    }
+
+    // Keep the existing inclusive date-range filtering.
     if (from !== null || to !== null) {
       const createdAt = alert.createdAt ? Date.parse(alert.createdAt) : NaN;
 
@@ -142,6 +170,7 @@ async function getWarningSummaryStatisticsForAdmin(actorId, query = {}) {
       }
     }
 
+    // Count only warnings matching all supplied filters.
     summary.total++;
 
     if (SEVERITIES.includes(alert.severity)) {

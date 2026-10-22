@@ -181,7 +181,6 @@ function parseDateFilter(value, fieldName) {
   const second = Number(match[6]);
 
   const offsetHour = match[10] ? Number(match[10]) : 0;
-
   const offsetMinute = match[11] ? Number(match[11]) : 0;
 
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
@@ -235,10 +234,12 @@ function parseDateFilter(value, fieldName) {
 }
 
 // CCF-158: Get summary statistics for Admin dashboard.
+// CCF-161: Support date range, status and urgency filters.
 async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
   const admin = await authorizeAdmin(actorId);
 
-  validateQuery(query, ["from", "to"]);
+  // CCF-161: Allow supported report query parameters.
+  validateQuery(query, ["from", "to", "status", "urgency"]);
 
   const from = parseDateFilter(query.from, "from");
   const to = parseDateFilter(query.to, "to");
@@ -251,6 +252,42 @@ async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
     );
   }
 
+  // CCF-161: Validate report filters.
+  const allowedStatuses = [
+    "submitted",
+    "received",
+    "in_progress",
+    "assisted",
+    "cancelled",
+  ];
+
+  const allowedUrgencies = ["low", "medium", "high", "critical"];
+
+  const { status, urgency } = query;
+
+  if (
+    status !== undefined &&
+    (typeof status !== "string" || !allowedStatuses.includes(status))
+  ) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      "Invalid status filter",
+      400,
+    );
+  }
+
+  if (
+    urgency !== undefined &&
+    (typeof urgency !== "string" || !allowedUrgencies.includes(urgency))
+  ) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      "Invalid urgency filter",
+      400,
+    );
+  }
+
+  // Reuse the existing Admin-authorized SOS retrieval.
   const requests = await getRescueRequestsForUser(admin, {});
 
   const summary = {
@@ -271,6 +308,17 @@ async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
   };
 
   for (const request of requests) {
+    // CCF-161: Filter by SOS status.
+    if (status !== undefined && request.status !== status) {
+      continue;
+    }
+
+    // CCF-161: Filter by SOS urgency.
+    if (urgency !== undefined && request.urgency !== urgency) {
+      continue;
+    }
+
+    // CCF-158: Keep existing inclusive date-range filtering.
     if (from !== null || to !== null) {
       const createdAt =
         request.createdAt && typeof request.createdAt.toMillis === "function"
@@ -290,6 +338,7 @@ async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
       }
     }
 
+    // Count only requests matching all supplied filters.
     summary.total++;
 
     if (Object.hasOwn(summary.byStatus, request.status)) {
