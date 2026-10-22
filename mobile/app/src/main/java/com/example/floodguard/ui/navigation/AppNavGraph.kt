@@ -29,11 +29,15 @@ import com.example.floodguard.ui.screens.map.FloodMapRoute
 import com.example.floodguard.ui.screens.map.FloodMapViewModel
 import com.example.floodguard.ui.screens.profile.ProfileScreen
 import com.example.floodguard.ui.screens.profile.ProfileViewModel
+import com.example.floodguard.ui.screens.safe_location.SafeLocationListScreen
 import com.example.floodguard.ui.screens.warning.WarningDetailRoute
 import com.example.floodguard.ui.screens.warning.WarningDetailViewModel
 import com.example.floodguard.ui.screens.warning.WarningListScreen
 import com.example.floodguard.ui.screens.warning.WarningViewModel
 import kotlinx.coroutines.launch
+import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
+import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
+import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
 
 @Composable
 fun AppNavGraph(
@@ -47,6 +51,7 @@ fun AppNavGraph(
         SessionManager(context.applicationContext)
     }
     val scope = rememberCoroutineScope()
+    val safeLocationViewModel: SafeLocationViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -195,11 +200,9 @@ fun AppNavGraph(
                     navController.navigate(AppRoutes.MAP)
                 },
                 onSafeLocationClick = {
-                    Toast.makeText(
-                        context,
-                        "Tránh trú chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.SAFE_LOCATION) {
+                        launchSingleTop = true
+                    }
                 },
                 onBottomNavigate = { route ->
                     when (route) {
@@ -220,11 +223,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
-                            Toast.makeText(
-                                context,
-                                "Tránh trú chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SAFE_LOCATION) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.PROFILE -> {
@@ -349,11 +350,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
-                            Toast.makeText(
-                                context,
-                                "Tránh trú chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SAFE_LOCATION) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.PROFILE -> {
@@ -403,11 +402,9 @@ fun AppNavGraph(
                     navController.navigate(AppRoutes.MAP)
                 },
                 onSafeLocationClick = {
-                    Toast.makeText(
-                        context,
-                        "Tránh trú chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.SAFE_LOCATION) {
+                        launchSingleTop = true
+                    }
                 },
                 onSosClick = {
                     Toast.makeText(
@@ -439,9 +436,182 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
+                            navController.navigate(AppRoutes.SAFE_LOCATION) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.PROFILE -> {
                             Toast.makeText(
                                 context,
-                                "Tránh trú chưa được triển khai",
+                                "Cài đặt chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            )
+        }
+
+        // SAFE LOCATION LIST - CCF-69
+        composable(route = AppRoutes.SAFE_LOCATION) {
+            SafeLocationListScreen(
+                viewModel = safeLocationViewModel,
+                onBack = {
+                    navController.popBackStack()
+                },
+
+                onNotificationClick = {
+                    Toast.makeText(
+                        context,
+                        "Thông báo chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onProfileClick = {
+                    Toast.makeText(
+                        context,
+                        "Hồ sơ chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onViewDetail = { locationId ->
+                    navController.navigate(
+                        "${AppRoutes.SAFE_LOCATION_DETAIL}/$locationId"
+                    )
+                },
+
+                onDirections = {
+                    Toast.makeText(
+                        context,
+                        "Chỉ đường sẽ được tích hợp sau",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onBottomNavigate = { route ->
+                    when (route) {
+
+                        AppRoutes.HOME -> {
+                            navController.navigate(AppRoutes.HOME) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.MAP -> {
+                            navController.navigate(AppRoutes.MAP) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.SAFE_LOCATION -> Unit
+
+                        AppRoutes.SEND_SOS -> {
+                            Toast.makeText(
+                                context,
+                                "SOS chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        AppRoutes.PROFILE -> {
+                            Toast.makeText(
+                                context,
+                                "Cài đặt chưa được triển khai",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            )
+        }
+
+        // SAFE LOCATION DETAIL - CCF-70
+        composable(
+            route = "${AppRoutes.SAFE_LOCATION_DETAIL}/{locationId}"
+        ) { backStackEntry ->
+
+            val locationId = backStackEntry.arguments
+                ?.getString("locationId")
+                .orEmpty()
+
+            val detailViewModel: SafeLocationDetailViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry
+            )
+
+            androidx.compose.runtime.LaunchedEffect(locationId) {
+                detailViewModel.loadLocation(
+                    locationId = locationId,
+                    locations = safeLocationViewModel
+                        .getLocationById(locationId)
+                        ?.let { listOf(it) }
+                        ?: emptyList()
+                )
+            }
+
+            SafeLocationDetailScreen(
+                viewModel = detailViewModel,
+
+                onBack = {
+                    navController.popBackStack()
+                },
+
+                onNotificationClick = {
+                    Toast.makeText(
+                        context,
+                        "Thông báo chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onProfileClick = {
+                    Toast.makeText(
+                        context,
+                        "Hồ sơ chưa được triển khai",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onDirections = {
+                    Toast.makeText(
+                        context,
+                        "Chưa có tuyến đường được xác minh",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onContactClick = {
+                    Toast.makeText(
+                        context,
+                        "Chức năng liên hệ chưa được kết nối",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+
+                onBottomNavigate = { route ->
+                    when (route) {
+                        AppRoutes.HOME -> {
+                            navController.navigate(AppRoutes.HOME) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.MAP -> {
+                            navController.navigate(AppRoutes.MAP) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        AppRoutes.SAFE_LOCATION -> {
+                            navController.popBackStack()
+                        }
+
+                        AppRoutes.SEND_SOS -> {
+                            Toast.makeText(
+                                context,
+                                "SOS chưa được triển khai",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -526,11 +696,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
-                            Toast.makeText(
-                                context,
-                                "Tránh trú chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SAFE_LOCATION) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.PROFILE -> {

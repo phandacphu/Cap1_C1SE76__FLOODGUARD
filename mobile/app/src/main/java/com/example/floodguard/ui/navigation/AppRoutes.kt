@@ -20,15 +20,11 @@ object AppRoutes {
 
     const val SAFE_LOCATION = "safe_location"
 
-    const val SAFE_LOCATION_DETAIL =
-        "safe_location_detail"
+    const val SAFE_LOCATION_DETAIL = "safe_location_detail"
 
-    const val NOTIFICATION =
-        "notification"
+    const val NOTIFICATION = "notification"
 
-    const val CHATBOT =
-        "chatbot"
+    const val CHATBOT = "chatbot"
 
-    const val PROFILE =
-        "profile"
+    const val PROFILE = "profile"
 }
