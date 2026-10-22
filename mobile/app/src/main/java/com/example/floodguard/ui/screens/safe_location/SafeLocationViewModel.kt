@@ -13,6 +13,12 @@ class SafeLocationViewModel : ViewModel() {
 
     private val allLocations = createMockLocations()
 
+    fun getLocationById(locationId: String): SafeLocation? {
+        return allLocations.find { location ->
+            location.id == locationId
+        }
+    }
+
     private val _uiState = MutableStateFlow(
         SafeLocationUiState(
             locations = allLocations
