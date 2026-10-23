@@ -7,7 +7,7 @@ import type { User, UserRole } from "../types/auth";
  *   200 -> { success, message, data: { token, user } }
  *   400 missing fields | 401 wrong credentials | 403 inactive account | 500 server error
  */
-const API_URL = (
+export const API_URL = (
   import.meta.env.VITE_API_URL ?? "https://floodguard-backend-demo.onrender.com/api"
 ).replace(/\/+$/, "");
 
@@ -107,4 +107,19 @@ export async function loginRequest(
       role,
     },
   };
+}
+
+/**
+ * Tells the backend the user logged out (POST /auth/logout).
+ * The JWT is stateless, so a failure must never block the local logout.
+ */
+export async function logoutRequest(token: string): Promise<void> {
+  try {
+    await fetch(`${API_URL}/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Ignore: the caller clears the local session anyway.
+  }
 }
