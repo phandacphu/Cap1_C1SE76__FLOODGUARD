@@ -270,9 +270,50 @@ async function runTests() {
       expectedSummary(1, { high: 1 }, { active: 1 }),
     );
 
+    // CCF-161: Filter warnings by status.
+    const byStatus = await request("?status=active");
+
+    assert.equal(byStatus.status, 200);
+    assert.deepEqual(
+      byStatus.body.data,
+      expectedSummary(3, { low: 1, high: 2 }, { active: 3 }),
+    );
+
+    // CCF-161: Filter warnings by severity.
+    const bySeverity = await request("?severity=high");
+
+    assert.equal(bySeverity.status, 200);
+    assert.deepEqual(
+      bySeverity.body.data,
+      expectedSummary(2, { high: 2 }, { active: 2 }),
+    );
+
+    // CCF-161: Combine status, severity and date range.
+    const combined = await request(
+      "?status=active&severity=high" +
+        "&from=2026-10-13T07:00:00.000Z" +
+        "&to=2026-10-13T07:00:00.000Z",
+    );
+
+    assert.equal(combined.status, 200);
+    assert.deepEqual(
+      combined.body.data,
+      expectedSummary(1, { high: 1 }, { active: 1 }),
+    );
+
+    // CCF-161: Valid filters with no matching warnings.
+    const filteredEmpty = await request("?status=inactive&severity=low");
+
+    assert.equal(filteredEmpty.status, 200);
+    assert.deepEqual(filteredEmpty.body.data, expectedSummary(0));
+
     // 5. Reject invalid query parameters.
     for (const query of [
       "?unexpected=value",
+      "?status=invalid",
+      "?severity=invalid",
+      "?status=active&status=inactive",
+      "?severity=high&severity=low",
       "?from=invalid",
       "?from=2026-02-30T10:00:00Z",
       "?from=2026-10-13",

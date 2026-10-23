@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -82,14 +83,33 @@ fun SafeLocationListScreen(
                 SafeLocationMapPreview()
             }
 
+
             item {
-                Text(
-                    text = "ĐỊA ĐIỂM TRÁNH TRÚ",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ĐỊA ĐIỂM TRÁNH TRÚ",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+
+                    IconButton(
+                        onClick = viewModel::refresh,
+                        enabled = !state.isLoading
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Tải lại danh sách",
+                            tint = if (state.isLoading) MutedText else AccentCyan
+                        )
+                    }
+                }
             }
+
 
             item {
                 SafeLocationFilters(
@@ -114,24 +134,64 @@ fun SafeLocationListScreen(
                     }
                 }
 
+
                 state.errorMessage != null -> {
                     item {
-                        Text(
-                            text = state.errorMessage,
-                            color = Color(0xFFFF8585)
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = state.errorMessage
+                                    ?: "Không thể tải danh sách điểm tránh trú.",
+                                color = Color(0xFFFF8585)
+                            )
+
+                            Button(
+                                onClick = viewModel::refresh,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AccentCyan,
+                                    contentColor = PageBackground
+                                )
+                            ) {
+                                Text("Thử lại")
+                            }
+                        }
                     }
                 }
 
+
+
                 state.locations.isEmpty() -> {
                     item {
-                        Text(
-                            text = "Không có điểm tránh trú phù hợp.",
-                            color = MutedText,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Không có điểm tránh trú phù hợp.",
+                                color = MutedText
+                            )
+
+                            Button(
+                                onClick = viewModel::refresh,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AccentCyan,
+                                    contentColor = PageBackground
+                                )
+                            ) {
+                                Text("Tải lại danh sách")
+                            }
+                        }
                     }
                 }
+
 
                 else -> {
                     items(
@@ -154,7 +214,7 @@ fun SafeLocationListScreen(
 
             item {
                 Text(
-                    text = "DỮ LIỆU MINH HỌA — KHÔNG DÙNG ĐỂ QUYẾT ĐỊNH SƠ TÁN",
+                    text = "THÔNG TIN TIẾP NHẬN VÀ ĐỘ AN TOÀN CHƯA ĐƯỢC XÁC MINH — HÃY THEO DÕI HƯỚNG DẪN CHÍNH THỨC",
                     color = MutedText,
                     fontSize = 11.sp
                 )
@@ -181,7 +241,7 @@ private fun SafeLocationHeader(
                 )
 
                 Text(
-                    text = "FloodGuard • Dữ liệu mẫu",
+                    text = "FloodGuard • Danh sách từ Backend",
                     fontSize = 10.sp,
                     color = MutedText
                 )
@@ -314,7 +374,7 @@ private fun SafeLocationMapPreview() {
                 )
 
                 Text(
-                    text = "Sẽ tích hợp Google Maps ở CCF-71",
+                    text = "Bản đồ xem trước chưa hiển thị vị trí thực tế",
                     color = MutedText,
                     fontSize = 12.sp
                 )
@@ -341,23 +401,6 @@ private fun SafeLocationFilters(
             modifier = Modifier.weight(1f)
         )
 
-        FilterButton(
-            label = "Gần nhất",
-            selected = selectedFilter == SafeLocationFilter.NEAREST,
-            onClick = {
-                onSelectFilter(SafeLocationFilter.NEAREST)
-            },
-            modifier = Modifier.weight(1f)
-        )
-
-        FilterButton(
-            label = "Còn chỗ",
-            selected = selectedFilter == SafeLocationFilter.AVAILABLE,
-            onClick = {
-                onSelectFilter(SafeLocationFilter.AVAILABLE)
-            },
-            modifier = Modifier.weight(1f)
-        )
 
         FilterButton(
             label = "Có y tế",
@@ -442,9 +485,10 @@ private fun EmergencySupportCard() {
             )
 
             Text(
-                text = "Trong tình huống nguy hiểm, hãy liên hệ lực lượng chức năng và làm theo hướng dẫn chính thức.",
-                color = MutedText,
-                fontSize = 12.sp
+                text = "DỮ LIỆU THỬ NGHIỆM — KHÔNG DÙNG ĐỂ QUYẾT ĐỊNH SƠ TÁN",
+                color = Color(0xFFFFB84D),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
             )
         }
     }

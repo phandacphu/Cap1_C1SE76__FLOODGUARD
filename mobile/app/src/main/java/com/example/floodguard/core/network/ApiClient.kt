@@ -6,6 +6,7 @@ import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.api.FloodAlertApi
 import com.example.floodguard.data.remote.api.FloodAreaApi
+import com.example.floodguard.data.remote.api.SafeLocationApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -46,6 +47,9 @@ object ApiClient {
 
     val floodAreaApi: FloodAreaApi =
         publicRetrofit.create(FloodAreaApi::class.java)
+
+    val safeLocationApi: SafeLocationApi =
+        publicRetrofit.create(SafeLocationApi::class.java)
 
     fun createAuthenticatedRetrofit(
         sessionManager: SessionManager

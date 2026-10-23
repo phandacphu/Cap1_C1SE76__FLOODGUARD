@@ -58,7 +58,7 @@ fun SafeLocationCard(
         }
     }
 
-    val capacityKnown = location.capacity > 0
+    val capacityKnown = location.capacity >= 0
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -186,7 +186,9 @@ fun SafeLocationCard(
                     )
                 }
 
-                // Sức chứa
+
+                // Tổng sức chứa từ Backend.
+                // Chưa có dữ liệu số người đang trú hoặc chỗ còn lại.
                 Column(
                     verticalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
@@ -195,14 +197,14 @@ fun SafeLocationCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Sức chứa",
+                            text = "Tổng sức chứa thiết kế",
                             color = SecondaryText,
                             fontSize = 12.sp
                         )
 
                         Text(
                             text = if (capacityKnown) {
-                                "${location.currentOccupancy}/${location.capacity} người"
+                                "${location.capacity} người"
                             } else {
                                 "Chưa có dữ liệu"
                             },
@@ -212,46 +214,13 @@ fun SafeLocationCard(
                         )
                     }
 
-                    if (capacityKnown) {
-                        LinearProgressIndicator(
-                            progress = {
-                                location.occupancyProgress
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(7.dp),
-                            color = statusColor,
-                            trackColor = Color.White.copy(alpha = 0.12f)
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Đã sử dụng",
-                                color = SecondaryText,
-                                fontSize = 11.sp
-                            )
-
-                            Text(
-                                text = if (location.availableSlots > 0) {
-                                    "Còn ${location.availableSlots} chỗ"
-                                } else {
-                                    "Không còn chỗ"
-                                },
-                                color = if (location.availableSlots > 0) {
-                                    statusColor
-                                } else {
-                                    Color(0xFFFF7272)
-                                },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+                    Text(
+                        text = "Số người đang trú và chỗ còn lại: Chưa có dữ liệu xác minh",
+                        color = SecondaryText,
+                        fontSize = 11.sp
+                    )
                 }
+
 
                 // Các tiện ích
                 if (location.facilities.isNotEmpty()) {
@@ -359,7 +328,11 @@ fun SafeLocationCard(
 
                 // Cảnh báo dữ liệu mẫu
                 Text(
-                    text = "Dữ liệu minh họa – chưa xác minh thực tế",
+                    text = if (location.isVerified) {
+                        "Thông tin địa điểm đã được xác minh"
+                    } else {
+                        "Thông tin tiếp nhận và an toàn chưa được xác minh"
+                    },
                     color = SecondaryText,
                     fontSize = 10.sp
                 )

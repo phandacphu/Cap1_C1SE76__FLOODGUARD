@@ -1,83 +1,106 @@
-import React from 'react';
+import { Icon } from "../../../components/ui/Icon";
+
+export type SortMode = "priority" | "newest";
 
 interface Props {
+  search: string;
   status: string;
   urgency: string;
-  sortByPriority: boolean;
-  onStatusChange: (val: string) => void;
-  onUrgencyChange: (val: string) => void;
-  onPrioritySortToggle: (val: boolean) => void;
+  sort: SortMode;
+  onSearch: (value: string) => void;
+  onStatus: (value: string) => void;
+  onUrgency: (value: string) => void;
+  onSort: (value: SortMode) => void;
   onReset: () => void;
 }
 
-export const SosFilterBar: React.FC<Props> = ({
+const SELECT =
+  "rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text focus:border-safe focus:outline-none";
+
+/** Search + filters of the SOS list (CCF-106, CCF-107). */
+export function SosFilterBar({
+  search,
   status,
   urgency,
-  sortByPriority,
-  onStatusChange,
-  onUrgencyChange,
-  onPrioritySortToggle,
+  sort,
+  onSearch,
+  onStatus,
+  onUrgency,
+  onSort,
   onReset,
-}) => {
+}: Props) {
   return (
-    <div className="bg-[#0A1A2F]/90 border border-[#1E3A5F] rounded-lg p-4 flex flex-wrap items-center justify-between gap-4 backdrop-blur-sm">
-      <div className="flex flex-wrap items-center gap-4">
-        {/* Lọc Trạng thái */}
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-mono text-slate-400 tracking-wide uppercase">
-            Trạng thái:
-          </span>
-          <select
-            value={status}
-            onChange={(e) => { onStatusChange(e.target.value); }}
-            className="bg-[#051424] text-slate-200 border border-[#1E3A5F] text-xs font-mono rounded px-3 py-1.5 focus:outline-none focus:border-cyan-500"
-          >
-            <option value="">Tất cả trạng thái</option>
-            <option value="submitted">Chờ tiếp nhận</option>
-            <option value="received">Đã tiếp nhận</option>
-            <option value="in_progress">Đang cứu hộ</option>
-            <option value="assisted">Đã hoàn tất</option>
-          </select>
-        </div>
+    <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card/80 p-4">
+      <label className="relative min-w-56 flex-1">
+        <span className="sr-only">Tìm kiếm</span>
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted">
+          <Icon name="search" className="h-4 w-4" />
+        </span>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Tìm mã SOS, ghi chú, tọa độ..."
+          className="w-full rounded-lg border border-border bg-bg py-2 pl-9 pr-3 text-sm placeholder:text-muted/70 focus:border-safe focus:outline-none"
+        />
+      </label>
 
-        {/* Lọc Khẩn cấp */}
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-mono text-slate-400 tracking-wide uppercase">
-            Mức độ:
-          </span>
-          <select
-            value={urgency}
-            onChange={(e) => { onUrgencyChange(e.target.value); }}
-            className="bg-[#051424] text-slate-200 border border-[#1E3A5F] text-xs font-mono rounded px-3 py-1.5 focus:outline-none focus:border-cyan-500"
-          >
-            <option value="">Tất cả mức độ</option>
-            <option value="critical">Nguy cấp (Critical)</option>
-            <option value="high">Cao (High)</option>
-            <option value="medium">Trung bình (Medium)</option>
-            <option value="low">Thấp (Low)</option>
-          </select>
-        </div>
+      <select
+        aria-label="Lọc trạng thái"
+        value={status}
+        onChange={(e) => onStatus(e.target.value)}
+        className={SELECT}
+      >
+        <option value="">Tất cả trạng thái</option>
+        <option value="submitted">Chờ tiếp nhận</option>
+        <option value="received">Đã tiếp nhận</option>
+        <option value="in_progress">Đang cứu hộ</option>
+        <option value="assisted">Đã hoàn tất</option>
+      </select>
 
-        {/* Checkbox Sắp xếp ưu tiên */}
-        <label className="flex items-center space-x-2 cursor-pointer text-xs font-mono text-cyan-400 select-none">
-          <input
-            type="checkbox"
-            checked={sortByPriority}
-            onChange={(e) => { onPrioritySortToggle(e.target.checked); }}
-            className="rounded bg-[#051424] border-[#1E3A5F] text-cyan-500 focus:ring-0 focus:ring-offset-0"
-          >
-          </input>
-          <span>Ưu tiên cấp bách lên đầu</span>
-        </label>
+      <select
+        aria-label="Lọc mức độ"
+        value={urgency}
+        onChange={(e) => onUrgency(e.target.value)}
+        className={SELECT}
+      >
+        <option value="">Tất cả mức độ</option>
+        <option value="critical">Khẩn cấp</option>
+        <option value="high">Cao</option>
+        <option value="medium">Trung bình</option>
+        <option value="low">Thấp</option>
+      </select>
+
+      <select
+        aria-label="Sắp xếp"
+        value={sort}
+        onChange={(e) => onSort(e.target.value as SortMode)}
+        className={SELECT}
+      >
+        <option value="priority">Sắp xếp: Mức khẩn cấp (cao nhất)</option>
+        <option value="newest">Sắp xếp: Mới nhất</option>
+      </select>
+
+      <div className="flex items-center overflow-hidden rounded-lg border border-border text-sm">
+        <span className="flex items-center gap-1.5 bg-safe/15 px-3 py-2 font-semibold text-safe">
+          <Icon name="report" className="h-4 w-4" /> Danh sách
+        </span>
+        <span
+          aria-disabled="true"
+          title="Sắp ra mắt (CCF-105)"
+          className="flex cursor-not-allowed items-center gap-1.5 px-3 py-2 text-muted/70"
+        >
+          <Icon name="map" className="h-4 w-4" /> Bản đồ
+        </span>
       </div>
 
       <button
         type="button"
         onClick={onReset}
-        className="px-3 py-1.5 text-xs font-mono text-slate-400 hover:text-white border border-[#1E3A5F] hover:border-slate-400 rounded transition-colors"
+        className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-muted transition hover:text-text"
       >
-        Đặt lại bộ lọc
+        <Icon name="refresh" className="h-4 w-4" /> Đặt lại
       </button>
-    </div>
+    </section>
   );
-};
+}

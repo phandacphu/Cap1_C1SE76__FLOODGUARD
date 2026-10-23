@@ -1,44 +1,25 @@
-import React from "react";
 import type { UrgencyLevel } from "../../../types/rescue";
+import { URGENCY_LABEL } from "../rescueStats";
+
+const STYLE: Record<UrgencyLevel, string> = {
+  critical: "border-sos/50 bg-sos/15 text-sos",
+  high: "border-orange-400/40 bg-orange-400/10 text-orange-300",
+  medium: "border-water/40 bg-water/10 text-water",
+  low: "border-safe/40 bg-safe/10 text-safe",
+};
 
 interface Props {
   urgency: UrgencyLevel;
 }
 
-export const SosPriorityBadge: React.FC<Props> = ({ urgency }) => {
-  const getStyle = () => {
-    switch (urgency) {
-      case "critical":
-        return "bg-red-950/80 text-red-400 border-red-600/60 animate-pulse";
-      case "high":
-        return "bg-orange-950/80 text-orange-400 border-orange-600/60";
-      case "medium":
-        return "bg-amber-950/80 text-amber-400 border-amber-600/60";
-      case "low":
-      default:
-        return "bg-emerald-950/80 text-emerald-400 border-emerald-600/60";
-    }
-  };
-
-  const getLabel = () => {
-    switch (urgency) {
-      case "critical":
-        return "NGUY CẤP";
-      case "high":
-        return "CAO";
-      case "medium":
-        return "TRUNG BÌNH";
-      case "low":
-      default:
-        return "THẤP";
-    }
-  };
-
+/** Urgency pill (Khẩn cấp / Cao / Trung bình / Thấp). */
+export function SosPriorityBadge({ urgency }: Props) {
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-mono font-semibold tracking-wider border uppercase ${getStyle()}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold ${STYLE[urgency]}`}
     >
-      ● {getLabel()}
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {URGENCY_LABEL[urgency]}
     </span>
   );
-};
+}

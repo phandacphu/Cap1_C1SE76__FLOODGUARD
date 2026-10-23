@@ -193,7 +193,11 @@ fun SafeLocationDetailScreen(
                 ) {
                     item {
                         Text(
-                            text = "DỮ LIỆU MINH HỌA — CHƯA XÁC MINH THỰC TẾ",
+                            text = if (state.isMockData) {
+                                "DỮ LIỆU MINH HỌA — CHƯA XÁC MINH THỰC TẾ"
+                            } else {
+                                "DỮ LIỆU THỬ NGHIỆM TỪ BACKEND — KHÔNG DÙNG ĐỂ QUYẾT ĐỊNH SƠ TÁN"
+                            },
                             color = Color(0xFFFFB84D),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
@@ -266,32 +270,11 @@ fun SafeLocationDetailScreen(
                             )
 
 
-                            if (location.capacity > 0) {
+
+                            if (location.capacity >= 0) {
                                 Text(
-                                    text = "Sức chứa: ${location.capacity} người",
+                                    text = "Tổng sức chứa thiết kế: ${location.capacity} người",
                                     color = Color.White
-                                )
-
-                                Text(
-                                    text = "Đang trú: ${location.currentOccupancy} người",
-                                    color = MutedText
-                                )
-
-                                LinearProgressIndicator(
-                                    progress = {
-                                        location.occupancyProgress
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp),
-                                    color = statusColor,
-                                    trackColor = Color.White.copy(alpha = 0.12f)
-                                )
-
-                                Text(
-                                    text = "Còn ${location.availableSlots} chỗ",
-                                    color = statusColor,
-                                    fontWeight = FontWeight.Bold
                                 )
                             } else {
                                 Text(
@@ -299,6 +282,17 @@ fun SafeLocationDetailScreen(
                                     color = MutedText
                                 )
                             }
+
+                            Text(
+                                text = "Số người đang trú: Chưa có dữ liệu xác minh",
+                                color = MutedText
+                            )
+
+                            Text(
+                                text = "Số chỗ còn lại: Chưa có dữ liệu xác minh",
+                                color = MutedText
+                            )
+
                         }
                     }
 
@@ -462,7 +456,7 @@ private fun DetailOverviewMetrics(
     ) {
         OverviewMetric(
             label = "KHOẢNG CÁCH",
-            value = location.distanceMeters?.let { "$it m (mẫu)" }
+            value = location.distanceMeters?.let { "$it m (đường chim bay)" }
                 ?: "Chưa rõ",
             modifier = Modifier.weight(1f)
         )

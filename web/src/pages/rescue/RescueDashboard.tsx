@@ -1,319 +1,305 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import type { RescueRequest, SosStatus, UrgencyLevel } from '../../types/rescue';
-import { rescueService } from '../../api/rescueService';
-import { SosFilterBar } from './components/SosFilterBar';
-import { SosPriorityBadge } from './components/SosPriorityBadge';
-import { SosStatusBadge } from './components/SosStatusBadge';
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { apiGet } from "../../api/http";
+import { RescueLayout } from "../../components/layout/RescueLayout";
+import { Icon } from "../../components/ui/Icon";
+import { useAuth } from "../../context/AuthContext";
+import type { FloodAlert } from "../../types/admin";
+import { KpiCard } from "../admin/components/KpiCard";
+import { Panel } from "../admin/components/Panel";
+import { SEVERITY_WEIGHT, formatNumber } from "../admin/adminStats";
+import { FloodAlertBanner } from "./components/FloodAlertBanner";
+import { SosActionButtons } from "./components/SosActionButtons";
+import { SosPriorityBadge } from "./components/SosPriorityBadge";
+import { SosScatterMap } from "./components/SosScatterMap";
+import { SosStatusBadge } from "./components/SosStatusBadge";
+import {
+  computeKpis,
+  formatCoords,
+  isOpen,
+  sortByUrgency,
+  sosCode,
+  timeAgo,
+} from "./rescueStats";
+import { useRescueActions, useRescueRequests } from "./useRescue";
 
-export const RescueDashboard: React.FC = () => {
-  const [requests, setRequests] = useState<RescueRequest[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+interface AlertsState {
+  alerts: FloodAlert[];
+  done: boolean;
+  error: boolean;
+}
 
-  // CCF-106: State bộ lọc
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [urgencyFilter, setUrgencyFilter] = useState<string>('');
-  const [sortByPriority, setSortByPriority] = useState<boolean>(true);
+/** CCF-102: Rescue Staff home ("Tổng quan cứu hộ"). */
+export function RescueDashboard() {
+  const { user, token } = useAuth();
+  const { requests, error, updatedAt, loading, refresh } = useRescueRequests({ sort: "priority" });
+  const actions = useRescueActions(refresh);
 
-  // Đọc thông tin người dùng từ localStorage
-  const userJson = localStorage.getItem('floodguard_user');
-  const currentUser = userJson ? (JSON.parse(userJson) as Record<string, string>) : {};
-  const currentUserId = currentUser.id || currentUser.userId;
-
-  const fetchRescueData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setErrorMsg(null);
-      const data = await rescueService.getRescueRequests({
-        status: statusFilter ? (statusFilter as SosStatus) : undefined,
-        urgency: urgencyFilter ? (urgencyFilter as UrgencyLevel) : undefined,
-        sort: sortByPriority ? 'priority' : undefined,
-      });
-      setRequests(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Lỗi khi tải dữ liệu cứu hộ từ máy chủ';
-      setErrorMsg(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [statusFilter, urgencyFilter, sortByPriority]);
-
+  const [alertsState, setAlertsState] = useState<AlertsState>({ alerts: [], done: false, error: false });
+  
   useEffect(() => {
-    let isMounted = true;
-    const executeLoad = async () => {
-      try {
-        await fetchRescueData();
-      } catch {
-        // Handled inside
-      }
-    };
-    if (isMounted) {
-      void executeLoad();
-    }
+    let cancelled = false;
+    apiGet<{ floodAlerts: FloodAlert[] }>("/flood-alerts/active", token)
+      .then((data) => {
+        if (!cancelled) setAlertsState({ alerts: data.floodAlerts ?? [], done: true, error: false });
+      })
+      .catch(() => {
+        if (!cancelled) setAlertsState({ alerts: [], done: true, error: true });
+      });
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
-  }, [fetchRescueData]);
+  }, [token]);
 
-  // CCF-108: Tiếp nhận
-  const handleAcceptRequest = async (id: string) => {
-    try {
-      setActionLoadingId(id);
-      setErrorMsg(null);
-      await rescueService.acceptRequest(id);
-      await fetchRescueData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Không thể tiếp nhận ca cứu hộ';
-      setErrorMsg(msg);
-      await fetchRescueData();
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
+  const userId = user?.id;
 
-  // CCF-109: Cập nhật trạng thái
-  const handleUpdateRescueStatus = async (
-    id: string,
-    nextStatus: 'in_progress' | 'assisted'
-  ) => {
-    try {
-      setActionLoadingId(id);
-      setErrorMsg(null);
-      const note =
-        nextStatus === 'in_progress'
-          ? 'Tác chiến cứu hộ đang diễn ra tại hiện trường'
-          : 'Đã hoàn tất hỗ trợ an toàn';
-      await rescueService.updateStatus(id, nextStatus, note);
-      await fetchRescueData();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Cập nhật trạng thái tác chiến thất bại';
-      setErrorMsg(msg);
-      await fetchRescueData();
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
+  const view = useMemo(() => {
+    if (!requests || !updatedAt) return null;
+    
+    const isMine = (r: NonNullable<typeof requests>[number]) =>
+      Boolean(
+        r.assignment?.rescueStaffId &&
+        userId &&
+        String(r.assignment.rescueStaffId) === String(userId)
+      );
 
-  const handleResetFilters = () => {
-    setStatusFilter('');
-    setUrgencyFilter('');
-    setSortByPriority(true);
+    return {
+      now: updatedAt,
+      kpis: computeKpis(requests, updatedAt),
+      priority: sortByUrgency(requests.filter((r) => r.status === "submitted" || r.status === "received")).slice(0, 3),
+      mine: sortByUrgency(
+        requests.filter((r) => (r.status === "received" || r.status === "in_progress") && isMine(r)),
+      ),
+      openCount: requests.filter((r) => isOpen(r.status)).length,
+    };
+  }, [requests, updatedAt, userId]);
+
+  const topAlert = useMemo(
+    () => [...alertsState.alerts].sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])[0] ?? null,
+    [alertsState.alerts],
+  );
+
+  const kpis = view?.kpis;
+  
+  const canProgress = (item: NonNullable<typeof requests>[number]) => {
+    if (item.status === "submitted") return true; 
+    return Boolean(item.assignment?.rescueStaffId && userId && String(item.assignment.rescueStaffId) === String(userId));
   };
 
   return (
-    <div className="min-h-screen bg-[#010F1F] text-slate-100 flex flex-col font-sans">
-      {/* Giả lập Sidebar cố định 260px theo layout Figma */}
-      <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-[#051424] border-r border-[#1E3A5F]/60 flex flex-col z-20">
-        <div className="p-6 border-b border-[#1E3A5F]/60">
-          <div className="flex items-center space-x-2">
-            <span className="w-3 h-3 bg-cyan-400 rounded-full animate-ping"></span>
-            <span className="text-lg font-bold font-mono tracking-widest text-cyan-400">
-              FLOODGUARD
-            </span>
+    <RescueLayout
+      loading={loading}
+      onRefresh={refresh}
+      updatedAt={updatedAt}
+      waitingCount={kpis?.waiting ?? 0}
+    >
+      <div className="mx-auto max-w-7xl space-y-5">
+        
+        {alertsState.error ? (
+          <div className="flex items-center justify-center rounded-xl border border-border bg-card/60 p-4 text-sm text-warn">
+            Lỗi kết nối máy chủ: Hiện không thể tải danh sách cảnh báo lũ.
           </div>
-          <p className="text-[11px] font-mono text-slate-400 mt-1">RESCUE OPERATION CENTER</p>
-        </div>
-
-        <nav className="p-4 space-y-1 font-mono text-xs">
-          <div className="px-3 py-2 text-cyan-400 bg-cyan-950/40 border border-cyan-800/60 rounded flex items-center justify-between">
-            <span>● Yêu cầu SOS</span>
-            <span className="text-[10px] bg-cyan-500/20 px-1.5 py-0.5 rounded font-bold">
-              {requests.length}
-            </span>
-          </div>
-          <div className="px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-[#0A1C30] rounded cursor-pointer transition-colors">
-            Bản đồ vị trí SOS
-          </div>
-          <div className="px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-[#0A1C30] rounded cursor-pointer transition-colors">
-            Cảnh báo lũ
-          </div>
-          <div className="px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-[#0A1C30] rounded cursor-pointer transition-colors">
-            Địa điểm an toàn
-          </div>
-          <div className="px-3 py-2 text-slate-400 hover:text-slate-200 hover:bg-[#0A1C30] rounded cursor-pointer transition-colors">
-            Lịch sử cứu hộ
-          </div>
-        </nav>
-
-        <div className="mt-auto p-4 border-t border-[#1E3A5F]/60 font-mono text-[11px] text-slate-400">
-          <div className="text-slate-300 font-bold truncate">Rescue Staff: {currentUserId || 'Demo Staff'}</div>
-          <div className="text-emerald-400 mt-0.5">Trạng thái: Trực chiến</div>
-        </div>
-      </aside>
-
-      {/* Main Content Area (padding-left 260px khớp CSS Figma) */}
-      <main className="pl-[260px] flex-1 flex flex-col min-w-0">
-        <div className="max-w-[1280px] w-full mx-auto p-8 space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#1E3A5F]/50 pb-5">
-            <div>
-              <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-bold font-mono tracking-tight text-white uppercase">
-                  Bảng Điều Khiển Cứu Hộ
-                </h1>
-                <span className="bg-cyan-950 text-cyan-400 border border-cyan-800/80 px-2 py-0.5 rounded text-[11px] font-mono">
-                  STAFF MODE
-                </span>
-              </div>
-              <p className="text-xs font-mono text-slate-400 mt-1">
-                Tiếp nhận yêu cầu SOS và cập nhật tiến độ điều phối theo thời gian thực
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => { void fetchRescueData(); }}
-              disabled={loading}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-medium transition-colors shadow-lg shadow-cyan-950/50 flex items-center space-x-2 disabled:opacity-50"
-            >
-              <span>{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</span>
-            </button>
-          </div>
-
-          {/* Lỗi */}
-          {errorMsg && (
-            <div className="bg-red-950/60 border border-red-700/80 p-4 rounded text-red-200 text-xs font-mono">
-              [LỖI HỆ THỐNG]: {errorMsg}
-            </div>
-          )}
-
-          {/* Bộ lọc */}
-          <SosFilterBar
-            status={statusFilter}
-            urgency={urgencyFilter}
-            sortByPriority={sortByPriority}
-            onStatusChange={setStatusFilter}
-            onUrgencyChange={setUrgencyFilter}
-            onPrioritySortToggle={setSortByPriority}
-            onReset={handleResetFilters}
+        ) : (
+          <FloodAlertBanner
+            alert={topAlert}
+            otherCount={Math.max(alertsState.alerts.length - 1, 0)}
+            loading={!alertsState.done}
           />
+        )}
 
-          {/* Bảng dữ liệu phong cách Dark / Tactical */}
-          <div className="bg-[#0A1A2F]/80 border border-[#1E3A5F] rounded-lg overflow-hidden backdrop-blur-sm shadow-xl">
-            {loading ? (
-              <div className="p-12 text-center font-mono text-xs text-slate-400 space-y-3">
-                <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <div>Đang kết nối trung tâm điều phối Render...</div>
-              </div>
-            ) : requests.length === 0 ? (
-              <div className="p-12 text-center font-mono text-xs text-slate-400">
-                Không tìm thấy tín hiệu yêu cầu SOS phù hợp với bộ lọc hiện tại.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-[#1E3A5F]/70 text-xs font-mono">
-                  <thead className="bg-[#051424]">
-                    <tr>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Mã SOS
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Độ Ưu Tiên
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Trạng Thái
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Số Người
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Tọa Độ GPS
-                      </th>
-                      <th className="px-4 py-3.5 text-left text-slate-400 uppercase tracking-wider">
-                        Ghi Chú
-                      </th>
-                      <th className="px-4 py-3.5 text-right text-slate-400 uppercase tracking-wider">
-                        Tác Chiến
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#1E3A5F]/40 bg-[#07172A]/40">
-                    {requests.map((item) => {
-                      const isProcessing = actionLoadingId === item.id;
-                      const isAssignedToMe = item.assignment?.rescueStaffId === currentUserId;
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className="hover:bg-[#0C243B]/60 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-cyan-300 font-bold">
-                            #{item.id.slice(0, 8)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <SosPriorityBadge urgency={item.urgency} />
-                          </td>
-                          <td className="px-4 py-3">
-                            <SosStatusBadge status={item.status} />
-                          </td>
-                          <td className="px-4 py-3 text-slate-200 font-semibold">
-                            {item.numberOfPeople} người
-                          </td>
-                          <td className="px-4 py-3 text-slate-400">
-                            {item.location.latitude.toFixed(4)}, {item.location.longitude.toFixed(4)}
-                          </td>
-                          <td
-                            className="px-4 py-3 text-slate-300 max-w-xs truncate"
-                            title={item.note || ''}
-                          >
-                            {item.note || <span className="text-slate-500 italic">Không có ghi chú</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                            {/* CCF-108: Tiếp nhận SOS */}
-                            {item.status === 'submitted' && (
-                              <button
-                                type="button"
-                                onClick={() => { void handleAcceptRequest(item.id); }}
-                                disabled={isProcessing}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
-                              >
-                                {isProcessing ? 'Đang nhận...' : 'Tiếp nhận'}
-                              </button>
-                            )}
-
-                            {/* CCF-109: Bắt đầu cứu hộ */}
-                            {item.status === 'received' && (isAssignedToMe || !item.assignment) && (
-                              <button
-                                type="button"
-                                onClick={() => { void handleUpdateRescueStatus(item.id, 'in_progress'); }}
-                                disabled={isProcessing}
-                                className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
-                              >
-                                {isProcessing ? '...' : 'Bắt đầu cứu hộ'}
-                              </button>
-                            )}
-
-                            {/* CCF-109: Hoàn tất */}
-                            {item.status === 'in_progress' && (isAssignedToMe || !item.assignment) && (
-                              <button
-                                type="button"
-                                onClick={() => { void handleUpdateRescueStatus(item.id, 'assisted'); }}
-                                disabled={isProcessing}
-                                className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-mono tracking-wider uppercase font-semibold transition-colors disabled:opacity-50"
-                              >
-                                {isProcessing ? '...' : 'Hoàn tất'}
-                              </button>
-                            )}
-
-                            {item.status === 'assisted' && (
-                              <span className="text-[11px] font-mono text-emerald-400">
-                                ✓ Hoàn tất tác chiến
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+        {(error || actions.error) && (
+          <div
+            role="alert"
+            className="flex items-start justify-between gap-3 rounded-xl border border-sos/50 bg-sos/10 p-3 text-sm text-red-200"
+          >
+            <span>{actions.error ?? error}</span>
+            {actions.error && (
+              <button type="button" onClick={actions.clearError} className="shrink-0 text-xs underline">
+                Đóng
+              </button>
             )}
           </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="SOS mới"
+            icon="sos"
+            tone="sos"
+            value={kpis ? String(kpis.waiting).padStart(2, "0") : "—"}
+            sub={kpis ? `+${kpis.waitingLast15Min} trong 15 phút qua` : undefined}
+            footerLabel="Khẩn cấp chưa nhận"
+            footerValue={kpis ? String(kpis.criticalWaiting) : "—"}
+          />
+          <KpiCard
+            label="Đang xử lý"
+            icon="pulse"
+            tone="warn"
+            value={kpis ? String(kpis.inProgress).padStart(2, "0") : "—"}
+            sub="Ca đang cứu hộ ngoài hiện trường"
+            footerLabel="Phân công cho tôi"
+            footerValue={view ? String(view.mine.length) : "—"}
+          />
+          <KpiCard
+            label="Đã hỗ trợ hôm nay"
+            icon="shield"
+            tone="safe"
+            value={kpis ? formatNumber(kpis.assistedToday) : "—"}
+            sub={kpis?.successRate != null ? `${kpis.successRate.toFixed(1)}% tổng ca đã hoàn tất` : undefined}
+            footerLabel="Tổng yêu cầu"
+            footerValue={kpis ? formatNumber(kpis.total) : "—"}
+          />
+          <KpiCard
+            label="Thời gian phản hồi TB"
+            icon="clock"
+            tone="water"
+            value={kpis?.avgResponseMin != null ? kpis.avgResponseMin.toFixed(1) : "—"}
+            sub={kpis?.avgResponseMin != null ? "phút từ lúc gửi đến lúc tiếp nhận" : "Chưa có ca được tiếp nhận"}
+            footerLabel="Tính trên"
+            footerValue="ca đã có người nhận"
+          />
         </div>
-      </main>
-    </div>
+
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+          <Panel
+            title="Bản đồ tác chiến"
+            subtitle="Sơ đồ vị trí SOS đang mở · Google Maps sẽ thay thế ở CCF-105"
+            icon="map"
+            className="xl:col-span-2"
+          >
+            {error ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-warn">
+                Lỗi kết nối: Không thể tải dữ liệu bản đồ SOS.
+              </div>
+            ) : !requests || loading ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Đang tải dữ liệu SOS...
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Chưa có dữ liệu SOS.
+              </div>
+            ) : (
+              <SosScatterMap requests={requests} />
+            )}
+          </Panel>
+
+          <Panel
+            title="SOS ưu tiên cao"
+            subtitle="Cần xử lý và điều động tức thì"
+            icon="sos"
+            tag={
+              <Link to="/rescue/sos" className="font-mono text-[11px] text-safe hover:underline">
+                Xem tất cả →
+              </Link>
+            }
+          >
+            {error ? (
+              <p className="font-mono text-xs text-warn">Lỗi kết nối: Không thể tải danh sách SOS.</p>
+            ) : !view || loading ? (
+              <p className="font-mono text-xs text-muted">Đang tải dữ liệu...</p>
+            ) : view.priority.length === 0 ? (
+              <p className="font-mono text-xs text-muted">Không có SOS nào đang chờ xử lý.</p>
+            ) : (
+              <ul className="space-y-3">
+                {view.priority.map((item) => (
+                  <li key={item.id} className="rounded-xl border border-border bg-bg/60 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-water">{sosCode(item.id)}</span>
+                      <SosPriorityBadge urgency={item.urgency} />
+                      <SosStatusBadge status={item.status} />
+                      <span className="ml-auto font-mono text-[11px] text-muted">
+                        {timeAgo(item.createdAt, view.now)}
+                      </span>
+                    </div>
+                    <p className="mt-2 flex items-start gap-1.5 text-sm text-text/90">
+                      <Icon name="map" className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+                      <span className="font-mono text-xs">{formatCoords(item.location)}</span>
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-sm text-text/80">
+                      <strong>{item.numberOfPeople} người</strong>
+                      {item.note ? ` — ${item.note}` : ""}
+                    </p>
+                    <div className="mt-3 flex justify-end">
+                      <SosActionButtons
+                        item={item}
+                        canProgress={canProgress(item)}
+                        busy={actions.busyId === item.id}
+                        onAccept={(id) => void actions.accept(id)}
+                        onAdvance={(id, next) => void actions.advance(id, next)}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        </div>
+
+        <Panel
+          title="SOS phân công cho tôi"
+          subtitle="Các ca tôi đã tiếp nhận và đang xử lý"
+          icon="staff"
+          tag={
+            view && view.mine.length > 0 ? (
+              <span className="rounded-full bg-safe/15 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-safe">
+                {view.mine.length} nhiệm vụ
+              </span>
+            ) : undefined
+          }
+        >
+          {error ? (
+            <p className="font-mono text-xs text-warn">Lỗi kết nối: Không thể tải danh sách SOS.</p>
+          ) : !view || loading ? (
+            <p className="font-mono text-xs text-muted">Đang tải dữ liệu...</p>
+          ) : view.mine.length === 0 ? (
+            <p className="font-mono text-xs text-muted">
+              Bạn chưa có ca nào đang xử lý. Bấm “Tiếp nhận” ở một SOS đang chờ để bắt đầu.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Mã SOS</th>
+                    <th className="px-3 py-2 font-medium">Tọa độ</th>
+                    <th className="px-3 py-2 font-medium">Số người</th>
+                    <th className="px-3 py-2 font-medium">Mức độ</th>
+                    <th className="px-3 py-2 font-medium">Trạng thái</th>
+                    <th className="px-3 py-2 text-right font-medium">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {view.mine.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-3 py-3 font-mono font-bold text-water">{sosCode(item.id)}</td>
+                      <td className="px-3 py-3 font-mono text-xs text-muted">{formatCoords(item.location)}</td>
+                      <td className="px-3 py-3">{item.numberOfPeople} người</td>
+                      <td className="px-3 py-3">
+                        <SosPriorityBadge urgency={item.urgency} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <SosStatusBadge status={item.status} />
+                      </td>
+                      <td className="px-3 py-3 text-right">
+                        <SosActionButtons
+                          item={item}
+                          canProgress={true}
+                          busy={actions.busyId === item.id}
+                          onAccept={(id) => void actions.accept(id)}
+                          onAdvance={(id, next) => void actions.advance(id, next)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
+    </RescueLayout>
   );
-};
+}
 
 export default RescueDashboard;
