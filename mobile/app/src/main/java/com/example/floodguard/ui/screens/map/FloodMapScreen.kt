@@ -195,19 +195,16 @@ fun FloodMapScreen(
                 modifier = Modifier.height(10.dp)
             )
 
-            /*
             FloodLayerRow(
                 state = state,
                 onToggleFloodLayer = onToggleFloodLayer,
                 onToggleUserLayer = onToggleUserLayer,
-                onToggleShelterLayer = onToggleShelterLayer,
-                onToggleSafeRouteLayer = onToggleSafeRouteLayer
+                onToggleShelterLayer = onToggleShelterLayer
             )
 
             Spacer(
                 modifier = Modifier.height(12.dp)
             )
-            */
 
             FloodGoogleMap(
                 state = state,
@@ -382,8 +379,15 @@ fun FloodMapScreen(
                 modifier = Modifier.height(18.dp)
             )
 
-            FloodShelterCard(
-                state = state
+            Text(
+                text = "Các điểm trú trên bản đồ hiện là dữ liệu thử nghiệm. " +
+                        "Chưa xác minh mức độ an toàn, sức chứa hoặc khả năng tiếp nhận.",
+                color = MapSecondary,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
             )
 
             Spacer(
@@ -637,24 +641,20 @@ private fun FloodGpsInfo() {
 // LAYERS
 // =====================================================
 
+
 @Composable
 private fun FloodLayerRow(
     state: FloodMapUiState,
     onToggleFloodLayer: () -> Unit,
     onToggleUserLayer: () -> Unit,
-    onToggleShelterLayer: () -> Unit,
-    onToggleSafeRouteLayer: () -> Unit
+    onToggleShelterLayer: () -> Unit
 ) {
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp),
-
-        horizontalArrangement =
-            Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-
         FloodLayerItem(
             text = "Vùng ngập",
             selected = state.isFloodLayerEnabled,
@@ -672,14 +672,9 @@ private fun FloodLayerRow(
             selected = state.isShelterLayerEnabled,
             onClick = onToggleShelterLayer
         )
-
-        FloodLayerItem(
-            text = "Tuyến an toàn",
-            selected = state.isSafeRouteLayerEnabled,
-            onClick = onToggleSafeRouteLayer
-        )
     }
 }
+
 
 @Composable
 private fun FloodLayerItem(
@@ -851,65 +846,6 @@ private fun FloodGoogleMap(
                 }
         }
 
-    DisposableEffect(lifecycleOwner) {
-
-        val observer =
-            LifecycleEventObserver { _, event ->
-
-                when (event) {
-
-                    Lifecycle.Event.ON_START -> {
-                        isScreenActive = true
-                    }
-
-                    Lifecycle.Event.ON_RESUME -> {
-
-                        hasLocationPermission =
-                            ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.ACCESS_FINE_LOCATION
-                            ) == PackageManager.PERMISSION_GRANTED ||
-                                    ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
-                                    ) == PackageManager.PERMISSION_GRANTED
-
-                        val locationManager =
-                            context.getSystemService(LocationManager::class.java)
-
-                        isLocationServiceEnabled =
-                            locationManager?.let {
-                                it.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
-                                        it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-                            } == true
-
-                        when {
-                            !hasLocationPermission -> {
-                                locationMessage =
-                                    "Chưa được cấp quyền vị trí"
-                            }
-
-                            !isLocationServiceEnabled -> {
-                                locationMessage =
-                                    "Dịch vụ vị trí đang tắt"
-                            }
-                        }
-                    }
-
-                    Lifecycle.Event.ON_STOP -> {
-                        isScreenActive = false
-                    }
-
-                    else -> Unit
-                }
-            }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
 
     LaunchedEffect(Unit) {
 
@@ -1132,7 +1068,10 @@ private fun FloodGoogleMap(
                 modifier = Modifier.fillMaxSize(),
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
-                    isMyLocationEnabled = hasLocationPermission
+                    isMyLocationEnabled =
+                        hasLocationPermission &&
+                                isLocationServiceEnabled &&
+                                state.isUserLayerEnabled
                 )
             ) {
 
@@ -1151,15 +1090,34 @@ private fun FloodGoogleMap(
                         }
                         .forEach { floodArea ->
 
-                            val polygonPoints =
-                                floodArea.geometry.points.map { point ->
+
+                            val rawPoints = floodArea.geometry.points
+
+                            val hasValidCoordinates =
+                                rawPoints.all { point ->
+                                    point.latitude.isFinite() &&
+                                            point.longitude.isFinite() &&
+                                            point.latitude in -90.0..90.0 &&
+                                            point.longitude in -180.0..180.0
+                                }
+
+                            val hasEnoughDistinctPoints =
+                                rawPoints
+                                    .map { point ->
+                                        point.latitude to point.longitude
+                                    }
+                                    .distinct()
+                                    .size >= 3
+
+                            if (hasValidCoordinates && hasEnoughDistinctPoints) {
+
+                                val polygonPoints = rawPoints.map { point ->
                                     LatLng(
                                         point.latitude,
                                         point.longitude
                                     )
                                 }
 
-                            if (polygonPoints.size >= 3) {
 
                                 val fillColor =
                                     when (
@@ -1234,15 +1192,48 @@ private fun FloodGoogleMap(
                         }
                 }
 
-                userLocation?.let { location ->
-
-                    Marker(
-                        state = MarkerState(
-                            position = location
-                        ),
-                        title = "Vị trí của bạn"
-                    )
+                if (state.isUserLayerEnabled) {
+                    userLocation?.let { location ->
+                        Marker(
+                            state = MarkerState(
+                                position = location
+                            ),
+                            title = "Vị trí của bạn"
+                        )
+                    }
                 }
+
+                // CCF-71: Hiển thị Safe Locations từ Backend.
+                // Marker chỉ là dữ liệu thử nghiệm/chưa xác minh.
+                // Không dùng để quyết định sơ tán.
+                if (state.isShelterLayerEnabled) {
+                    state.safeLocations
+                        .filter { safeLocation ->
+                            safeLocation.status.equals(
+                                "active",
+                                ignoreCase = true
+                            ) &&
+                                    safeLocation.location.latitude.isFinite() &&
+                                    safeLocation.location.longitude.isFinite() &&
+                                    safeLocation.location.latitude in -90.0..90.0 &&
+                                    safeLocation.location.longitude in -180.0..180.0
+                        }
+                        .forEach { safeLocation ->
+
+                            Marker(
+                                state = MarkerState(
+                                    position = LatLng(
+                                        safeLocation.location.latitude,
+                                        safeLocation.location.longitude
+                                    )
+                                ),
+                                title = safeLocation.name,
+                                snippet = "DỮ LIỆU THỬ NGHIỆM — " +
+                                        "Chưa xác minh điểm tránh trú"
+                            )
+                        }
+                }
+
             }
 
             if (

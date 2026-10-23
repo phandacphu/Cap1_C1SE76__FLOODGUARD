@@ -12,6 +12,7 @@ import com.example.floodguard.core.network.ApiClient
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.ui.screens.auth.login.LoginScreen
 import com.example.floodguard.ui.screens.auth.login.LoginViewModel
 import com.example.floodguard.ui.screens.auth.register.RegisterScreen
@@ -341,6 +342,11 @@ fun AppNavGraph(
                 onBack = {
                     navController.popBackStack()
                 },
+                onMapClick = {
+                    navController.navigate(AppRoutes.MAP) {
+                        launchSingleTop = true
+                    }
+                },
 
                 onNotificationClick = {
                     Toast.makeText(
@@ -518,6 +524,9 @@ fun AppNavGraph(
                     ),
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
+                    ),
+                    safeLocationRepository = SafeLocationRepository(
+                        safeLocationApi = ApiClient.safeLocationApi
                     )
                 )
             }
