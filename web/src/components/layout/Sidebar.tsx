@@ -14,6 +14,8 @@ interface SidebarProps {
   /** Job title under the user's name. */
   roleLabel: string;
   accent: "water" | "safe";
+  /** Small count bubbles keyed by route (e.g. open SOS next to "Yêu cầu SOS"). */
+  badges?: Record<string, number>;
   /** Called after the user picks an item (used to close the mobile drawer). */
   onNavigate?: () => void;
 }
@@ -29,6 +31,7 @@ export function Sidebar({
   brandTag,
   roleLabel,
   accent,
+  badges,
   onNavigate,
 }: SidebarProps) {
   const { user, token, logout } = useAuth();
@@ -82,7 +85,12 @@ export function Sidebar({
               }
             >
               <Icon name={item.icon} className="h-[18px] w-[18px] shrink-0" />
-              <span className="truncate">{item.label}</span>
+              <span className="flex-1 truncate">{item.label}</span>
+              {badges?.[item.to] ? (
+                <span className="rounded-full bg-sos px-1.5 font-mono text-[10px] font-bold leading-5 text-white">
+                  {badges[item.to]}
+                </span>
+              ) : null}
             </NavLink>
           ) : (
             <div
