@@ -7,6 +7,11 @@ plugins {
 android {
     namespace = "com.example.floodguard"
 
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
     compileSdk {
         version = release(37)
     }
@@ -38,10 +43,6 @@ android {
 
         targetCompatibility =
             JavaVersion.VERSION_11
-    }
-
-    buildFeatures {
-        compose = true
     }
 }
 

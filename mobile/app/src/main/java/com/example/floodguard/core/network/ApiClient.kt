@@ -1,10 +1,12 @@
 package com.example.floodguard.core.network
 
+import com.example.floodguard.BuildConfig
 import com.example.floodguard.core.config.AppConfig
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.api.FloodAlertApi
 import com.example.floodguard.data.remote.api.FloodAreaApi
+import com.example.floodguard.data.remote.api.SafeLocationApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -15,7 +17,11 @@ object ApiClient {
 
     private val loggingInterceptor =
         HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.NONE
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BASIC
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
 
     private val publicOkHttpClient =
@@ -41,6 +47,9 @@ object ApiClient {
 
     val floodAreaApi: FloodAreaApi =
         publicRetrofit.create(FloodAreaApi::class.java)
+
+    val safeLocationApi: SafeLocationApi =
+        publicRetrofit.create(SafeLocationApi::class.java)
 
     fun createAuthenticatedRetrofit(
         sessionManager: SessionManager

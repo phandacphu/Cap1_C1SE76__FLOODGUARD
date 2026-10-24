@@ -26,33 +26,43 @@ import { useRescueActions, useRescueRequests } from "./useRescue";
 interface AlertsState {
   alerts: FloodAlert[];
   done: boolean;
+  error: boolean;
 }
 
 /** CCF-102: Rescue Staff home ("Tổng quan cứu hộ"). */
 export function RescueDashboard() {
   const { user, token } = useAuth();
   const { requests, error, updatedAt, loading, refresh } = useRescueRequests({ sort: "priority" });
-  const actions = useRescueActions(user?.id, refresh);
+  const actions = useRescueActions(refresh);
 
-  const [alertsState, setAlertsState] = useState<AlertsState>({ alerts: [], done: false });
+  const [alertsState, setAlertsState] = useState<AlertsState>({ alerts: [], done: false, error: false });
+  
   useEffect(() => {
     let cancelled = false;
     apiGet<{ floodAlerts: FloodAlert[] }>("/flood-alerts/active", token)
       .then((data) => {
-        if (!cancelled) setAlertsState({ alerts: data.floodAlerts ?? [], done: true });
+        if (!cancelled) setAlertsState({ alerts: data.floodAlerts ?? [], done: true, error: false });
       })
       .catch(() => {
-        if (!cancelled) setAlertsState({ alerts: [], done: true });
+        if (!cancelled) setAlertsState({ alerts: [], done: true, error: true });
       });
     return () => {
       cancelled = true;
     };
   }, [token]);
 
+  const userId = user?.id;
+
   const view = useMemo(() => {
     if (!requests || !updatedAt) return null;
-    const isMine = (r: (typeof requests)[number]) =>
-      r.assignment?.rescueStaffId === user?.id || actions.mineIds.has(r.id);
+    
+    const isMine = (r: NonNullable<typeof requests>[number]) =>
+      Boolean(
+        r.assignment?.rescueStaffId &&
+        userId &&
+        String(r.assignment.rescueStaffId) === String(userId)
+      );
+
     return {
       now: updatedAt,
       kpis: computeKpis(requests, updatedAt),
@@ -62,7 +72,7 @@ export function RescueDashboard() {
       ),
       openCount: requests.filter((r) => isOpen(r.status)).length,
     };
-  }, [requests, updatedAt, user?.id, actions.mineIds]);
+  }, [requests, updatedAt, userId]);
 
   const topAlert = useMemo(
     () => [...alertsState.alerts].sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity])[0] ?? null,
@@ -70,8 +80,11 @@ export function RescueDashboard() {
   );
 
   const kpis = view?.kpis;
-  const canProgress = (assignedTo: string | undefined, id: string) =>
-    !assignedTo || assignedTo === user?.id || actions.mineIds.has(id);
+  
+  const canProgress = (item: NonNullable<typeof requests>[number]) => {
+    if (item.status === "submitted") return true; 
+    return Boolean(item.assignment?.rescueStaffId && userId && String(item.assignment.rescueStaffId) === String(userId));
+  };
 
   return (
     <RescueLayout
@@ -81,11 +94,18 @@ export function RescueDashboard() {
       waitingCount={kpis?.waiting ?? 0}
     >
       <div className="mx-auto max-w-7xl space-y-5">
-        <FloodAlertBanner
-          alert={topAlert}
-          otherCount={Math.max(alertsState.alerts.length - 1, 0)}
-          loading={!alertsState.done}
-        />
+        
+        {alertsState.error ? (
+          <div className="flex items-center justify-center rounded-xl border border-border bg-card/60 p-4 text-sm text-warn">
+            Lỗi kết nối máy chủ: Hiện không thể tải danh sách cảnh báo lũ.
+          </div>
+        ) : (
+          <FloodAlertBanner
+            alert={topAlert}
+            otherCount={Math.max(alertsState.alerts.length - 1, 0)}
+            loading={!alertsState.done}
+          />
+        )}
 
         {(error || actions.error) && (
           <div
@@ -147,12 +167,20 @@ export function RescueDashboard() {
             icon="map"
             className="xl:col-span-2"
           >
-            {requests ? (
-              <SosScatterMap requests={requests} />
-            ) : (
-              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
-                {loading ? "Đang tải dữ liệu SOS..." : "Chưa có dữ liệu."}
+            {error ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-warn">
+                Lỗi kết nối: Không thể tải dữ liệu bản đồ SOS.
               </div>
+            ) : !requests || loading ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Đang tải dữ liệu SOS...
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Chưa có dữ liệu SOS.
+              </div>
+            ) : (
+              <SosScatterMap requests={requests} />
             )}
           </Panel>
 
@@ -166,8 +194,10 @@ export function RescueDashboard() {
               </Link>
             }
           >
-            {!view ? (
-              <p className="font-mono text-xs text-muted">{loading ? "Đang tải..." : "Chưa có dữ liệu."}</p>
+            {error ? (
+              <p className="font-mono text-xs text-warn">Lỗi kết nối: Không thể tải danh sách SOS.</p>
+            ) : !view || loading ? (
+              <p className="font-mono text-xs text-muted">Đang tải dữ liệu...</p>
             ) : view.priority.length === 0 ? (
               <p className="font-mono text-xs text-muted">Không có SOS nào đang chờ xử lý.</p>
             ) : (
@@ -198,7 +228,7 @@ export function RescueDashboard() {
                     <div className="mt-3 flex justify-end">
                       <SosActionButtons
                         item={item}
-                        canProgress={canProgress(item.assignment?.rescueStaffId, item.id)}
+                        canProgress={canProgress(item)}
                         busy={actions.busyId === item.id}
                         onAccept={(id) => void actions.accept(id)}
                         onAdvance={(id, next) => void actions.advance(id, next)}
@@ -223,8 +253,10 @@ export function RescueDashboard() {
             ) : undefined
           }
         >
-          {!view ? (
-            <p className="font-mono text-xs text-muted">{loading ? "Đang tải..." : "Chưa có dữ liệu."}</p>
+          {error ? (
+            <p className="font-mono text-xs text-warn">Lỗi kết nối: Không thể tải danh sách SOS.</p>
+          ) : !view || loading ? (
+            <p className="font-mono text-xs text-muted">Đang tải dữ liệu...</p>
           ) : view.mine.length === 0 ? (
             <p className="font-mono text-xs text-muted">
               Bạn chưa có ca nào đang xử lý. Bấm “Tiếp nhận” ở một SOS đang chờ để bắt đầu.
@@ -261,7 +293,7 @@ export function RescueDashboard() {
                       <td className="px-3 py-3 text-right">
                         <SosActionButtons
                           item={item}
-                          canProgress
+                          canProgress={true}
                           busy={actions.busyId === item.id}
                           onAccept={(id) => void actions.accept(id)}
                           onAdvance={(id, next) => void actions.advance(id, next)}

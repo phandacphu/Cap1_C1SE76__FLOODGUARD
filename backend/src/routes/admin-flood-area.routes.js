@@ -6,24 +6,19 @@ const {
   createAdminFloodArea,
   updateAdminFloodArea,
   deleteAdminFloodArea,
+  getAdminFloodAreaSummaryStatistics,
 } = require("../controllers/admin-flood-area.controller");
 
-const {
-  authenticateToken,
-} = require("../middleware/auth.middleware");
+const { authenticateToken } = require("../middleware/auth.middleware");
 
-const {
-  authorizeRoles,
-} = require("../middleware/rbac.middleware");
+const { authorizeRoles } = require("../middleware/rbac.middleware");
 
 const router = express.Router();
 
-router.use(
-  authenticateToken,
-  authorizeRoles("admin"),
-);
+router.use(authenticateToken, authorizeRoles("admin"));
 
 router.get("/", listAdminFloodAreas);
+router.get("/summary", getAdminFloodAreaSummaryStatistics);
 router.get("/:areaId", getAdminFloodAreaDetail);
 router.post("/", createAdminFloodArea);
 router.patch("/:areaId", updateAdminFloodArea);
