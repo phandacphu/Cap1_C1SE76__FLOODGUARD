@@ -1,6 +1,4 @@
-const {
-  getUserById,
-} = require("./user.service");
+const { getUserById } = require("./user.service");
 
 const {
   getRescueRequestsForUser,
@@ -15,12 +13,7 @@ const {
   getRescueRequestStatusHistoryByRequestId,
 } = require("./rescue-request-status-history.service");
 
-const ALLOWED_QUERY_FIELDS = [
-  "status",
-  "urgency",
-  "severity",
-  "sort",
-];
+const ALLOWED_QUERY_FIELDS = ["status", "urgency", "severity", "sort"];
 
 function monitoringError(code, message, statusCode) {
   const error = new Error(message);
@@ -83,11 +76,7 @@ async function authorizeAdmin(actorId) {
 }
 
 function validateQuery(query, allowedFields) {
-  if (
-    !query ||
-    typeof query !== "object" ||
-    Array.isArray(query)
-  ) {
+  if (!query || typeof query !== "object" || Array.isArray(query)) {
     throw monitoringError(
       "INVALID_ADMIN_SOS_QUERY",
       "Query parameters must be an object",
@@ -165,36 +154,227 @@ function toClientHistory(history) {
   };
 }
 
-async function listSosRequestsForAdmin(
-  actorId,
-  query = {},
-) {
+// CCF-158: Validate ISO 8601 datetime filters.
+function parseDateFilter(value, fieldName) {
+  if (value === undefined) {
+    return null;
+  }
+
+  const pattern =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+  const match = typeof value === "string" ? value.match(pattern) : null;
+
+  if (!match) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      `${fieldName} must be an ISO 8601 datetime with timezone`,
+      400,
+    );
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+
+  const offsetHour = match[10] ? Number(match[10]) : 0;
+  const offsetMinute = match[11] ? Number(match[11]) : 0;
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+
+  const validDate =
+    year >= 1 &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (daysInMonth[month - 1] || 0) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59;
+
+  if (!validDate) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      `Invalid ${fieldName} datetime`,
+      400,
+    );
+  }
+
+  const milliseconds = Date.parse(value);
+
+  if (!Number.isFinite(milliseconds)) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      `Invalid ${fieldName} datetime`,
+      400,
+    );
+  }
+
+  return milliseconds;
+}
+
+// CCF-158: Get summary statistics for Admin dashboard.
+// CCF-161: Support date range, status and urgency filters.
+async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
+  const admin = await authorizeAdmin(actorId);
+
+  // CCF-161: Allow supported report query parameters.
+  validateQuery(query, ["from", "to", "status", "urgency"]);
+
+  const from = parseDateFilter(query.from, "from");
+  const to = parseDateFilter(query.to, "to");
+
+  if (from !== null && to !== null && from > to) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      "from must be earlier than or equal to to",
+      400,
+    );
+  }
+
+  // CCF-161: Validate report filters.
+  const allowedStatuses = [
+    "submitted",
+    "received",
+    "in_progress",
+    "assisted",
+    "cancelled",
+  ];
+
+  const allowedUrgencies = ["low", "medium", "high", "critical"];
+
+  const { status, urgency } = query;
+
+  if (
+    status !== undefined &&
+    (typeof status !== "string" || !allowedStatuses.includes(status))
+  ) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      "Invalid status filter",
+      400,
+    );
+  }
+
+  if (
+    urgency !== undefined &&
+    (typeof urgency !== "string" || !allowedUrgencies.includes(urgency))
+  ) {
+    throw monitoringError(
+      "INVALID_ADMIN_SOS_QUERY",
+      "Invalid urgency filter",
+      400,
+    );
+  }
+
+  // Reuse the existing Admin-authorized SOS retrieval.
+  const requests = await getRescueRequestsForUser(admin, {});
+
+  const summary = {
+    total: 0,
+    byStatus: {
+      submitted: 0,
+      received: 0,
+      in_progress: 0,
+      assisted: 0,
+      cancelled: 0,
+    },
+    byUrgency: {
+      low: 0,
+      medium: 0,
+      high: 0,
+      critical: 0,
+    },
+  };
+
+  for (const request of requests) {
+    // CCF-161: Filter by SOS status.
+    if (status !== undefined && request.status !== status) {
+      continue;
+    }
+
+    // CCF-161: Filter by SOS urgency.
+    if (urgency !== undefined && request.urgency !== urgency) {
+      continue;
+    }
+
+    // CCF-158: Keep existing inclusive date-range filtering.
+    if (from !== null || to !== null) {
+      const createdAt =
+        request.createdAt && typeof request.createdAt.toMillis === "function"
+          ? request.createdAt.toMillis()
+          : NaN;
+
+      if (!Number.isFinite(createdAt)) {
+        continue;
+      }
+
+      if (from !== null && createdAt < from) {
+        continue;
+      }
+
+      if (to !== null && createdAt > to) {
+        continue;
+      }
+    }
+
+    // Count only requests matching all supplied filters.
+    summary.total++;
+
+    if (Object.hasOwn(summary.byStatus, request.status)) {
+      summary.byStatus[request.status]++;
+    }
+
+    if (Object.hasOwn(summary.byUrgency, request.urgency)) {
+      summary.byUrgency[request.urgency]++;
+    }
+  }
+
+  return summary;
+}
+
+// Existing Admin SOS Monitoring: List requests.
+async function listSosRequestsForAdmin(actorId, query = {}) {
   const admin = await authorizeAdmin(actorId);
 
   validateQuery(query, ALLOWED_QUERY_FIELDS);
 
   // Reuse existing filter validation and sorting.
-  const rescueRequests =
-    await getRescueRequestsForUser(admin, query);
+  const rescueRequests = await getRescueRequestsForUser(admin, query);
 
   return rescueRequests.map(toClientRequest);
 }
 
-async function getSosRequestDetailForAdmin(
-  actorId,
-  requestId,
-  query = {},
-) {
+// Existing Admin SOS Monitoring: Request detail.
+async function getSosRequestDetailForAdmin(actorId, requestId, query = {}) {
   await authorizeAdmin(actorId);
 
   // Detail endpoint accepts no query parameters.
   validateQuery(query, []);
 
-  const normalizedRequestId =
-    normalizeRequestId(requestId);
+  const normalizedRequestId = normalizeRequestId(requestId);
 
-  const rescueRequest =
-    await getRescueRequestById(normalizedRequestId);
+  const rescueRequest = await getRescueRequestById(normalizedRequestId);
 
   if (!rescueRequest) {
     throw monitoringError(
@@ -206,15 +386,10 @@ async function getSosRequestDetailForAdmin(
 
   // Related data is read only after authorization
   // and checking that the SOS exists.
-  const [assignment, statusHistory] =
-    await Promise.all([
-      getRescueAssignmentByRequestId(
-        normalizedRequestId,
-      ),
-      getRescueRequestStatusHistoryByRequestId(
-        normalizedRequestId,
-      ),
-    ]);
+  const [assignment, statusHistory] = await Promise.all([
+    getRescueAssignmentByRequestId(normalizedRequestId),
+    getRescueRequestStatusHistoryByRequestId(normalizedRequestId),
+  ]);
 
   return {
     ...toClientRequest(rescueRequest),
@@ -226,4 +401,5 @@ async function getSosRequestDetailForAdmin(
 module.exports = {
   listSosRequestsForAdmin,
   getSosRequestDetailForAdmin,
+  getSosSummaryStatisticsForAdmin,
 };

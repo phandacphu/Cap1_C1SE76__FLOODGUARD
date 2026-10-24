@@ -5,12 +5,12 @@ const {
   updateFloodAlertForAdmin,
 } = require("../services/admin-flood-alert.service");
 
+const {
+  getWarningSummaryStatisticsForAdmin,
+} = require("../services/admin-warning-statistics.service");
+
 function hasAuthenticatedUser(req, res) {
-  if (
-    !req.user ||
-    typeof req.user.id !== "string" ||
-    !req.user.id.trim()
-  ) {
+  if (!req.user || typeof req.user.id !== "string" || !req.user.id.trim()) {
     res.status(401).json({
       success: false,
       message: "Authentication is required",
@@ -31,6 +31,7 @@ function handleError(res, error, operation) {
     ADMIN_ALERT_ROLE_FORBIDDEN: 403,
     ADMIN_ALERT_NOT_FOUND: 404,
     ADMIN_ALERT_AREA_NOT_FOUND: 404,
+    INVALID_WARNING_STATS_QUERY: 400,
   };
 
   const statusCode = errorStatuses[error.code];
@@ -65,9 +66,7 @@ async function listAdminFloodAlerts(req, res) {
       });
     }
 
-    const floodAlerts = await listFloodAlertsForAdmin(
-      req.user.id,
-    );
+    const floodAlerts = await listFloodAlertsForAdmin(req.user.id);
 
     return res.status(200).json({
       success: true,
@@ -110,10 +109,7 @@ async function createAdminFloodAlert(req, res) {
       return;
     }
 
-    const floodAlert = await createFloodAlertForAdmin(
-      req.user.id,
-      req.body,
-    );
+    const floodAlert = await createFloodAlertForAdmin(req.user.id, req.body);
 
     return res.status(201).json({
       success: true,
@@ -151,9 +147,32 @@ async function updateAdminFloodAlert(req, res) {
   }
 }
 
+// CCF-159: Warning summary statistics for Admin dashboard.
+async function getAdminWarningSummaryStatistics(req, res) {
+  try {
+    if (!hasAuthenticatedUser(req, res)) {
+      return;
+    }
+
+    const summary = await getWarningSummaryStatisticsForAdmin(
+      req.user.id,
+      req.query,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Flood warning statistics retrieved successfully",
+      data: summary,
+    });
+  } catch (error) {
+    return handleError(res, error, "summary statistics");
+  }
+}
+
 module.exports = {
   listAdminFloodAlerts,
   getAdminFloodAlertDetail,
   createAdminFloodAlert,
   updateAdminFloodAlert,
+  getAdminWarningSummaryStatistics,
 };
