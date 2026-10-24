@@ -1,8 +1,9 @@
+
 package com.example.floodguard
 
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -20,34 +21,29 @@ import com.example.floodguard.ui.navigation.AppNavGraph
 @Composable
 fun FloodGuardApp() {
 
-    val navController =
-        rememberNavController()
+    val navController = rememberNavController()
 
-    val context =
-        LocalContext.current
+    val context = LocalContext.current
 
-    val sessionManager =
-        remember {
-            SessionManager(
-                context.applicationContext
-            )
-        }
+    val sessionManager = remember {
+        SessionManager(
+            context.applicationContext
+        )
+    }
 
-    val authRepository =
-        remember {
-            AuthRepository(
-                authApi = ApiClient.authApi,
-                sessionManager = sessionManager
-            )
-        }
+    val authRepository = remember {
+        AuthRepository(
+            authApi = ApiClient.authApi,
+            sessionManager = sessionManager
+        )
+    }
 
     // null = đang kiểm tra session
-    // true = đã login
-    // false = chưa login
+    // true = đã đăng nhập
+    // false = chưa đăng nhập
     val isLoggedIn by produceState<Boolean?>(
         initialValue = null
     ) {
-
         value = try {
             sessionManager.isLoggedIn()
         } catch (e: Exception) {
