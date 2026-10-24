@@ -1,92 +1,90 @@
 import React, { useState, useEffect } from 'react';
+import type { FloodAlert } from '../../types/admin';
+import { apiGet } from '../../api/http';
+import { useAuth } from '../../context/AuthContext';
 import { useRescue } from './useRescue';
 import { FloodAlertBanner } from './components/FloodAlertBanner';
-import { SosFilterBar, type SortMode } from './components/SosFilterBar';
 import { SosPriorityBadge } from './components/SosPriorityBadge';
 import { SosStatusBadge } from './components/SosStatusBadge';
-import { RescueSosList } from './RescueSosList';
-import { rescueService } from '../../api/rescueService';
 
-interface FloodAlertItem {
-  id?: string;
-  title?: string;
-  description?: string;
-  severity?: string;
-  level?: string;
-  [key: string]: unknown;
+interface AlertsState {
+  alerts: FloodAlert[];
+  done: boolean;
+  error?: string | null;
 }
 
 export const RescueDashboard: React.FC = () => {
-  const [searchFilter, setSearchFilter] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [urgencyFilter, setUrgencyFilter] = useState<string>('');
-  const [sortFilter, setSortFilter] = useState<SortMode>('priority' as SortMode);
+  const { token, user } = useAuth();
 
-  // Khai báo kiểu tường minh, không dùng any
-  const [alert, setAlert] = useState<FloodAlertItem | null>(null);
-  const [otherCount, setOtherCount] = useState<number>(0);
-  const [alertLoading, setAlertLoading] = useState<boolean>(true);
+  // 1. Logic cảnh báo lũ chuẩn theo bản gốc của Huy
+  const [alertsState, setAlertsState] = useState<AlertsState>({
+    alerts: [],
+    done: false,
+    error: null,
+  });
 
   useEffect(() => {
-    let isCancelled = false;
-    const fetchAlerts = async () => {
-      try {
-        setAlertLoading(true);
-        const serviceRecord = rescueService as unknown as Record<string, unknown>;
-        if (typeof serviceRecord.getActiveFloodAlerts === 'function') {
-          const alerts = (await (serviceRecord.getActiveFloodAlerts as () => Promise<unknown>)()) as unknown[];
-          if (!isCancelled && Array.isArray(alerts)) {
-            setAlert((alerts[0] as FloodAlertItem) || null);
-            setOtherCount(Math.max(0, alerts.length - 1));
-          }
+    let cancelled = false;
+    apiGet<{ floodAlerts: FloodAlert[] }>('/flood-alerts/active', token)
+      .then((data) => {
+        if (!cancelled) {
+          setAlertsState({
+            alerts: data.floodAlerts ?? [],
+            done: true,
+            error: null,
+          });
         }
-      } catch {
-        if (!isCancelled) {
-          setAlert(null);
-          setOtherCount(0);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : 'Lỗi tải dữ liệu cảnh báo lũ';
+          setAlertsState({
+            alerts: [],
+            done: true,
+            error: msg,
+          });
         }
-      } finally {
-        if (!isCancelled) setAlertLoading(false);
-      }
-    };
-    void fetchAlerts();
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+      });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // 2. Logic nghiệp vụ cứu hộ (phân quyền assignment thật từ Backend)
   const {
     requests,
-    displayedRequests,
-    loading,
-    fetchError,
     actionError,
     setActionError,
     actionLoadingId,
     currentUserId,
-    triggerReload,
     handleAcceptRequest,
     handleUpdateRescueStatus,
     kpi,
-  } = useRescue(statusFilter, urgencyFilter, sortFilter, searchFilter);
+  } = useRescue();
 
-  const handleResetFilters = () => {
-    setSearchFilter('');
-    setStatusFilter('');
-    setUrgencyFilter('');
-    setSortFilter('priority' as SortMode);
-  };
-
+  const topAlert = alertsState.alerts[0] ?? null;
   const highPriorityRequests = requests
     .filter((r) => (r.urgency === 'critical' || r.urgency === 'high') && r.status !== 'assisted')
     .slice(0, 5);
 
   return (
     <div className="w-full space-y-6 text-slate-100 font-sans pb-12">
-      {/* 1. Banner cảnh báo lũ */}
-      <FloodAlertBanner alert={alert as never} otherCount={otherCount} loading={alertLoading} />
+      {/* 1. Banner cảnh báo lũ: Phân biệt rõ ràng giữa API lỗi vs Không có cảnh báo */}
+      {alertsState.error ? (
+        <div className="bg-amber-950/50 border border-amber-600/70 rounded-xl p-4 flex items-center justify-between text-amber-200 text-xs font-mono">
+          <span>⚠️ [LỖI MÁY CHỦ]: Không thể đồng bộ cảnh báo lũ ({alertsState.error})</span>
+          <span className="text-amber-400 text-[11px]">Đang thử kết nối lại...</span>
+        </div>
+      ) : (
+        <FloodAlertBanner
+          alert={topAlert}
+          otherCount={Math.max(alertsState.alerts.length - 1, 0)}
+          loading={!alertsState.done}
+        />
+      )}
 
-      {/* 2. Thống kê KPI */}
+      {/* 2. Thống kê KPI thời gian thực */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-[#081B30]/70 border border-[#1E3A5F]/60 rounded-xl p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between">
@@ -170,7 +168,7 @@ export const RescueDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Bản đồ & SOS Ưu Tiên Cao */}
+      {/* 3. Bản đồ tác chiến (Trái) & SOS Ưu Tiên Cao (Phải) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-[#081B30]/70 border border-[#1E3A5F]/60 rounded-xl p-5 flex flex-col">
           <div className="flex items-center space-x-2 pb-4">
@@ -209,7 +207,7 @@ export const RescueDashboard: React.FC = () => {
                 </div>
                 <p className="text-[10px] font-mono text-slate-400 mt-0.5">CẦN XỬ LÝ VÀ ĐIỀU ĐỘNG TỨC THÌ</p>
               </div>
-              <a href="#sos-full-table" className="text-[11px] font-mono text-cyan-400 hover:underline flex items-center space-x-1">
+              <a href="/rescue/sos" className="text-[11px] font-mono text-cyan-400 hover:underline flex items-center space-x-1">
                 <span>Xem tất cả</span>
                 <span>→</span>
               </a>
@@ -227,7 +225,8 @@ export const RescueDashboard: React.FC = () => {
                   const assignedStaffId = String(
                     item.assignment?.rescueStaffId || item.assignedStaffId || rawItem.assignedTo || ''
                   );
-                  const isAssignedToMe = Boolean(currentUserId && assignedStaffId === currentUserId);
+                  const effectiveUserId = user?.id || currentUserId;
+                  const isAssignedToMe = Boolean(effectiveUserId && assignedStaffId === effectiveUserId);
                   const displayName = String(rawItem.senderName || rawItem.contactName || rawItem.name || 'Yêu cầu cứu hộ khẩn cấp');
 
                   return (
@@ -288,54 +287,6 @@ export const RescueDashboard: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* 4. Bảng SOS toàn diện */}
-      <div id="sos-full-table" className="pt-4 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#1E3A5F]/50 pb-3">
-          <div>
-            <h2 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
-              Danh Sách Yêu Cầu SOS Toàn Khu Vực
-            </h2>
-            <p className="text-xs font-mono text-slate-400 mt-0.5">
-              Bộ lọc nâng cao, quản lý trạng thái và tiếp nhận nhiệm vụ
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={triggerReload}
-            disabled={loading}
-            className="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-medium transition-colors shadow-lg shadow-cyan-950/50 flex items-center space-x-1.5 disabled:opacity-50 self-start sm:self-auto"
-          >
-            <span>{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</span>
-          </button>
-        </div>
-
-        <SosFilterBar
-          search={searchFilter}
-          status={statusFilter}
-          urgency={urgencyFilter}
-          sort={sortFilter}
-          onSearch={setSearchFilter}
-          onStatus={setStatusFilter}
-          onUrgency={setUrgencyFilter}
-          onSort={(mode) => setSortFilter(mode)}
-          onReset={handleResetFilters}
-        />
-
-        <div className="bg-[#081B30]/80 border border-[#1E3A5F] rounded-xl overflow-hidden backdrop-blur-sm shadow-xl">
-          <RescueSosList
-            requests={displayedRequests}
-            loading={loading}
-            fetchError={fetchError}
-            actionLoadingId={actionLoadingId}
-            currentUserId={currentUserId}
-            onAccept={handleAcceptRequest}
-            onUpdateStatus={handleUpdateRescueStatus}
-            onReload={triggerReload}
-          />
         </div>
       </div>
     </div>
