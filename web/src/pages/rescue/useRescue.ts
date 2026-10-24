@@ -131,10 +131,30 @@ export function useRescueRequests(params: ListParams = {}) {
   };
 }
 
-/** Accepts SOS requests and updates statuses through the backend API. */
-export function useRescueActions(refresh: () => void) {
+/** Accepts SOS requests and updates statuses through the backend API. Supports flexible arguments (userId, refresh) or just (refresh). */
+export function useRescueActions(
+  userIdOrRefresh?: string | number | (() => void),
+  maybeRefresh?: () => void
+) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mineIds, setMineIds] = useState<Set<string>>(() => new Set());
+
+  // Xử lý linh hoạt tham số truyền vào
+  let refresh: (() => void) | undefined;
+  if (typeof userIdOrRefresh === "function") {
+    refresh = userIdOrRefresh;
+  } else {
+    refresh = maybeRefresh;
+  }
+
+  const remember = useCallback((id: string) => {
+    setMineIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
 
   /** Resolves true when the server accepted the change. */
   const accept = useCallback(
@@ -144,7 +164,7 @@ export function useRescueActions(refresh: () => void) {
       let ok = false;
       try {
         await rescueService.acceptRequest(id);
-        // remember(id); // Nếu có hàm remember thì bật lại, nếu không để nguyên
+        remember(id);
         ok = true;
       } catch (err: unknown) {
         setError(
@@ -154,11 +174,11 @@ export function useRescueActions(refresh: () => void) {
         );
       } finally {
         setBusyId(null);
-        refresh();
+        refresh?.();
       }
       return ok;
     },
-    [refresh],
+    [refresh, remember],
   );
 
   /** `note` is optional; a default note is written to the history when it is empty. */
@@ -174,6 +194,7 @@ export function useRescueActions(refresh: () => void) {
             ? "Đội cứu hộ đang có mặt tại hiện trường"
             : "Đã hoàn tất hỗ trợ an toàn");
         await rescueService.updateStatus(id, next, text);
+        remember(id);
         ok = true;
       } catch (err: unknown) {
         setError(
@@ -183,11 +204,11 @@ export function useRescueActions(refresh: () => void) {
         );
       } finally {
         setBusyId(null);
-        refresh();
+        refresh?.();
       }
       return ok;
     },
-    [refresh],
+    [refresh, remember],
   );
 
   const clearError = useCallback(() => setError(null), []);
@@ -195,6 +216,7 @@ export function useRescueActions(refresh: () => void) {
   return {
     busyId,
     error,
+    mineIds,
     accept,
     advance,
     clearError,
