@@ -7,8 +7,8 @@ interface RescueLayoutProps {
   loading: boolean;
   onRefresh: () => void;
   updatedAt: Date | null;
-  /** Requests waiting for a rescuer. */
-  waitingCount: number;
+  /** Requests waiting for a rescuer; leave out when the page does not know it. */
+  waitingCount?: number;
   children: ReactNode;
 }
 
@@ -26,13 +26,13 @@ export function RescueLayout({
       brandSub="RESCUE STAFF"
       roleLabel="NHÂN VIÊN CỨU HỘ"
       accent="safe"
-      badges={{ "/rescue/sos": waitingCount }}
+      badges={{ "/rescue/sos": waitingCount ?? 0 }}
       header={
         <RescueHeader
           loading={loading}
           onRefresh={onRefresh}
           updatedAt={updatedAt}
-          waitingCount={waitingCount}
+          waitingCount={waitingCount ?? 0}
         />
       }
     >

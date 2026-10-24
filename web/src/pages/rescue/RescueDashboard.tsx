@@ -205,7 +205,12 @@ export function RescueDashboard() {
                 {view.priority.map((item) => (
                   <li key={item.id} className="rounded-xl border border-border bg-bg/60 p-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm font-bold text-water">{sosCode(item.id)}</span>
+                      <Link
+                        to={`/rescue/sos/${item.id}`}
+                        className="font-mono text-sm font-bold text-water hover:underline"
+                      >
+                        {sosCode(item.id)}
+                      </Link>
                       <SosPriorityBadge urgency={item.urgency} />
                       <SosStatusBadge status={item.status} />
                       <span className="ml-auto font-mono text-[11px] text-muted">
@@ -272,7 +277,11 @@ export function RescueDashboard() {
                 <tbody className="divide-y divide-border">
                   {view.mine.map((item) => (
                     <tr key={item.id}>
-                      <td className="px-3 py-3 font-mono font-bold text-water">{sosCode(item.id)}</td>
+                      <td className="px-3 py-3 font-mono font-bold">
+                        <Link to={`/rescue/sos/${item.id}`} className="text-water hover:underline">
+                          {sosCode(item.id)}
+                        </Link>
+                      </td>
                       <td className="px-3 py-3 font-mono text-xs text-muted">{formatCoords(item.location)}</td>
                       <td className="px-3 py-3">{item.numberOfPeople} người</td>
                       <td className="px-3 py-3">
