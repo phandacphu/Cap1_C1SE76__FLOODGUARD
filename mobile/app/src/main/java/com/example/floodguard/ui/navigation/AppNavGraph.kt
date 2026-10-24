@@ -449,11 +449,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.PROFILE -> {
-                            Toast.makeText(
-                                context,
-                                "Cài đặt chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.PROFILE) {
+                                launchSingleTop = true
+                            }
                         }
                     }
                 }
@@ -477,11 +475,9 @@ fun AppNavGraph(
                 },
 
                 onProfileClick = {
-                    Toast.makeText(
-                        context,
-                        "Hồ sơ chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.PROFILE) {
+                        launchSingleTop = true
+                    }
                 },
 
                 onViewDetail = { locationId ->
@@ -524,11 +520,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.PROFILE -> {
-                            Toast.makeText(
-                                context,
-                                "Cài đặt chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.PROFILE) {
+                                launchSingleTop = true
+                            }
                         }
                     }
                 }
@@ -576,11 +570,9 @@ fun AppNavGraph(
                 },
 
                 onProfileClick = {
-                    Toast.makeText(
-                        context,
-                        "Hồ sơ chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.PROFILE) {
+                        launchSingleTop = true
+                    }
                 },
 
                 onDirections = {
