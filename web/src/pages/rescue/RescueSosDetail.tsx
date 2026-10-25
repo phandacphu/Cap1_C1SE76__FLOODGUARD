@@ -29,9 +29,17 @@ export function RescueSosDetail() {
   const actions = useRescueActions(user?.id, refresh);
   const [copied, setCopied] = useState(false);
 
-  const mine =
-    !!request && (request.assignment?.rescueStaffId === user?.id || actions.mineIds.has(request.id));
-  const canProgress = !!request && (!request.assignment || mine);
+  // Phân quyền chuẩn xác tuyệt đối dựa vào Backend assignment và so sánh chuỗi an toàn
+  const mine = Boolean(
+    request?.assignment?.rescueStaffId &&
+    user?.id &&
+    String(request.assignment.rescueStaffId) === String(user.id)
+  );
+
+  // Nếu là ca mới gửi (submitted) thì cho phép nhận; nếu đã nhận rồi thì bắt buộc phải là ca của tôi mới được thao tác tiếp
+  const canProgress = Boolean(
+    request && (request.status === "submitted" || mine)
+  );
 
   const copyCoords = async () => {
     if (!request) return;
@@ -57,7 +65,7 @@ export function RescueSosDetail() {
     : mine
       ? "Bạn"
       : request.assignment
-        ? `Nhân sự #${request.assignment.rescueStaffId.slice(0, 6)}`
+        ? `Nhân sự #${String(request.assignment.rescueStaffId).slice(0, 6)}`
         : "Chưa có người nhận";
 
   return (

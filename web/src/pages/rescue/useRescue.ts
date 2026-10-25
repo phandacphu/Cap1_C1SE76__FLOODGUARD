@@ -47,12 +47,10 @@ export function useRescueRequests(params: ListParams = {}) {
       .then(async (requests) => {
         if (cancelled) return;
 
-        // Lọc các ca đã có người tiếp nhận cần lấy thông tin assignment
         const activeRequests = requests.filter(
           (r) => r.status === "received" || r.status === "in_progress"
         );
 
-        // Fetch API chi tiết song song
         const details = await Promise.all(
           activeRequests.map(async (r) => {
             try {
@@ -64,7 +62,6 @@ export function useRescueRequests(params: ListParams = {}) {
           })
         );
 
-        // Gộp dữ liệu linh hoạt, cast type chuẩn Assignment để TypeScript không phàn nàn
         const mergedRequests = requests.map((r) => {
           const detailObj = details.find((d) => d?.id === r.id);
           const rawData = detailObj?.data as unknown as RescueDetailResponse | undefined;
@@ -131,32 +128,21 @@ export function useRescueRequests(params: ListParams = {}) {
   };
 }
 
-/** Accepts SOS requests and updates statuses through the backend API. Supports flexible arguments (userId, refresh) or just (refresh). */
+/** Accepts SOS requests and updates statuses through the backend API. */
 export function useRescueActions(
-  userIdOrRefresh?: string | number | (() => void),
+  _userIdOrRefresh?: string | number | (() => void),
   maybeRefresh?: () => void
 ) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mineIds, setMineIds] = useState<Set<string>>(() => new Set());
 
-  // Xử lý linh hoạt tham số truyền vào
   let refresh: (() => void) | undefined;
-  if (typeof userIdOrRefresh === "function") {
-    refresh = userIdOrRefresh;
+  if (typeof _userIdOrRefresh === "function") {
+    refresh = _userIdOrRefresh;
   } else {
     refresh = maybeRefresh;
   }
 
-  const remember = useCallback((id: string) => {
-    setMineIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
-
-  /** Resolves true when the server accepted the change. */
   const accept = useCallback(
     async (id: string): Promise<boolean> => {
       setBusyId(id);
@@ -164,7 +150,6 @@ export function useRescueActions(
       let ok = false;
       try {
         await rescueService.acceptRequest(id);
-        remember(id);
         ok = true;
       } catch (err: unknown) {
         setError(
@@ -178,10 +163,9 @@ export function useRescueActions(
       }
       return ok;
     },
-    [refresh, remember],
+    [refresh],
   );
 
-  /** `note` is optional; a default note is written to the history when it is empty. */
   const advance = useCallback(
     async (id: string, next: "in_progress" | "assisted", note?: string): Promise<boolean> => {
       setBusyId(id);
@@ -194,7 +178,6 @@ export function useRescueActions(
             ? "Đội cứu hộ đang có mặt tại hiện trường"
             : "Đã hoàn tất hỗ trợ an toàn");
         await rescueService.updateStatus(id, next, text);
-        remember(id);
         ok = true;
       } catch (err: unknown) {
         setError(
@@ -208,7 +191,7 @@ export function useRescueActions(
       }
       return ok;
     },
-    [refresh, remember],
+    [refresh],
   );
 
   const clearError = useCallback(() => setError(null), []);
@@ -216,7 +199,6 @@ export function useRescueActions(
   return {
     busyId,
     error,
-    mineIds,
     accept,
     advance,
     clearError,
