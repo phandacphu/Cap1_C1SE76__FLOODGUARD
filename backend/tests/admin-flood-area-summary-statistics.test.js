@@ -240,9 +240,58 @@ async function runTests() {
 
     assert.ok(readCollections.includes("flood_areas"));
 
-    // 2. Reject unsupported query parameters.
+    // 2. CCF-161: Filter by status.
+    const active = await request("?status=active");
+    assert.equal(active.status, 200);
+    assert.deepEqual(
+      active.body.data,
+      expectedSummary(3, { active: 3 }, { low: 1, high: 2 }),
+    );
+
+    // 3. Filter by severity.
+    const high = await request("?severity=high");
+    assert.equal(high.status, 200);
+    assert.deepEqual(
+      high.body.data,
+      expectedSummary(2, { active: 2 }, { high: 2 }),
+    );
+
+    // 4. Combined filters.
+    const combined = await request("?status=inactive&severity=medium");
+    assert.equal(combined.status, 200);
+    assert.deepEqual(
+      combined.body.data,
+      expectedSummary(1, { inactive: 1 }, { medium: 1 }),
+    );
+
+    // 5. Inclusive date range.
+    const inclusive = await request(
+      "?from=2026-10-13T06:00:00.000Z&to=2026-10-13T06:00:00.000Z",
+    );
+    assert.equal(inclusive.status, 200);
+    assert.deepEqual(
+      inclusive.body.data,
+      expectedSummary(
+        5,
+        { active: 3, inactive: 2 },
+        { low: 1, medium: 1, high: 2, critical: 1 },
+      ),
+    );
+
+    // 6. Date range excluding all records.
+    const before = await request("?to=2026-10-13T05:59:59.999Z");
+    assert.equal(before.status, 200);
+    assert.deepEqual(before.body.data, expectedSummary(0));
+
+    // 7. Reject invalid query parameters.
     await expectRejected("?unexpected=value", 400);
     await expectRejected("?from=2026-10-13", 400);
+    await expectRejected("?status=unknown", 400);
+    await expectRejected("?severity=unknown", 400);
+    await expectRejected(
+      "?from=2026-10-14T00:00:00Z&to=2026-10-13T00:00:00Z",
+      400,
+    );
 
     // 3. Authentication and authorization.
     await expectRejected("", 401, null);

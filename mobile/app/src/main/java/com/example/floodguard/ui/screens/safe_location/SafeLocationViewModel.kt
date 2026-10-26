@@ -1,36 +1,104 @@
+
 package com.example.floodguard.ui.screens.safe_location
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.floodguard.data.mapper.toDomain
+import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.domain.model.SafeLocation
 import com.example.floodguard.domain.model.SafeLocationFacility
-import com.example.floodguard.domain.model.SafeLocationStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
-class SafeLocationViewModel : ViewModel() {
+class SafeLocationViewModel(
+    private val repository: SafeLocationRepository
+) : ViewModel() {
 
-    private val allLocations = createMockLocations()
-
-    fun getLocationById(locationId: String): SafeLocation? {
-        return allLocations.find { location ->
-            location.id == locationId
-        }
-    }
+    private var allLocations: List<SafeLocation> = emptyList()
 
     private val _uiState = MutableStateFlow(
-        SafeLocationUiState(
-            locations = allLocations
-        )
+        SafeLocationUiState(isLoading = true)
     )
 
     val uiState: StateFlow<SafeLocationUiState> =
         _uiState.asStateFlow()
 
+    init {
+        loadLocations()
+    }
+
+    fun loadLocations() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    errorMessage = null
+                )
+            }
+
+            repository.getSafeLocations()
+                .onSuccess { dtos ->
+                    val locations = dtos.mapNotNull { dto ->
+                        try {
+                            val location = dto.toDomain()
+
+                            if (
+                                location.latitude.isFinite() &&
+                                location.longitude.isFinite() &&
+                                location.latitude in -90.0..90.0 &&
+                                location.longitude in -180.0..180.0
+                            ) {
+                                location
+                            } else {
+                                null
+                            }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    allLocations = locations
+
+                    _uiState.update { state ->
+                        state.copy(
+                            isLoading = false,
+                            locations = filterLocations(
+                                state.selectedFilter
+                            ),
+                            errorMessage = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            locations = emptyList(),
+                            errorMessage =
+                                error.message
+                                    ?: "Không thể tải danh sách điểm tránh trú"
+                        )
+                    }
+                }
+        }
+    }
+
+    fun refresh() {
+        loadLocations()
+    }
+
+    fun getLocationById(locationId: String): SafeLocation? {
+        return allLocations.find {
+            it.id == locationId
+        }
+    }
+
     fun selectFilter(filter: SafeLocationFilter) {
-        _uiState.update { currentState ->
-            currentState.copy(
+        _uiState.update {
+            it.copy(
                 selectedFilter = filter,
                 locations = filterLocations(filter)
             )
@@ -42,111 +110,29 @@ class SafeLocationViewModel : ViewModel() {
     ): List<SafeLocation> {
         return when (filter) {
 
-            SafeLocationFilter.ALL -> allLocations
+            SafeLocationFilter.ALL ->
+                allLocations
 
-            SafeLocationFilter.NEAREST -> {
-                // Khoảng cách hiện là dữ liệu mẫu.
-                allLocations.sortedBy {
-                    it.distanceMeters ?: Int.MAX_VALUE
-                }
-            }
+            SafeLocationFilter.NEAREST ->
+                allLocations.sortedWith(
+                    compareBy<SafeLocation> {
+                        it.distanceMeters == null
+                    }.thenBy {
+                        it.distanceMeters ?: Int.MAX_VALUE
+                    }
+                )
 
-            SafeLocationFilter.AVAILABLE -> {
-                allLocations.filter {
-                    it.isAcceptingPeople &&
-                            it.availableSlots > 0
-                }
-            }
+            SafeLocationFilter.AVAILABLE ->
+                // Backend chưa cung cấp số chỗ còn lại.
+                // Không thể xác định địa điểm nào còn chỗ.
+                emptyList()
 
-            SafeLocationFilter.MEDICAL -> {
-                allLocations.filter {
-                    SafeLocationFacility.MEDICAL in it.facilities ||
-                            SafeLocationFacility.EMERGENCY_CARE in it.facilities ||
-                            SafeLocationFacility.DOCTOR in it.facilities
+            SafeLocationFilter.MEDICAL ->
+                allLocations.filter { location ->
+                    SafeLocationFacility.MEDICAL in location.facilities ||
+                            SafeLocationFacility.EMERGENCY_CARE in location.facilities ||
+                            SafeLocationFacility.DOCTOR in location.facilities
                 }
-            }
         }
-    }
-
-    private fun createMockLocations(): List<SafeLocation> {
-        return listOf(
-            SafeLocation(
-                id = "safe_001",
-                name = "Điểm tránh trú mẫu 01",
-                address = "Địa chỉ minh họa 01",
-                latitude = 0.0,
-                longitude = 0.0,
-                distanceMeters = 1200,
-                travelMinutes = 5,
-                capacity = 500,
-                currentOccupancy = 180,
-                status = SafeLocationStatus.AVAILABLE,
-                statusDescription = "Còn chỗ",
-                facilities = listOf(
-                    SafeLocationFacility.CLEAN_WATER,
-                    SafeLocationFacility.ELECTRICITY,
-                    SafeLocationFacility.MEDICAL,
-                    SafeLocationFacility.HOT_MEALS
-                )
-            ),
-
-            SafeLocation(
-                id = "safe_002",
-                name = "Điểm tránh trú mẫu 02",
-                address = "Địa chỉ minh họa 02",
-                latitude = 0.0,
-                longitude = 0.0,
-                distanceMeters = 2500,
-                travelMinutes = 10,
-                capacity = 300,
-                currentOccupancy = 270,
-                status = SafeLocationStatus.LIMITED,
-                statusDescription = "Sắp đầy",
-                facilities = listOf(
-                    SafeLocationFacility.CLEAN_WATER,
-                    SafeLocationFacility.ELECTRICITY
-                )
-            ),
-
-            SafeLocation(
-                id = "safe_003",
-                name = "Điểm hỗ trợ y tế mẫu 03",
-                address = "Địa chỉ minh họa 03",
-                latitude = 0.0,
-                longitude = 0.0,
-                distanceMeters = 3800,
-                travelMinutes = 15,
-                capacity = 200,
-                currentOccupancy = 80,
-                status = SafeLocationStatus.MEDICAL,
-                statusDescription = "Hỗ trợ y tế",
-                facilities = listOf(
-                    SafeLocationFacility.MEDICAL,
-                    SafeLocationFacility.EMERGENCY_CARE,
-                    SafeLocationFacility.DOCTOR,
-                    SafeLocationFacility.OXYGEN
-                )
-            ),
-
-            SafeLocation(
-                id = "safe_004",
-                name = "Điểm tránh trú mẫu 04",
-                address = "Địa chỉ minh họa 04",
-                latitude = 0.0,
-                longitude = 0.0,
-                distanceMeters = 4200,
-                travelMinutes = null,
-                capacity = 400,
-                currentOccupancy = 400,
-                status = SafeLocationStatus.FULL,
-                statusDescription = "Đã đầy",
-                facilities = listOf(
-                    SafeLocationFacility.CLEAN_WATER,
-                    SafeLocationFacility.GENERATOR
-                ),
-                safetyNote = "Không tiếp nhận thêm người",
-                isRouteSafe = false
-            )
-        )
     }
 }
