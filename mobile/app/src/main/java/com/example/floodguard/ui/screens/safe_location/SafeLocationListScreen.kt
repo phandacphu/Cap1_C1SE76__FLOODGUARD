@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LocationOn
@@ -34,6 +35,7 @@ private val MutedText = Color(0xFF9CAFC0)
 @Composable
 fun SafeLocationListScreen(
     onBack: () -> Unit = {},
+    onMapClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onViewDetail: (String) -> Unit = {},
@@ -80,7 +82,9 @@ fun SafeLocationListScreen(
             }
 
             item {
-                SafeLocationMapPreview()
+                SafeLocationMapPreview(
+                    onMapClick = onMapClick
+                )
             }
 
 
@@ -340,12 +344,16 @@ private fun GpsInformationCard(
     }
 }
 
+
 @Composable
-private fun SafeLocationMapPreview() {
+private fun SafeLocationMapPreview(
+    onMapClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(190.dp),
+            .height(190.dp)
+            .clickable(onClick = onMapClick),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = SectionBackground
@@ -367,21 +375,28 @@ private fun SafeLocationMapPreview() {
                 )
 
                 Text(
-                    text = "Bản đồ địa điểm tránh trú",
+                    text = "XEM BẢN ĐỒ ĐIỂM TRÁNH TRÚ",
                     color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
 
                 Text(
-                    text = "Bản đồ xem trước chưa hiển thị vị trí thực tế",
+                    text = "Nhấn để mở Google Maps • Dữ liệu thử nghiệm",
                     color = MutedText,
                     fontSize = 12.sp
+                )
+
+                Text(
+                    text = "Dữ liệu thử nghiệm • Chưa xác minh",
+                    color = MutedText,
+                    fontSize = 11.sp
                 )
             }
         }
     }
 }
+
 
 @Composable
 private fun SafeLocationFilters(

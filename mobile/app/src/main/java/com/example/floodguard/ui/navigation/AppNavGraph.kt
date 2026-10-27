@@ -19,6 +19,7 @@ import com.example.floodguard.data.remote.api.RescueRequestApi
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.data.repository.RescueRequestRepository
 import com.example.floodguard.ui.screens.auth.login.LoginScreen
 import com.example.floodguard.ui.screens.auth.login.LoginViewModel
@@ -38,7 +39,6 @@ import kotlinx.coroutines.launch
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
-import com.example.floodguard.data.repository.SafeLocationRepository
 
 @Composable
 fun AppNavGraph(
@@ -465,6 +465,11 @@ fun AppNavGraph(
                 onBack = {
                     navController.popBackStack()
                 },
+                onMapClick = {
+                    navController.navigate(AppRoutes.MAP) {
+                        launchSingleTop = true
+                    }
+                },
 
                 onNotificationClick = {
                     Toast.makeText(
@@ -636,6 +641,9 @@ fun AppNavGraph(
                     ),
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
+                    ),
+                    safeLocationRepository = SafeLocationRepository(
+                        safeLocationApi = ApiClient.safeLocationApi
                     )
                 )
             }

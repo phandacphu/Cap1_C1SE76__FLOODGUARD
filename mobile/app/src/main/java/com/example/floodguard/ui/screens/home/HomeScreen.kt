@@ -1432,8 +1432,7 @@ private fun SafeShelterCard(
 
 
                     Text(
-                        text =
-                            "BẢN ĐỒ TUYẾN ĐƯỜNG AN TOÀN",
+                        text = "XEM BẢN ĐỒ NGẬP & ĐIỂM TRÚ",
 
                         color = WhiteText,
 
@@ -1445,8 +1444,7 @@ private fun SafeShelterCard(
 
 
                     Text(
-                        text =
-                            "Nhấn để xem bản đồ",
+                        text = "Nhấn để mở Google Maps • Dữ liệu thử nghiệm",
 
                         color = GrayText,
 
