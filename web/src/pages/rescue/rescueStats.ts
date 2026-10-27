@@ -111,3 +111,33 @@ export function computeKpis(list: RescueRequest[], now: Date): RescueKpis {
       : null,
   };
 }
+
+/** "24/10/2025 14:18" in Vietnam time. */
+export function formatFullDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour12: false,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** "HH:MM:SS" for a duration in milliseconds (never negative). */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(Math.floor(ms / 1000), 0);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+/** The four steps of a rescue, in order. */
+export const FLOW_STEPS: { status: SosStatus; title: string; fallback: string }[] = [
+  { status: "submitted", title: "Báo tin cứu hộ", fallback: "Cư dân gửi tín hiệu SOS từ ứng dụng." },
+  { status: "received", title: "Tiếp nhận & thẩm tra", fallback: "Nhân viên cứu hộ tiếp nhận ca." },
+  { status: "in_progress", title: "Xuất kích ứng cứu", fallback: "Đội cứu hộ tiếp cận hiện trường." },
+  { status: "assisted", title: "Hoàn tất hỗ trợ", fallback: "Nạn nhân đã được hỗ trợ an toàn." },
+];
