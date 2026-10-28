@@ -1,5 +1,5 @@
 /// <reference types="@types/google.maps" />
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useGoogleMaps } from '../../hooks/useGoogleMaps';
 import { floodAreaService } from '../../api/floodAreaService';
 import { useAuth } from '../../context/AuthContext';
@@ -35,6 +35,17 @@ const SEVERITY_COLOR_MAP: Record<
   },
 };
 
+// Hàm xử lý chuỗi an toàn chống chèn mã độc (XSS)
+const escapeHtml = (unsafe?: string | null): string => {
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 export const FloodMapView: React.FC = () => {
   const { token } = useAuth();
   const { isLoaded, loadError } = useGoogleMaps();
@@ -49,6 +60,7 @@ export const FloodMapView: React.FC = () => {
   const [dataError, setDataError] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
 
+  // 1. Tải danh sách vùng ngập từ API Backend
   useEffect(() => {
     let cancelled = false;
     const fetchAreas = async () => {
@@ -61,10 +73,12 @@ export const FloodMapView: React.FC = () => {
         }
       } catch (err: unknown) {
         if (!cancelled) {
-          setDataError(err instanceof Error ? err.message : 'Lỗi nạp danh sách vùng ngập');
+          setDataError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ API vùng ngập');
         }
       } finally {
-        if (!cancelled) setDataLoading(false);
+        if (!cancelled) {
+          setDataLoading(false);
+        }
       }
     };
 
@@ -74,6 +88,7 @@ export const FloodMapView: React.FC = () => {
     };
   }, [token]);
 
+  // 2. Khởi tạo Google Maps phẳng
   useEffect(() => {
     if (!isLoaded || !mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -97,9 +112,11 @@ export const FloodMapView: React.FC = () => {
     infoWindowRef.current = new google.maps.InfoWindow();
   }, [isLoaded]);
 
-  useEffect(() => {
+  // 3. Render Polygon (chạy khi map hoặc danh sách floodAreas sẵn sàng)
+  const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !window.google) return;
 
+    // Dọn dẹp polygon cũ
     polygonsRef.current.forEach((p) => p.setMap(null));
     polygonsRef.current = [];
 
@@ -120,26 +137,34 @@ export const FloodMapView: React.FC = () => {
         });
 
         const colorCfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
+        // Kiểm tra trạng thái chuẩn Backend status = 'active'
+        const isAreaActive = area.status === 'active' || area.isActive === true;
+
         const polygon = new google.maps.Polygon({
           paths: coords,
           strokeColor: colorCfg.stroke,
-          strokeOpacity: area.isActive ? 0.9 : 0.3,
+          strokeOpacity: isAreaActive ? 0.9 : 0.35,
           strokeWeight: 1.5,
           fillColor: colorCfg.fill,
-          fillOpacity: area.isActive ? 0.35 : 0.1,
+          fillOpacity: isAreaActive ? 0.35 : 0.1,
           map: mapInstanceRef.current,
         });
 
         polygon.addListener('click', (e: google.maps.PolyMouseEvent) => {
           setSelectedArea(area);
           if (infoWindowRef.current && e.latLng) {
+            const safeName = escapeHtml(area.name);
+            const safeStatus = isAreaActive ? 'Đang hiệu lực (active)' : 'Ngừng cảnh báo (inactive)';
+            const safeSource = escapeHtml(area.source || 'Hệ thống FloodGuard');
+            const safeDesc = escapeHtml(area.description || 'Không có mô tả chi tiết');
+
             infoWindowRef.current.setContent(`
               <div style="color: #0f172a; font-family: ui-monospace, monospace; padding: 6px; font-size: 11px; line-height: 1.5;">
-                <b style="font-size: 12px; color: #0284c7;">${area.name}</b><br/>
-                <b>Mức độ:</b> ${colorCfg.label} (${area.severity})<br/>
-                <b>Trạng thái:</b> ${area.isActive ? 'Đang hiệu lực' : 'Đã ngưng'}<br/>
-                <b>Nguồn tin:</b> ${area.source || 'Hệ thống FloodGuard'}<br/>
-                <p style="margin: 4px 0 0 0; color: #475569;">${area.description || 'Không có mô tả chi tiết'}</p>
+                <b style="font-size: 12px; color: #0284c7;">${safeName}</b><br/>
+                <b>Mức độ:</b> ${colorCfg.label} (${escapeHtml(area.severity)})<br/>
+                <b>Trạng thái:</b> ${safeStatus}<br/>
+                <b>Nguồn tin:</b> ${safeSource}<br/>
+                <p style="margin: 4px 0 0 0; color: #475569;">${safeDesc}</p>
               </div>
             `);
             infoWindowRef.current.setPosition(e.latLng);
@@ -155,6 +180,15 @@ export const FloodMapView: React.FC = () => {
       mapInstanceRef.current.fitBounds(bounds);
     }
   }, [floodAreas]);
+
+  useEffect(() => {
+    if (isLoaded && mapInstanceRef.current) {
+      renderPolygons();
+    }
+  }, [isLoaded, renderPolygons]);
+
+  // Điều kiện loading: chỉ hiện loading khi không có lỗi SDK và chưa nạp xong SDK hoặc API
+  const showLoadingOverlay = !loadError && (!isLoaded || dataLoading);
 
   return (
     <div className="w-full space-y-4 font-sans text-slate-100 pb-10">
@@ -189,23 +223,23 @@ export const FloodMapView: React.FC = () => {
       </div>
 
       {loadError && (
-        <div className="bg-amber-950/40 border border-amber-700/60 p-3 rounded-lg text-amber-200 text-xs font-mono">
+        <div className="bg-amber-950/40 border border-amber-700/60 p-3.5 rounded-lg text-amber-200 text-xs font-mono">
           ⚠️ [LỖI BẢN ĐỒ]: {loadError}
         </div>
       )}
 
       {dataError && (
-        <div className="bg-rose-950/40 border border-rose-700/60 p-3 rounded-lg text-rose-200 text-xs font-mono">
+        <div className="bg-rose-950/40 border border-rose-700/60 p-3.5 rounded-lg text-rose-200 text-xs font-mono">
           ⚠️ [LỖI API VÙNG NGẬP]: {dataError}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <div className="lg:col-span-3 bg-[#081B30] border border-[#1E3A5F] rounded-xl overflow-hidden relative min-h-[520px]">
-          {(!isLoaded || dataLoading) && (
+          {showLoadingOverlay && (
             <div className="absolute inset-0 bg-[#081B30]/90 z-10 flex flex-col items-center justify-center space-y-2 font-mono text-xs text-cyan-400">
               <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-              <span>Đang tải Google Maps & dữ liệu vùng ngập...</span>
+              <span>Đang kết nối vệ tinh & tải dữ liệu vùng ngập...</span>
             </div>
           )}
           <div ref={mapContainerRef} className="w-full h-[520px]" />
@@ -227,6 +261,8 @@ export const FloodMapView: React.FC = () => {
               {floodAreas.map((area) => {
                 const cfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
                 const isSelected = selectedArea?.id === area.id;
+                const isAreaActive = area.status === 'active' || area.isActive === true;
+
                 return (
                   <div
                     key={area.id}
@@ -244,7 +280,7 @@ export const FloodMapView: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-[10px] font-mono text-slate-400 mt-1 flex items-center justify-between">
-                      <span>{area.isActive ? '● Đang hiệu lực' : '○ Đã ngưng'}</span>
+                      <span>{isAreaActive ? '● Đang hiệu lực' : '○ Đã ngưng'}</span>
                       <span className="text-slate-500 truncate max-w-[100px]">{area.source || 'Cảm biến'}</span>
                     </div>
                   </div>
