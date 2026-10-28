@@ -168,12 +168,6 @@ fun SendSosScreen(
             item {
                 Button(
                     onClick = {
-                        android.widget.Toast.makeText(
-                            context,
-                            "SOS BUTTON CLICKED",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-
                         showDemoDialog = true
                     },
                     modifier = Modifier
@@ -591,11 +585,6 @@ private fun SosNoteField(
         OutlinedTextField(
             value = note,
             onValueChange = { newValue ->
-                android.util.Log.d(
-                    "SOS_DEBUG",
-                    "Note length = ${newValue.length}"
-                )
-
                 onNoteChange(newValue.take(200))
             },
             modifier = Modifier
