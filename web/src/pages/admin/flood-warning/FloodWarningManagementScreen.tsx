@@ -1,308 +1,365 @@
 // File: web/src/pages/admin/flood-warning/FloodWarningManagementScreen.tsx
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 
 export interface FloodWarning {
   id: string;
+  code: string;
   title: string;
-  areaId: string;
-  areaName: string;
+  district: string;
+  waterLevel: string;
+  trend: string;
   severity: "Khẩn cấp" | "Cao" | "Trung bình" | "Thấp";
-  status: "active" | "inactive";
-  startAt: string;
-  endAt: string;
-  content: string;
+  status: "Đang ngập sâu" | "Nước rút dần" | "Ngập vừa" | "Ổn định";
 }
 
 const MOCK_WARNINGS: FloodWarning[] = [
   {
     id: "ALER-01",
-    title: "Cảnh báo lũ khẩn cấp thượng lưu sông Cu Đê",
-    areaId: "VN-014",
-    areaName: "Sông Cu Đê - Hòa Bắc",
+    code: "VN-014",
+    title: "Sông Cu Đê - Hòa Bắc",
+    district: "Hòa Vang",
+    waterLevel: "2.10m",
+    trend: "+18cm/h",
     severity: "Khẩn cấp",
-    status: "active",
-    startAt: "2026-10-28T06:00:00Z",
-    endAt: "2026-10-29T18:00:00Z",
-    content: "Mực nước dâng nhanh trên báo động 3, yêu cầu sơ tán người dân vùng thấp trũng.",
+    status: "Đang ngập sâu",
   },
   {
     id: "ALER-02",
-    title: "Cảnh báo ngập úng đô thị khu vực Liên Chiểu",
-    areaId: "VN-008",
-    areaName: "Vùng trũng kiệt Mẹ Suốt",
-    severity: "Cao",
-    status: "active",
-    startAt: "2026-10-28T08:00:00Z",
-    endAt: "2026-10-29T12:00:00Z",
-    content: "Ngập úng cục bộ tại các tuyến đường giao thông chính do triều cường kết hợp mưa lớn.",
+    code: "VN-008",
+    title: "Vùng trũng kiệt Mẹ Suốt",
+    district: "Liên Chiểu",
+    waterLevel: "1.65m",
+    trend: "+8cm/h",
+    severity: "Khẩn cấp",
+    status: "Đang ngập sâu",
   },
   {
     id: "ALER-03",
-    title: "Cảnh báo lũ quét và sạt lở đất Đại Lộc",
-    areaId: "VN-015",
-    areaName: "Rốn lũ Đại Cường - Đại Lộc",
-    severity: "Khẩn cấp",
-    status: "inactive",
-    startAt: "2026-10-20T00:00:00Z",
-    endAt: "2026-10-22T00:00:00Z",
-    content: "Cảnh báo đã hết hiệu lực. Khu vực đang trong giai đoạn khắc phục.",
+    code: "VN-012",
+    title: "Vùng ven sông Cầu Đỏ",
+    district: "Cẩm Lệ",
+    waterLevel: "1.20m",
+    trend: "Đang hạ",
+    severity: "Cao",
+    status: "Nước rút dần",
   },
+  {
+    id: "ALER-04",
+    code: "VN-015",
+    title: "Rốn lũ Đại Cường - Đại Lộc",
+    district: "Đại Lộc",
+    waterLevel: "1.85m",
+    trend: "+25cm/h",
+    severity: "Khẩn cấp",
+    status: "Đang ngập sâu",
+  },
+  {
+    id: "ALER-05",
+    code: "VN-003",
+    title: "Vùng trũng thấp Hòa Khương",
+    district: "Hòa Vang",
+    waterLevel: "0.75m",
+    trend: "- Ổn định",
+    severity: "Trung bình",
+    status: "Ngập vừa",
+  },
+  {
+    id: "ALER-06",
+    code: "VN-006",
+    title: "Cánh đồng Hòa Tiến",
+    district: "Hòa Vang",
+    waterLevel: "0.42m",
+    trend: "-4cm/h",
+    severity: "Thấp",
+    status: "Nước rút dần",
+  }
 ];
 
 export default function FloodWarningManagementScreen() {
   const [warnings] = useState<FloodWarning[]>(MOCK_WARNINGS);
   const [search, setSearch] = useState("");
-  const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string>("ALER-01");
 
-  // Xử lý lọc danh sách phía client
+  // Lọc dữ liệu
   const filteredWarnings = useMemo(() => {
-    return warnings.filter((item) => {
-      const matchSearch =
-        item.title.toLowerCase().includes(search.toLowerCase()) ||
-        item.areaId.toLowerCase().includes(search.toLowerCase()) ||
-        item.areaName.toLowerCase().includes(search.toLowerCase());
-      
-      const matchSeverity = severityFilter === "all" || item.severity === severityFilter;
-      const matchStatus = statusFilter === "all" || item.status === statusFilter;
+    return warnings.filter((item) =>
+      item.title.toLowerCase().includes(search.toLowerCase()) ||
+      item.code.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [warnings, search]);
 
-      return matchSearch && matchSeverity && matchStatus;
-    });
-  }, [warnings, search, severityFilter, statusFilter]);
-
-  // Kiểm tra thời gian hiệu lực thực tế so với hiện tại
-  const checkValidity = (startAt: string, endAt: string, status: string) => {
-    if (status !== "active") return { label: "Đã vô hiệu", color: "bg-slate-500/10 text-slate-400" };
-    const now = new Date().getTime();
-    const start = new Date(startAt).getTime();
-    const end = new Date(endAt).getTime();
-
-    if (now < start) return { label: "Sắp tới", color: "bg-blue-500/10 text-blue-400" };
-    if (now > end) return { label: "Đã hết hạn", color: "bg-red-500/10 text-red-400" };
-    return { label: "Đang hiệu lực", color: "bg-emerald-500/10 text-emerald-400" };
-  };
+  const selectedWarning = warnings.find(w => w.id === selectedId) || warnings[0];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 text-slate-200">
-      {/* HEADER */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-slate-700/60 pb-5">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 mb-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-            QUẢN TRỊ HỆ THỐNG • CẢNH BÁO THIÊN TAI & LŨ LỤT
-          </div>
-          <h1 className="text-2xl font-bold text-white uppercase tracking-wide">
-            Quản lý cảnh báo lũ (Flood Warning Management)
-          </h1>
-          <p className="mt-1 text-sm text-slate-400 max-w-3xl">
-            Phát hành, theo dõi thời gian hiệu lực và quản lý các bản tin cảnh báo rủi ro thiên tai phục vụ cộng đồng.
-          </p>
+    <div className="min-h-screen bg-[#0B1121] text-slate-300 font-sans p-4 lg:p-6">
+      
+      {/* --- HEADER --- */}
+      <div className="mb-6 border-b border-slate-800 pb-5">
+        <div className="flex items-center gap-3 text-[10px] font-mono font-bold tracking-wider mb-3">
+          <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">Hệ thống tác chiến C4I</span>
+          <span className="px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700 uppercase">Dữ liệu mô phỏng</span>
+          <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">SENTINEL-1B SAR / IOT TELEMETRY ACTIVE</span>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="rounded bg-emerald-600 hover:bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition flex items-center gap-2"
-        >
-          <span>+ Phát hành cảnh báo mới</span>
-        </button>
-      </div>
-
-      {/* KPI STATS CARDS (FLAT DESIGN - NO GRADIENT) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">Tổng bản tin cảnh báo</div>
-          <div className="text-3xl font-bold text-white">{warnings.length}</div>
-          <div className="mt-2 text-xs text-slate-400">Dữ liệu quản trị hệ thống</div>
-        </div>
-        <div className="rounded-xl bg-slate-800 border border-emerald-500/30 p-5">
-          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">Đang hoạt động (Active)</div>
-          <div className="text-3xl font-bold text-emerald-400">
-            {warnings.filter(w => w.status === 'active').length}
-          </div>
-          <div className="mt-2 text-xs text-emerald-300">Sẵn sàng đồng bộ mobile</div>
-        </div>
-        <div className="rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">Đã lưu trữ / Vô hiệu</div>
-          <div className="text-3xl font-bold text-slate-400">
-            {warnings.filter(w => w.status === 'inactive').length}
-          </div>
-          <div className="mt-2 text-xs text-slate-400">Không hiển thị công khai</div>
-        </div>
-      </div>
-
-      {/* TOOLBAR & FILTERS */}
-      <div className="rounded-xl bg-slate-800 border border-slate-700 p-4 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Tìm theo tiêu đề cảnh báo, mã vùng (VD: VN-014), tên lưu vực..."
+          <div>
+            <h1 className="text-2xl font-bold text-white uppercase tracking-wide">Quản lý cảnh báo lũ & Lưu vực sông</h1>
+            <p className="mt-1 text-sm text-slate-400">Giám sát, phân vùng ngập úng, đo đạc cao trình thủy văn và phát hành cảnh báo sơ tán khẩn cấp.</p>
+          </div>
+          <div className="flex gap-3">
+            <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded border border-slate-700 transition-colors">
+              Đồng bộ trạm IoT
+            </button>
+            <button className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded border border-slate-700 transition-colors">
+              Xuất GeoJSON
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* --- KPI CARDS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-[#111827] border border-slate-800 rounded-lg p-4">
+          <div className="text-[10px] font-mono uppercase text-slate-500 mb-1 flex justify-between">
+            <span>Tổng vùng cảnh báo</span>
+            <span className="text-slate-400">🌊</span>
+          </div>
+          <div className="text-3xl font-bold text-white flex items-baseline gap-2">
+            14 <span className="text-sm font-normal text-slate-400">phân vùng</span>
+          </div>
+          <div className="mt-2 text-xs text-emerald-400 flex justify-between">
+            <span>+2 vùng mới (3h qua)</span>
+            <span className="text-slate-500">DỮ LIỆU MÔ PHỎNG</span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-rose-900/30 rounded-lg p-4 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/5 rounded-bl-full"></div>
+          <div className="text-[10px] font-mono uppercase text-rose-500 mb-1 flex justify-between">
+            <span>Ngập khẩn cấp {'>'} 1.5m</span>
+            <span className="text-rose-500">⚠️</span>
+          </div>
+          <div className="text-3xl font-bold text-rose-400 flex items-baseline gap-2">
+            04 <span className="text-sm font-normal text-slate-400">vùng cô lập</span>
+          </div>
+          <div className="mt-2 text-xs text-rose-400 flex justify-between">
+            <span>BÁO ĐỘNG DI DỜI DÂN CƯ</span>
+            <span className="text-slate-500">DỮ LIỆU MÔ PHỎNG</span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 rounded-lg p-4">
+          <div className="text-[10px] font-mono uppercase text-cyan-500 mb-1 flex justify-between">
+            <span>Diện tích ngập ước tính</span>
+            <span className="text-cyan-500">📐</span>
+          </div>
+          <div className="text-3xl font-bold text-white flex items-baseline gap-2">
+            68.4 <span className="text-sm font-normal text-slate-400">km²</span>
+          </div>
+          <div className="mt-2 text-xs text-slate-400 flex justify-between">
+            <span>Lưu vực Cu Đê - Túy Loan</span>
+            <span className="text-slate-500">DỮ LIỆU MÔ PHỎNG</span>
+          </div>
+        </div>
+
+        <div className="bg-[#111827] border border-slate-800 rounded-lg p-4">
+          <div className="text-[10px] font-mono uppercase text-amber-500 mb-1 flex justify-between">
+            <span>Dân cư vùng nguy hiểm</span>
+            <span className="text-amber-500">👥</span>
+          </div>
+          <div className="text-3xl font-bold text-white flex items-baseline gap-2">
+            82.450 <span className="text-sm font-normal text-slate-400">người</span>
+          </div>
+          <div className="mt-2 text-xs text-slate-400 flex justify-between">
+            <span>19.200 hộ gia đình</span>
+            <span className="text-slate-500">DỮ LIỆU MÔ PHỎNG</span>
+          </div>
+        </div>
+      </div>
+
+      {/* --- MAIN CONTENT SPLIT --- */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+        
+        {/* LEFT COLUMN: TOOLBAR & TABLE */}
+        <div className="xl:col-span-7 flex flex-col gap-4">
+          
+          {/* Toolbar */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <button className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded shadow-none transition-colors">
+              + Thêm vùng ngập
+            </button>
+            <input 
+              type="text" 
+              placeholder="Tìm tên vùng ngập, lưu vực, mã ID..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg bg-slate-900 border border-slate-700 px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              className="flex-1 min-w-[200px] px-4 py-2 bg-[#111827] border border-slate-700 rounded text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
+            <select className="px-3 py-2 bg-[#111827] border border-slate-700 rounded text-sm text-slate-300 focus:outline-none">
+              <option>Mức độ: Tất cả</option>
+              <option>Khẩn cấp</option>
+            </select>
+            <select className="px-3 py-2 bg-[#111827] border border-slate-700 rounded text-sm text-slate-300 focus:outline-none">
+              <option>Trạng thái: Tất cả</option>
+            </select>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-slate-400">Mức độ:</span>
-              <select 
-                value={severityFilter}
-                onChange={(e) => setSeverityFilter(e.target.value)}
-                className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="all">Tất cả</option>
-                <option value="Khẩn cấp">Khẩn cấp</option>
-                <option value="Cao">Cao</option>
-                <option value="Trung bình">Trung bình</option>
-                <option value="Thấp">Thấp</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-slate-400">Trạng thái:</span>
-              <select 
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="all">Tất cả</option>
-                <option value="active">Active (Hoạt động)</option>
-                <option value="inactive">Inactive (Vô hiệu)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* DATA TABLE */}
-      <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-900/60 text-xs font-mono uppercase text-slate-400">
-            <tr>
-              <th className="px-5 py-3.5 font-medium">Tiêu đề bản tin & Khu vực</th>
-              <th className="px-5 py-3.5 font-medium">Mức độ</th>
-              <th className="px-5 py-3.5 font-medium">Trạng thái hệ thống</th>
-              <th className="px-5 py-3.5 font-medium">Khung thời gian hiệu lực (UTC)</th>
-              <th className="px-5 py-3.5 font-medium text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/50">
-            {filteredWarnings.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-slate-400">
-                  Không tìm thấy bản tin cảnh báo nào phù hợp.
-                </td>
-              </tr>
-            ) : (
-              filteredWarnings.map((item) => {
-                const validity = checkValidity(item.startAt, item.endAt, item.status);
-                return (
-                  <tr key={item.id} className="hover:bg-slate-700/30 transition">
-                    <td className="px-5 py-3.5">
-                      <div className="font-semibold text-white">{item.title}</div>
-                      <div className="font-mono text-xs text-slate-400">
-                        Vùng ID: <span className="text-blue-400">{item.areaId}</span> ({item.areaName})
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium 
-                        ${item.severity === "Khẩn cấp" ? "bg-red-500/20 text-red-400" : 
-                          item.severity === "Cao" ? "bg-amber-500/20 text-amber-400" : 
-                          "bg-blue-500/20 text-blue-400"}`}>
-                        {item.severity}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${validity.color}`}>
-                          {validity.label}
+          {/* Table */}
+          <div className="bg-[#111827] border border-slate-800 rounded-lg overflow-x-auto flex-1">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-[#0B1120] text-[10px] font-mono uppercase text-slate-500 border-b border-slate-800">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Tên vùng cảnh báo & Mã ID</th>
+                  <th className="px-4 py-3 font-semibold">Khu vực</th>
+                  <th className="px-4 py-3 font-semibold">Mực nước (Biến thiên)</th>
+                  <th className="px-4 py-3 font-semibold">Mức độ</th>
+                  <th className="px-4 py-3 font-semibold">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {filteredWarnings.map((item) => {
+                  const isSelected = selectedId === item.id;
+                  return (
+                    <tr 
+                      key={item.id} 
+                      onClick={() => setSelectedId(item.id)}
+                      className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-900/10 border-l-2 border-l-blue-500' : 'hover:bg-slate-800/40 border-l-2 border-l-transparent'}`}
+                    >
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-white">{item.title}</span>
+                          {isSelected && <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-mono">ĐANG CHỌN</span>}
+                        </div>
+                        <div className="text-xs font-mono text-slate-500 mt-1">#{item.code}</div>
+                      </td>
+                      <td className="px-4 py-4 text-slate-300">{item.district}</td>
+                      <td className="px-4 py-4">
+                        <div className="text-white font-mono">{item.waterLevel}</div>
+                        <div className={`text-[10px] font-mono ${item.trend.includes('+') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {item.trend.includes('+') ? '↑' : '↓'} {item.trend.replace(/[-+]/g, '')}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase border ${
+                          item.severity === 'Khẩn cấp' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
+                          item.severity === 'Cao' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                          item.severity === 'Trung bình' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                          'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                        }`}>
+                          {item.severity}
                         </span>
-                        <span className="text-xs text-slate-500 font-mono">({item.status})</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-xs text-slate-300">
-                      <div>Từ: {new Date(item.startAt).toLocaleString()}</div>
-                      <div>Đến: {new Date(item.endAt).toLocaleString()}</div>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button 
-                        onClick={() => alert(`Xem chi tiết bản tin: ${item.id}`)}
-                        className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 transition"
-                      >
-                        Chỉnh sửa
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-        <div className="border-t border-slate-700 bg-slate-900/40 px-5 py-3 text-xs font-mono text-slate-400 flex justify-between items-center">
-          <span>Hiển thị {filteredWarnings.length} / {warnings.length} bản tin cảnh báo</span>
-          <span>(Lưu ý: Backend không hỗ trợ DELETE bản tin warning)</span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`text-xs font-medium ${
+                          item.status === 'Đang ngập sâu' ? 'text-rose-400' :
+                          item.status === 'Nước rút dần' ? 'text-blue-400' :
+                          'text-slate-400'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          <div className="text-xs font-mono text-slate-500 mt-2">
+            Hiển thị 1 - {filteredWarnings.length} của 14 vùng ngập • Trang 1/3
+          </div>
         </div>
-      </div>
 
-      {/* CREATE MODAL SIMULATION */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-800 border border-slate-700 shadow-2xl overflow-hidden">
-            <div className="border-b border-slate-700 bg-slate-900/50 px-6 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-white">Phát hành Bản tin Cảnh báo Mới (CCF-120 UI)</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-mono text-slate-400 mb-1">Tiêu đề cảnh báo</label>
-                <input type="text" placeholder="Ví dụ: Cảnh báo lũ dâng cao tại khu vực..." className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" />
+        {/* RIGHT COLUMN: MAP PREVIEW & DETAILS */}
+        <div className="xl:col-span-5 flex flex-col gap-4">
+          
+          <div className="bg-[#111827] border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+            
+            {/* Map Toolbar */}
+            <div className="p-3 border-b border-slate-800 flex flex-wrap gap-2 justify-between items-center bg-[#0B1120]/50">
+              <div className="text-[10px] font-mono text-slate-400 uppercase">
+                Chế độ số hóa đa giác<br/>(Polygon GIS)
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Mã khu vực (areaId)</label>
-                  <select className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
-                    <option value="VN-014">VN-014 (Sông Cu Đê)</option>
-                    <option value="VN-008">VN-008 (Mẹ Suốt)</option>
-                    <option value="VN-015">VN-015 (Đại Lộc)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Mức độ (severity)</label>
-                  <select className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
-                    <option value="Khẩn cấp">Khẩn cấp</option>
-                    <option value="Cao">Cao</option>
-                    <option value="Trung bình">Trung bình</option>
-                    <option value="Thấp">Thấp</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Thời gian bắt đầu (StartAt)</label>
-                  <input type="datetime-local" className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Thời gian kết thúc (EndAt)</label>
-                  <input type="datetime-local" className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-mono text-slate-400 mb-1">Nội dung chi tiết</label>
-                <textarea rows={3} placeholder="Nhập thông tin chi tiết chỉ đạo ứng phó..." className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"></textarea>
-              </div>
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3 text-xs text-amber-400">
-                Quy chuẩn CCF-120: Bản tin sau khi tạo sẽ được liên kết trực tiếp với areaId đã chọn và hiển thị trạng thái hiệu lực theo thời gian thực.
+              <div className="flex gap-2">
+                <button className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded border border-slate-700">✎ Chỉnh sửa đỉnh</button>
+                <button className="px-3 py-1.5 bg-emerald-600/20 text-emerald-400 text-xs rounded border border-emerald-500/30">✓ Lưu tọa độ</button>
               </div>
             </div>
-            <div className="border-t border-slate-700 p-4 flex justify-end gap-3 bg-slate-900/50">
-              <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700">Hủy</button>
-              <button onClick={() => { alert("Đã tạo bản tin cảnh báo mẫu thành công!"); setIsModalOpen(false); }} className="px-4 py-2 rounded text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 transition">Phát hành</button>
+
+            {/* Map Simulation Container */}
+            <div className="relative w-full h-64 bg-[#0B1121] flex items-center justify-center overflow-hidden">
+              {/* Grid Background */}
+              <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+              
+              {/* Simulated Polygon Map Vector */}
+              <svg className="absolute w-64 h-64 text-rose-500" viewBox="0 0 100 100" fill="currentColor" fillOpacity="0.15" stroke="currentColor" strokeWidth="1">
+                <polygon points="40,20 80,30 90,70 50,85 20,60" strokeDasharray="2 1" />
+                <circle cx="40" cy="20" r="2" fill="#f43f5e" />
+                <circle cx="80" cy="30" r="2" fill="#f43f5e" />
+                <circle cx="90" cy="70" r="2" fill="#f43f5e" />
+                <circle cx="50" cy="85" r="2" fill="#f43f5e" />
+                <circle cx="20" cy="60" r="2" fill="#f43f5e" />
+              </svg>
+              
+              {/* Map Floating UI */}
+              <div className="absolute top-3 left-3 bg-[#0B1121]/90 border border-slate-700 p-2 rounded text-[10px] font-mono text-slate-300">
+                <div>⌖ TÂM VÙNG: 16°04'12.8"N 108°11'05.4"E</div>
+                <div className="text-slate-500 mt-1">DT: 18.6 km² • CHU VI: 22.4 km • ĐỈNH: 12 nodes</div>
+              </div>
+
+              {/* Central Alert Marker */}
+              <div className="absolute z-10 flex flex-col items-center">
+                <div className="w-4 h-4 bg-rose-500 rounded-full animate-ping absolute opacity-75"></div>
+                <div className="w-3 h-3 bg-rose-500 border-2 border-white rounded-full relative z-10"></div>
+                <div className="mt-2 px-2 py-1 bg-[#0B1121]/90 border border-rose-500/50 rounded text-[10px] font-bold font-mono text-rose-400 text-center">
+                  [!] VÙNG NGẬP KHẨN CẤP {selectedWarning.code}<br/>
+                  MỰC NƯỚC: {selectedWarning.waterLevel} ({selectedWarning.trend})
+                </div>
+              </div>
+            </div>
+
+            {/* Warning Detail Info */}
+            <div className="p-5 flex flex-col gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 text-[10px] font-bold rounded uppercase border border-rose-500/30">Báo động đỏ</span>
+                  <span className="text-[10px] font-mono text-slate-500">MÃ HỒ SƠ: {selectedWarning.code}-CB-2026</span>
+                </div>
+                <h3 className="text-lg font-bold text-white leading-snug">#{selectedWarning.code} - Vùng cảnh báo lũ <br/>{selectedWarning.title}</h3>
+                <div className="text-xs text-slate-400 mt-1 uppercase font-mono tracking-wider">Dữ liệu mô phỏng</div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 border-t border-slate-800 pt-4">
+                <div>
+                  <div className="text-[10px] font-mono text-slate-500 mb-1">TRẠM QUAN TRẮC</div>
+                  <div className="text-sm font-bold text-slate-200">Cu Đê TB-04</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Tự động 5 phút/lần</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono text-slate-500 mb-1">DÂN SỐ ẢNH HƯỞNG</div>
+                  <div className="text-sm font-bold text-rose-400">2.450 hộ dân</div>
+                  <div className="text-[10px] text-rose-500/70 mt-0.5">8.120 nhân khẩu rủi ro</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono text-slate-500 mb-1">DỰ BÁO ĐỈNH LŨ</div>
+                  <div className="text-sm font-bold text-orange-400">2.45m (+35cm)</div>
+                  <div className="text-[10px] text-orange-500/70 mt-0.5">Đỉnh điểm vào 18:30</div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-2">
+                <button className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded transition-colors">
+                  Cập nhật ranh giới
+                </button>
+                <button className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold rounded shadow-none transition-colors">
+                  Ban hành cảnh báo ngay
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+
+      </div>
     </div>
   );
 }
