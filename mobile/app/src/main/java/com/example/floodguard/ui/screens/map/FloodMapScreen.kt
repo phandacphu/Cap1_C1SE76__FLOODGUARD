@@ -79,11 +79,11 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.maps.android.compose.Polygon
+import com.google.maps.android.compose.rememberUpdatedMarkerState
 
 // =====================================================
 // COLORS
@@ -629,7 +629,7 @@ private fun FloodGpsInfo() {
             )
 
             Text(
-                text = "GPS được lấy khi người dùng cấp quyền vị trí",
+                text = "FloodGuard sử dụng GPS để hiển thị vị trí của bạn trên bản đồ. Bạn vẫn có thể xem bản đồ khi không cấp quyền.",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -848,8 +848,10 @@ private fun FloodGoogleMap(
 
 
     LaunchedEffect(Unit) {
-
-        if (!hasLocationPermission) {
+        if (
+            !hasLocationPermission &&
+            !hasRequestedLocationPermissionBefore
+        ) {
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -1194,10 +1196,12 @@ private fun FloodGoogleMap(
 
                 if (state.isUserLayerEnabled) {
                     userLocation?.let { location ->
+                        val markerState = rememberUpdatedMarkerState(
+                            position = location
+                        )
+
                         Marker(
-                            state = MarkerState(
-                                position = location
-                            ),
+                            state = markerState,
                             title = "Vị trí của bạn"
                         )
                     }
@@ -1220,13 +1224,17 @@ private fun FloodGoogleMap(
                         }
                         .forEach { safeLocation ->
 
+                            val markerPosition = LatLng(
+                                safeLocation.location.latitude,
+                                safeLocation.location.longitude
+                            )
+
+                            val markerState = rememberUpdatedMarkerState(
+                                position = markerPosition
+                            )
+
                             Marker(
-                                state = MarkerState(
-                                    position = LatLng(
-                                        safeLocation.location.latitude,
-                                        safeLocation.location.longitude
-                                    )
-                                ),
+                                state = markerState,
                                 title = safeLocation.name,
                                 snippet = "DỮ LIỆU THỬ NGHIỆM — " +
                                         "Chưa xác minh điểm tránh trú"
