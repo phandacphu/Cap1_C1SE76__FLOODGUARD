@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Unauthorized } from './pages/Unauthorized';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
+import FloodWarningManagementScreen from './pages/admin/flood-warning/FloodWarningManagementScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -37,6 +38,7 @@ export const App: React.FC = () => {
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<UserManagementScreen />} />
+            <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

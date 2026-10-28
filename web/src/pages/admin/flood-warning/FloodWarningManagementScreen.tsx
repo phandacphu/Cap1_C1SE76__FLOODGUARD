@@ -1,6 +1,6 @@
 // File: web/src/pages/admin/flood-warning/FloodWarningManagementScreen.tsx
 
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 
 export interface FloodWarning {
   id: string;
