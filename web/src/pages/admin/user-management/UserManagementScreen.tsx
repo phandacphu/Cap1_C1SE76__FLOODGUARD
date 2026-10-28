@@ -1,34 +1,177 @@
 // File: web/src/pages/admin/user-management/UserManagementScreen.tsx
 
-import { useState, useMemo } from "react";
-import { MOCK_USERS, type User } from "./userManagementMock";
+import { useState, useEffect, useMemo } from "react";
+
+export interface User {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  role: "resident" | "rescue" | "admin";
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export default function UserManagementScreen() {
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editRole, setEditRole] = useState<"resident" | "rescue" | "admin">("resident");
+  const [editIsActive, setEditIsActive] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-  // Lọc local dữ liệu
+  const apiBase = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL.replace(/\/+$/, "") 
+    : "https://floodguard-backend-demo.onrender.com/api";
+
+  // 1. GET: Lấy danh sách người dùng từ API thật (Gọi trực tiếp trong useEffect để tránh warning)
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUsers = async () => {
+      setLoading(true);
+      setErrorMsg(null);
+      try {
+        const response = await fetch(`${apiBase}/admin/users`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || `Lỗi HTTP: ${response.status}`);
+        }
+
+        if (isMounted && data && data.data && Array.isArray(data.data.users)) {
+          setUsers(data.data.users);
+        } else if (isMounted) {
+          setUsers([]);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (isMounted) {
+          setErrorMsg(message || "Không thể tải danh sách người dùng từ hệ thống.");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadUsers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBase, token]);
+
+  // Lọc dữ liệu phía client theo yêu cầu
   const filteredUsers = useMemo(() => {
-    return MOCK_USERS.filter((user) => {
+    return users.filter((u) => {
       const matchSearch =
-        user.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        user.phone.includes(search) ||
-        user.email.toLowerCase().includes(search.toLowerCase());
-      const matchRole = roleFilter === "all" || user.role === roleFilter;
-      const matchStatus = statusFilter === "all" || user.status === statusFilter;
+        u.fullName.toLowerCase().includes(search.toLowerCase()) ||
+        u.phone.includes(search) ||
+        u.email.toLowerCase().includes(search.toLowerCase());
+      
+      const matchRole = roleFilter === "all" || u.role === roleFilter;
+      
+      const matchStatus = 
+        statusFilter === "all" || 
+        (statusFilter === "active" && u.isActive) || 
+        (statusFilter === "inactive" && !u.isActive);
+
       return matchSearch && matchRole && matchStatus;
     });
-  }, [search, roleFilter, statusFilter]);
+  }, [users, search, roleFilter, statusFilter]);
 
-  // UI Handlers
   const handleEditClick = (user: User) => {
     setSelectedUser(user);
+    setEditRole(user.role);
+    setEditIsActive(user.isActive);
   };
 
   const handleCloseModal = () => {
     setSelectedUser(null);
+  };
+
+  // Hàm tải lại danh sách sau khi update thành công
+  const reloadUsers = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/admin/users`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await response.json();
+      if (response.ok && data?.data?.users) {
+        setUsers(data.data.users);
+      }
+    } catch {
+      // Bỏ qua lỗi ngầm khi reload
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. PATCH: Cập nhật vai trò hoặc trạng thái tài khoản
+  const handleUpdateUser = async () => {
+    if (!selectedUser) return;
+    
+    setSubmitting(true);
+    try {
+      const payload: { role?: string; isActive?: boolean } = {};
+      if (editRole !== selectedUser.role) {
+        payload.role = editRole;
+      }
+      if (editIsActive !== selectedUser.isActive) {
+        payload.isActive = editIsActive;
+      }
+
+      if (Object.keys(payload).length === 0) {
+        alert("Không có thay đổi nào được thực hiện.");
+        setSubmitting(false);
+        return;
+      }
+
+      const response = await fetch(`${apiBase}/admin/users/${selectedUser.id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `Lỗi cập nhật (HTTP ${response.status})`);
+      }
+
+      alert("Cập nhật tài khoản thành công!");
+      setSelectedUser(null);
+      reloadUsers();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      alert(`Thất bại: ${message}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -41,66 +184,45 @@ export default function UserManagementScreen() {
           </h1>
           <div className="mt-1 flex items-center gap-3 text-xs font-mono">
             <span className="rounded bg-emerald-500/20 px-2 py-1 text-emerald-400">
-              ● CSDL DÂN CƯ TRỰC TUYẾN
+              ● KẾT NỐI API CHÍNH THỨC (RENDER)
             </span>
             <span className="rounded bg-amber-500/20 px-2 py-1 text-amber-400">
-              TEST ONLY / DỮ LIỆU MÔ PHỎNG
+              ADMIN PANEL / CCF-123
             </span>
           </div>
           <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-            Quản trị hồ sơ cư dân địa phương, kiểm soát quyền truy cập cứu hộ và giám sát
-            mức độ gửi yêu cầu SOS trên địa bàn thiên tai lũ lụt theo thời gian thực.
+            Quản trị hồ sơ cư dân địa phương, phân quyền lực lượng cứu hộ và kiểm soát trạng thái hoạt động theo thời gian thực.
           </p>
         </div>
       </div>
 
-      {/* KPI CARDS (Solid/Flat Design) */}
+      {/* KPI CARDS */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Tổng người dùng</div>
-          <div className="text-3xl font-bold text-white">34,820</div>
+          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Tổng người dùng (API)</div>
+          <div className="text-3xl font-bold text-white">{users.length}</div>
         </div>
         <div className="rounded-xl bg-slate-800 border border-slate-700 p-5">
           <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Cư dân (Residents)</div>
-          <div className="text-3xl font-bold text-blue-400">33,940</div>
+          <div className="text-3xl font-bold text-blue-400">{users.filter(u => u.role === 'resident').length}</div>
         </div>
         <div className="rounded-xl bg-slate-800 border border-slate-700 p-5">
-          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Tài khoản hoạt động</div>
-          <div className="text-3xl font-bold text-emerald-400">33,415</div>
+          <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Đội cứu hộ (Rescue)</div>
+          <div className="text-3xl font-bold text-amber-400">{users.filter(u => u.role === 'rescue').length}</div>
         </div>
         <div className="rounded-xl bg-slate-800 border border-red-900/50 p-5">
           <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">Tài khoản bị khóa</div>
-          <div className="text-3xl font-bold text-red-400">525</div>
+          <div className="text-3xl font-bold text-red-400">{users.filter(u => !u.isActive).length}</div>
         </div>
       </div>
 
       {/* TABS & FILTER BAR */}
       <div className="rounded-xl bg-slate-800 border border-slate-700 p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-700 pb-4">
-          <button 
-            onClick={() => setRoleFilter("all")} 
-            className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "all" ? "bg-slate-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}
-          >
-            Tất cả
-          </button>
-          <button 
-            onClick={() => setRoleFilter("resident")} 
-            className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "resident" ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}
-          >
-            Cư dân
-          </button>
-          <button 
-            onClick={() => setRoleFilter("rescue_staff")} 
-            className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "rescue_staff" ? "bg-amber-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}
-          >
-            Đội cứu hộ
-          </button>
-          <button 
-            onClick={() => setRoleFilter("admin")} 
-            className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "admin" ? "bg-purple-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}
-          >
-            Quản trị viên
-          </button>
+          <button onClick={() => setRoleFilter("all")} className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "all" ? "bg-slate-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}>Tất cả</button>
+          <button onClick={() => setRoleFilter("resident")} className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "resident" ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}>Cư dân</button>
+          <button onClick={() => setRoleFilter("rescue")} className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "rescue" ? "bg-amber-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}>Đội cứu hộ</button>
+          <button onClick={() => setRoleFilter("admin")} className={`px-4 py-2 text-sm font-medium rounded-md transition ${roleFilter === "admin" ? "bg-purple-600 text-white" : "text-slate-400 hover:bg-slate-700"}`}>Quản trị viên</button>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-4">
@@ -125,72 +247,84 @@ export default function UserManagementScreen() {
         </div>
       </div>
 
-      {/* DATA TABLE */}
+      {/* DATA TABLE & ERROR / LOADING STATES */}
       <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-900/50 text-xs font-mono uppercase text-slate-400">
-            <tr>
-              <th className="px-6 py-4 font-medium">Họ tên & Tài khoản</th>
-              <th className="px-6 py-4 font-medium">Vai trò</th>
-              <th className="px-6 py-4 font-medium">Trạng thái</th>
-              <th className="px-6 py-4 font-medium">Liên hệ</th>
-              <th className="px-6 py-4 font-medium text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/50">
-            {filteredUsers.length === 0 ? (
+        {loading ? (
+          <div className="px-6 py-16 text-center text-slate-400 font-mono animate-pulse">
+            Đang tải dữ liệu người dùng từ Render server (có thể mất 30-50s nếu server sleep)...
+          </div>
+        ) : errorMsg ? (
+          <div className="px-6 py-12 text-center text-red-400 space-y-2">
+            <p className="font-semibold">Lỗi kết nối API:</p>
+            <p className="text-sm bg-red-500/10 border border-red-500/20 p-3 rounded max-w-md mx-auto">{errorMsg}</p>
+            <button onClick={() => window.location.reload()} className="mt-2 px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white">Thử lại</button>
+          </div>
+        ) : (
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-900/50 text-xs font-mono uppercase text-slate-400">
               <tr>
-                <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
-                  Không tìm thấy dữ liệu người dùng phù hợp.
-                </td>
+                <th className="px-6 py-4 font-medium">Họ tên & Tài khoản</th>
+                <th className="px-6 py-4 font-medium">Vai trò</th>
+                <th className="px-6 py-4 font-medium">Trạng thái</th>
+                <th className="px-6 py-4 font-medium">Liên hệ</th>
+                <th className="px-6 py-4 font-medium text-right">Thao tác</th>
               </tr>
-            ) : (
-              filteredUsers.map((u) => (
-                <tr key={u.id} className="hover:bg-slate-700/30 transition">
-                  <td className="px-6 py-4">
-                    <div className="font-semibold text-white">{u.fullName}</div>
-                    <div className="font-mono text-xs text-slate-500">#{u.id}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium 
-                      ${u.role === "admin" ? "bg-purple-500/20 text-purple-400" : 
-                        u.role === "rescue_staff" ? "bg-amber-500/20 text-amber-400" : 
-                        "bg-blue-500/20 text-blue-400"}`}>
-                      {u.role.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium 
-                      ${u.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${u.status === "active" ? "bg-emerald-500" : "bg-red-500"}`}></span>
-                      {u.status === "active" ? "Active" : "Locked"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-slate-300">{u.phone}</div>
-                    <div className="text-xs text-slate-500">{u.email}</div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => handleEditClick(u)}
-                      className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 transition"
-                    >
-                      Xem / Sửa
-                    </button>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                    Không tìm thấy dữ liệu người dùng phù hợp.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-700/30 transition">
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-white">{u.fullName}</div>
+                      <div className="font-mono text-xs text-slate-500">ID: {u.id}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium 
+                        ${u.role === "admin" ? "bg-purple-500/20 text-purple-400" : 
+                          u.role === "rescue" ? "bg-amber-500/20 text-amber-400" : 
+                          "bg-blue-500/20 text-blue-400"}`}>
+                        {u.role.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium 
+                        ${u.isActive ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? "bg-emerald-500" : "bg-red-500"}`}></span>
+                        {u.isActive ? "Active" : "Locked"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-slate-300">{u.phone || "Chưa cập nhật"}</div>
+                      <div className="text-xs text-slate-500">{u.email}</div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => handleEditClick(u)}
+                        className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 transition"
+                      >
+                        Xem / Sửa
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {/* EDIT MODAL SHELL (Sẽ tích hợp call API PATCH sau này ở Task CCF-123) */}
+      {/* EDIT MODAL SHELL */}
       {selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl bg-slate-800 border border-slate-700 shadow-2xl overflow-hidden">
             <div className="border-b border-slate-700 bg-slate-900/50 px-6 py-4 flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-white">Chỉnh sửa Tài khoản</h3>
+              <h3 className="text-lg font-semibold text-white">Chỉnh sửa Tài khoản (API)</h3>
               <button onClick={handleCloseModal} className="text-slate-400 hover:text-white">✕</button>
             </div>
             <div className="p-6 space-y-4">
@@ -200,28 +334,46 @@ export default function UserManagementScreen() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Phân quyền</label>
-                  <select defaultValue={selectedUser.role} className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
-                    <option value="resident">Cư dân</option>
-                    <option value="rescue_staff">Đội cứu hộ</option>
-                    <option value="admin">Quản trị viên</option>
+                  <label className="block text-xs font-mono text-slate-400 mb-1">Phân quyền (Role)</label>
+                  <select 
+                    value={editRole} 
+                    onChange={(e) => setEditRole(e.target.value as "resident" | "rescue" | "admin")}
+                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                  >
+                    <option value="resident">resident</option>
+                    <option value="rescue">rescue</option>
+                    <option value="admin">admin</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-mono text-slate-400 mb-1">Trạng thái</label>
-                  <select defaultValue={selectedUser.status} className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none">
-                    <option value="active">Đang hoạt động</option>
-                    <option value="inactive">Khóa tài khoản</option>
+                  <label className="block text-xs font-mono text-slate-400 mb-1">Trạng thái (isActive)</label>
+                  <select 
+                    value={editIsActive ? "true" : "false"} 
+                    onChange={(e) => setEditIsActive(e.target.value === "true")}
+                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                  >
+                    <option value="true">Đang hoạt động (true)</option>
+                    <option value="false">Khóa tài khoản (false)</option>
                   </select>
                 </div>
               </div>
               <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3 text-xs text-amber-400">
-                Lưu ý: Bạn đang thao tác trên dữ liệu <strong>MÔ PHỎNG</strong>. Form sẽ được nối API PATCH ở task CCF-123.
+                Lưu ý: Hệ thống yêu cầu xác nhận trước khi cập nhật. Payload gửi lên chỉ chứa các trường thay đổi (`role` / `isActive`).
               </div>
             </div>
             <div className="border-t border-slate-700 p-4 flex justify-end gap-3 bg-slate-900/50">
-              <button onClick={handleCloseModal} className="px-4 py-2 rounded text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700">Hủy</button>
-              <button onClick={handleCloseModal} className="px-4 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 transition">Cập nhật (Demo)</button>
+              <button onClick={handleCloseModal} disabled={submitting} className="px-4 py-2 rounded text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700">Hủy</button>
+              <button 
+                onClick={() => {
+                  if (window.confirm("Bạn có chắc chắn muốn cập nhật thông tin tài khoản này không?")) {
+                    handleUpdateUser();
+                  }
+                }} 
+                disabled={submitting}
+                className="px-4 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 transition disabled:opacity-50"
+              >
+                {submitting ? "Đang lưu..." : "Xác nhận Cập nhật"}
+              </button>
             </div>
           </div>
         </div>
