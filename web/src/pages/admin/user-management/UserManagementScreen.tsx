@@ -1,12 +1,14 @@
 // File: web/src/pages/admin/user-management/UserManagementScreen.tsx
 
 import { useState, useEffect, useMemo } from "react";
+// Giả định hook useAuth nằm ở đường dẫn này trong project của bạn (hãy điều chỉnh lại path nếu cần)
+import { useAuth } from "../../../context/AuthContext"; 
 
 export interface User {
   id: string;
-  fullName: string;
-  email: string;
-  phone: string;
+  fullName: string | null;
+  email: string | null;
+  phone: string | null;
   role: "resident" | "rescue" | "admin";
   isActive: boolean;
   createdAt: string;
@@ -14,7 +16,8 @@ export interface User {
 }
 
 export default function UserManagementScreen() {
-  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  // 1. Lấy token và thông tin user đang đăng nhập từ useAuth() chuẩn của app
+  const { token, user: currentUser } = useAuth();
   
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -33,11 +36,19 @@ export default function UserManagementScreen() {
     ? import.meta.env.VITE_API_URL.replace(/\/+$/, "") 
     : "https://floodguard-backend-demo.onrender.com/api";
 
-  // 1. GET: Lấy danh sách người dùng từ API thật (Gọi trực tiếp trong useEffect để tránh warning)
+  // GET: Lấy danh sách người dùng từ API thật
   useEffect(() => {
     let isMounted = true;
 
     const loadUsers = async () => {
+      if (!token) {
+        if (isMounted) {
+          setErrorMsg("Không tìm thấy phiên đăng nhập hợp lệ từ useAuth().");
+          setLoading(false);
+        }
+        return;
+      }
+
       setLoading(true);
       setErrorMsg(null);
       try {
@@ -78,13 +89,17 @@ export default function UserManagementScreen() {
     };
   }, [apiBase, token]);
 
-  // Lọc dữ liệu phía client theo yêu cầu
+  // 2. Xử lý an toàn dữ liệu nullable cho tìm kiếm phía client
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      const name = u.fullName || "";
+      const phone = u.phone || "";
+      const email = u.email || "";
+
       const matchSearch =
-        u.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        u.phone.includes(search) ||
-        u.email.toLowerCase().includes(search.toLowerCase());
+        name.toLowerCase().includes(search.toLowerCase()) ||
+        phone.includes(search) ||
+        email.toLowerCase().includes(search.toLowerCase());
       
       const matchRole = roleFilter === "all" || u.role === roleFilter;
       
@@ -107,9 +122,8 @@ export default function UserManagementScreen() {
     setSelectedUser(null);
   };
 
-  // Hàm tải lại danh sách sau khi update thành công
   const reloadUsers = async () => {
-    setLoading(true);
+    if (!token) return;
     try {
       const response = await fetch(`${apiBase}/admin/users`, {
         headers: {
@@ -123,14 +137,18 @@ export default function UserManagementScreen() {
       }
     } catch {
       // Bỏ qua lỗi ngầm khi reload
-    } finally {
-      setLoading(false);
     }
   };
 
-  // 2. PATCH: Cập nhật vai trò hoặc trạng thái tài khoản
+  // PATCH: Cập nhật vai trò hoặc trạng thái tài khoản
   const handleUpdateUser = async () => {
-    if (!selectedUser) return;
+    if (!selectedUser || !token) return;
+
+    // 3. Kiểm tra bảo mật chống tự sửa chính mình ở client
+    if (currentUser && currentUser.id === selectedUser.id) {
+      alert("Hành động bị từ chối: Bạn không được tự thay đổi role hoặc khóa tài khoản của chính mình!");
+      return;
+    }
     
     setSubmitting(true);
     try {
@@ -173,6 +191,9 @@ export default function UserManagementScreen() {
       setSubmitting(false);
     }
   };
+
+  // Kiểm tra xem user đang chọn có phải là chính Admin hiện tại không
+  const isSelfEditing = currentUser && selectedUser && currentUser.id === selectedUser.id;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 text-slate-200">
@@ -281,7 +302,7 @@ export default function UserManagementScreen() {
                 filteredUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-700/30 transition">
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-white">{u.fullName}</div>
+                      <div className="font-semibold text-white">{u.fullName || "Chưa cập nhật tên"}</div>
                       <div className="font-mono text-xs text-slate-500">ID: {u.id}</div>
                     </td>
                     <td className="px-6 py-4">
@@ -300,8 +321,8 @@ export default function UserManagementScreen() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-slate-300">{u.phone || "Chưa cập nhật"}</div>
-                      <div className="text-xs text-slate-500">{u.email}</div>
+                      <div className="text-slate-300">{u.phone || "Chưa cập nhật SĐT"}</div>
+                      <div className="text-xs text-slate-500">{u.email || "Chưa cập nhật Email"}</div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button 
@@ -330,15 +351,16 @@ export default function UserManagementScreen() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-mono text-slate-400 mb-1">Họ và tên</label>
-                <input type="text" readOnly value={selectedUser.fullName} className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-300 opacity-70 cursor-not-allowed" />
+                <input type="text" readOnly value={selectedUser.fullName || ""} className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-300 opacity-70 cursor-not-allowed" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-mono text-slate-400 mb-1">Phân quyền (Role)</label>
                   <select 
                     value={editRole} 
+                    disabled={Boolean(isSelfEditing)}
                     onChange={(e) => setEditRole(e.target.value as "resident" | "rescue" | "admin")}
-                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="resident">resident</option>
                     <option value="rescue">rescue</option>
@@ -349,17 +371,28 @@ export default function UserManagementScreen() {
                   <label className="block text-xs font-mono text-slate-400 mb-1">Trạng thái (isActive)</label>
                   <select 
                     value={editIsActive ? "true" : "false"} 
+                    disabled={Boolean(isSelfEditing)}
                     onChange={(e) => setEditIsActive(e.target.value === "true")}
-                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none"
+                    className="w-full rounded bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-white focus:border-blue-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="true">Đang hoạt động (true)</option>
                     <option value="false">Khóa tài khoản (false)</option>
                   </select>
                 </div>
               </div>
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3 text-xs text-amber-400">
-                Lưu ý: Hệ thống yêu cầu xác nhận trước khi cập nhật. Payload gửi lên chỉ chứa các trường thay đổi (`role` / `isActive`).
-              </div>
+
+              {/* 3. Hiển thị cảnh báo rõ ràng nếu Admin đang cố sửa chính mình */}
+              {isSelfEditing && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded p-3 text-xs text-red-400">
+                  <strong>Bảo mật hệ thống:</strong> Đây là tài khoản Admin bạn đang sử dụng để đăng nhập. Bạn không thể tự thay đổi vai trò hoặc tự khóa tài khoản của chính mình.
+                </div>
+              )}
+
+              {!isSelfEditing && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3 text-xs text-amber-400">
+                  Lưu ý: Hệ thống yêu cầu xác nhận trước khi cập nhật. Payload gửi lên chỉ chứa các trường thay đổi (`role` / `isActive`).
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-700 p-4 flex justify-end gap-3 bg-slate-900/50">
               <button onClick={handleCloseModal} disabled={submitting} className="px-4 py-2 rounded text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700">Hủy</button>
@@ -369,8 +402,8 @@ export default function UserManagementScreen() {
                     handleUpdateUser();
                   }
                 }} 
-                disabled={submitting}
-                className="px-4 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 transition disabled:opacity-50"
+                disabled={submitting || Boolean(isSelfEditing)}
+                className="px-4 py-2 rounded text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? "Đang lưu..." : "Xác nhận Cập nhật"}
               </button>
