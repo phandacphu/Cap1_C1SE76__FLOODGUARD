@@ -35,7 +35,6 @@ const SEVERITY_COLOR_MAP: Record<
   },
 };
 
-// Hàm xử lý chuỗi an toàn chống chèn mã độc (XSS)
 const escapeHtml = (unsafe?: string | null): string => {
   if (!unsafe) return '';
   return unsafe
@@ -60,7 +59,6 @@ export const FloodMapView: React.FC = () => {
   const [dataError, setDataError] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
 
-  // 1. Tải danh sách vùng ngập từ API Backend
   useEffect(() => {
     let cancelled = false;
     const fetchAreas = async () => {
@@ -88,7 +86,6 @@ export const FloodMapView: React.FC = () => {
     };
   }, [token]);
 
-  // 2. Khởi tạo Google Maps phẳng
   useEffect(() => {
     if (!isLoaded || !mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -112,11 +109,9 @@ export const FloodMapView: React.FC = () => {
     infoWindowRef.current = new google.maps.InfoWindow();
   }, [isLoaded]);
 
-  // 3. Render Polygon (chạy khi map hoặc danh sách floodAreas sẵn sàng)
   const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !window.google) return;
 
-    // Dọn dẹp polygon cũ
     polygonsRef.current.forEach((p) => p.setMap(null));
     polygonsRef.current = [];
 
@@ -137,8 +132,7 @@ export const FloodMapView: React.FC = () => {
         });
 
         const colorCfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
-        // Kiểm tra trạng thái chuẩn Backend status = 'active'
-        const isAreaActive = area.status === 'active' || area.isActive === true;
+        const isAreaActive = area.status === 'active';
 
         const polygon = new google.maps.Polygon({
           paths: coords,
@@ -187,7 +181,6 @@ export const FloodMapView: React.FC = () => {
     }
   }, [isLoaded, renderPolygons]);
 
-  // Điều kiện loading: chỉ hiện loading khi không có lỗi SDK và chưa nạp xong SDK hoặc API
   const showLoadingOverlay = !loadError && (!isLoaded || dataLoading);
 
   return (
@@ -261,7 +254,6 @@ export const FloodMapView: React.FC = () => {
               {floodAreas.map((area) => {
                 const cfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
                 const isSelected = selectedArea?.id === area.id;
-                const isAreaActive = area.status === 'active' || area.isActive === true;
 
                 return (
                   <div
@@ -280,7 +272,7 @@ export const FloodMapView: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-[10px] font-mono text-slate-400 mt-1 flex items-center justify-between">
-                      <span>{isAreaActive ? '● Đang hiệu lực' : '○ Đã ngưng'}</span>
+                      <span>{area.status === 'active' ? '● Đang hiệu lực' : '○ Đã ngưng'}</span>
                       <span className="text-slate-500 truncate max-w-[100px]">{area.source || 'Cảm biến'}</span>
                     </div>
                   </div>
