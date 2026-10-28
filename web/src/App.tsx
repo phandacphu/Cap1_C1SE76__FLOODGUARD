@@ -9,6 +9,7 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
+import { FloodMapView } from './pages/map/FloodMapView';
 
 /** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
@@ -25,17 +26,44 @@ export const App: React.FC = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
-          {/* Only Rescue Staff may open the rescue screens */}
-          <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
-            <Route path="/rescue/dashboard" element={<RescueDashboard />} />
-            <Route path="/rescue/sos" element={<RescueSosList />} />
-            <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
-          </Route>
+          {/* Admin Routes */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
 
-          {/* Only Admin may open the admin screens */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          </Route>
+          {/* Rescue Routes của Huy */}
+          <Route
+            path="/rescue"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rescue/sos"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueSosList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rescue/sos/:id"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueSosDetail />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Web Map - CCF-56 & CCF-57 của Khoa */}
+          <Route path="/map" element={<FloodMapView />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
