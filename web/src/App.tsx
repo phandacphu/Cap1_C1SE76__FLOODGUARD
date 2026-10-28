@@ -11,7 +11,6 @@ import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 import { FloodMapView } from './pages/map/FloodMapView';
 
-/** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   return <Navigate to={isAuthenticated && user ? homePathForRole(user.role) : '/login'} replace />;
@@ -64,7 +63,7 @@ export const App: React.FC = () => {
             }
           />
 
-          {/* Web Map - CCF-56 & CCF-57 (Phân quyền ADMIN và RESCUE_STAFF) */}
+          {/* Web Map - RBAC ADMIN & RESCUE_STAFF */}
           <Route
             path="/map"
             element={
