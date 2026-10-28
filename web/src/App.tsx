@@ -26,7 +26,7 @@ export const App: React.FC = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
-          {/* Admin Routes - Giữ nguyên chuẩn /admin/dashboard */}
+          {/* Admin Routes */}
           <Route
             path="/admin/dashboard"
             element={
@@ -37,7 +37,7 @@ export const App: React.FC = () => {
           />
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
 
-          {/* Rescue Routes - Giữ nguyên chuẩn /rescue/dashboard của Huy */}
+          {/* Rescue Routes */}
           <Route
             path="/rescue/dashboard"
             element={
@@ -64,8 +64,15 @@ export const App: React.FC = () => {
             }
           />
 
-          {/* Web Map - CCF-56 & CCF-57 */}
-          <Route path="/map" element={<FloodMapView />} />
+          {/* Web Map - CCF-56 & CCF-57 (Phân quyền ADMIN và RESCUE_STAFF) */}
+          <Route
+            path="/map"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+                <FloodMapView />
+              </ProtectedRoute>
+            }
+          />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
