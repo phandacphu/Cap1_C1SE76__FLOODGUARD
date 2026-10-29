@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.example.floodguard.domain.model.WarningTimeStatus
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -336,22 +337,20 @@ fun WarningCard(
                 ) {
 
                     Text(
-                        text =
-                            warning.footerText
-                                ?: when {
+                        text = warning.footerText ?: when (warning.timeStatus) {
+                            WarningTimeStatus.DISABLED -> "ĐÃ TẮT"
 
-                                    !warning.isEnabled -> {
-                                        "ĐÃ TẮT"
-                                    }
+                            WarningTimeStatus.UPCOMING ->
+                                "ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
 
-                                    warning.isEffectiveNow -> {
-                                        "ĐANG CÓ HIỆU LỰC"
-                                    }
+                            WarningTimeStatus.EFFECTIVE ->
+                                "ĐANG CÓ HIỆU LỰC"
 
-                                    else -> {
-                                        "ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
-                                    }
-                                },
+                            WarningTimeStatus.EXPIRED -> "ĐÃ HẾT HẠN"
+
+                            WarningTimeStatus.UNKNOWN ->
+                                "KHÔNG XÁC ĐỊNH THỜI GIAN"
+                        },
 
                         color =
                             if (warning.isEffectiveNow) {

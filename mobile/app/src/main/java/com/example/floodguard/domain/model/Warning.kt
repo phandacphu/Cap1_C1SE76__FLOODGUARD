@@ -10,6 +10,7 @@ data class Warning(
     val endTime: String? = null,
     val isEnabled: Boolean = true,
     val isEffectiveNow: Boolean = true,
+    val timeStatus: WarningTimeStatus = WarningTimeStatus.UNKNOWN,
 
     // Chỉ dùng để mock giao diện trong giai đoạn phát triển.
     // Không xem đây là cấu trúc bắt buộc của Warning API.
