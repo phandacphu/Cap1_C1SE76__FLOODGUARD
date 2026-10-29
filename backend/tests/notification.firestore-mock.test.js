@@ -180,7 +180,7 @@ async function runTests() {
   console.log("PASS 8: Xu ly Notification khong ton tai");
 
   // TEST 9: Tu choi Firestore Document ID khong hop le
-  const invalidIds = [".", "..", "users/123", "a".repeat(1501)];
+  const invalidIds = [".", "..", "users/123", "__invalid__", "a".repeat(1501)];
 
   for (const invalidId of invalidIds) {
     await assert.rejects(

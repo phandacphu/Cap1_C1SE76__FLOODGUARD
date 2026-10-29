@@ -90,7 +90,13 @@ for (const fn of [
 
 console.log("PASS 5: Các hàm service đã được export");
 
-const invalidRecipientIds = [".", "..", "users/123", "a".repeat(1501)];
+const invalidRecipientIds = [
+  ".",
+  "..",
+  "users/123",
+  "__invalid__",
+  "a".repeat(1501),
+];
 
 for (const invalidId of invalidRecipientIds) {
   assert.throws(
@@ -105,7 +111,14 @@ for (const invalidId of invalidRecipientIds) {
 
 console.log("PASS 6: Chan Firestore Document ID khong hop le");
 
-const invalidRelatedEntityIds = ["", ".", "..", "sos/123", "a".repeat(1501)];
+const invalidRelatedEntityIds = [
+  "",
+  ".",
+  "..",
+  "sos/123",
+  "__invalid__",
+  "a".repeat(1501),
+];
 
 for (const invalidId of invalidRelatedEntityIds) {
   assert.throws(

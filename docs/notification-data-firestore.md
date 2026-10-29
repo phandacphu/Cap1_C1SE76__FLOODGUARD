@@ -93,6 +93,7 @@ File: backend/src/services/notification.service.js
 - relatedEntity.id must be a valid document ID.
 - Document IDs cannot be empty, "." or "..".
 - Document IDs cannot contain "/" or exceed 1500 UTF-8 bytes.
+- Document IDs cannot match the reserved pattern `__.*__`.
 
 ## Security Notes
 

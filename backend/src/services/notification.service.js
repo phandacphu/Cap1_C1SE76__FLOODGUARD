@@ -19,6 +19,7 @@ function isValidDocumentId(value) {
     id !== "." &&
     id !== ".." &&
     !id.includes("/") &&
+    !/^__.*__$/.test(id) &&
     Buffer.byteLength(id, "utf8") <= 1500
   );
 }
