@@ -172,6 +172,14 @@ dependencies {
         libs.play.services.location
     )
 
+    // =========================
+    // COROUTINES - GOOGLE PLAY SERVICES
+    // =========================
+
+    implementation(
+        "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2"
+    )
+
 
     // =========================
     // TEST
