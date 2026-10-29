@@ -124,11 +124,44 @@ Latest reported results:
 - Validation: 7/7 PASS
 - Firestore mock: 10/10 PASS
 
-All tests use mocks for Firestore access.
+Validation and mock tests use mocked Firestore access.
+Firestore Emulator integration tests use a local emulator,
+not the production Firestore database.
+
+### Firestore Emulator Integration Tests
+
+Test file:
+backend/tests/notification.firestore-emulator.test.js
+
+Environment:
+
+- Firebase CLI: 15.34.2
+- Firestore Emulator: 127.0.0.1:8080
+- Demo project: demo-floodguard-ccf148
+- No production Firestore writes
+
+Run from the repository root:
+
+node backend/tests/notification.firestore-emulator.test.js
+
+Results:
+
+- 8/8 integration tests passed.
+- Firestore document creation and reads: PASS.
+- Recipient filtering and ownership: PASS.
+- Firestore transaction and readAt Timestamp: PASS.
+- Missing document handling: PASS.
+- Test documents cleaned up after execution.
+
+A non-fatal MetadataLookupWarning appeared during the test.
+
+These results verify local Firestore Emulator integration,
+not production Firestore deployment.
 
 ## Limitations
 
-- Real Firestore integration has not been tested.
+- Local Firestore Emulator integration passed (8/8).
+- Production Firestore integration has not been tested.
 - No push notification is sent.
 - No notification trigger service is implemented.
 - No delivery retry or failure-handling logic exists.
