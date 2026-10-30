@@ -1,8 +1,16 @@
 
 package com.example.floodguard.ui.screens.sos
 
+
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,18 +18,25 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
+
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.DisposableEffect
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,7 +46,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
+
+
 
 private val SosBackground = Color(0xFF061626)
 private val SosCard = Color(0xFF142638)
@@ -50,6 +80,170 @@ fun SendSosScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    // CCF-81: Theo dõi vòng đời màn SOS
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isScreenActive by remember {
+        mutableStateOf(
+            lifecycleOwner.lifecycle.currentState
+                .isAtLeast(Lifecycle.State.STARTED)
+        )
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    isScreenActive = true
+                }
+
+                Lifecycle.Event.ON_STOP -> {
+                    isScreenActive = false
+                }
+
+                else -> Unit
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // CCF-81: GPS cho SOS Form
+    val fusedLocationClient = remember(context) {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+
+
+    var gpsRetryKey by remember {
+        mutableIntStateOf(0)
+    }
+
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            val granted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            if (granted) {
+                gpsRetryKey++
+            } else {
+                viewModel.setLocationError(
+                    "Chưa được cấp quyền truy cập vị trí."
+                )
+            }
+        }
+
+
+    LaunchedEffect(gpsRetryKey, isScreenActive) {
+
+        if (!isScreenActive) {
+            // Xóa vị trí cũ khi ứng dụng không còn hoạt động.
+            viewModel.setLocationError(
+                "Vị trí cần được cập nhật khi quay lại màn SOS."
+            )
+            return@LaunchedEffect
+        }
+
+        // Kiểm tra quyền vị trí
+        val hasPermission =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasPermission) {
+            viewModel.setLocationError(
+                "Cần cấp quyền vị trí để lấy tọa độ SOS."
+            )
+            return@LaunchedEffect
+        }
+
+        // Kiểm tra dịch vụ vị trí
+        val locationManager =
+            context.getSystemService(LocationManager::class.java)
+
+        val locationEnabled =
+            locationManager?.isProviderEnabled(
+                LocationManager.GPS_PROVIDER
+            ) == true ||
+                    locationManager?.isProviderEnabled(
+                        LocationManager.NETWORK_PROVIDER
+                    ) == true
+
+        if (!locationEnabled) {
+            viewModel.setLocationError(
+                "Dịch vụ vị trí đang tắt. Vui lòng bật GPS."
+            )
+            return@LaunchedEffect
+        }
+
+        viewModel.startLocationLoading()
+
+        val cancellationTokenSource = CancellationTokenSource()
+
+        try {
+            // Lấy vị trí với timeout tối đa 15 giây
+            val location = withTimeoutOrNull(15_000L) {
+                fusedLocationClient.getCurrentLocation(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    cancellationTokenSource.token
+                ).await()
+            }
+
+            if (location != null) {
+                val ageMillis =
+                    System.currentTimeMillis() - location.time
+
+                val isValidLocation =
+                    location.latitude.isFinite() &&
+                            location.longitude.isFinite() &&
+                            location.latitude in -90.0..90.0 &&
+                            location.longitude in -180.0..180.0 &&
+                            ageMillis in 0L..30_000L
+
+                if (isValidLocation) {
+                    viewModel.updateLocation(location)
+                } else {
+                    viewModel.setLocationError(
+                        "Tọa độ GPS không hợp lệ hoặc đã cũ. Vui lòng thử lại."
+                    )
+                }
+            } else {
+                viewModel.setLocationError(
+                    "Không thể lấy vị trí sau 15 giây. Vui lòng thử lại."
+                )
+            }
+
+        } catch (e: CancellationException) {
+            throw e
+
+        } catch (e: SecurityException) {
+            viewModel.setLocationError(
+                "Quyền truy cập vị trí không còn hợp lệ."
+            )
+
+        } catch (e: Exception) {
+            viewModel.setLocationError(
+                "Không thể lấy GPS. Vui lòng thử lại."
+            )
+
+        } finally {
+            cancellationTokenSource.cancel()
+        }
+    }
+
 
     var showDemoDialog by rememberSaveable {
         mutableStateOf(false)
@@ -80,7 +274,20 @@ fun SendSosScreen(
             }
 
             item {
-                SosLocationCard()
+                SosLocationCard(
+                    uiState = uiState,
+                    onRetry = {
+                        gpsRetryKey++
+                    },
+                    onRequestPermission = {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                )
             }
 
             item {
@@ -280,7 +487,8 @@ fun SendSosScreen(
                 Text(
                     "Đây là giao diện thử nghiệm CCF-80. " +
                             "Ứng dụng chưa gửi yêu cầu SOS đến lực lượng cứu hộ. " +
-                            "Tích hợp GPS và API sẽ được thực hiện ở các task tiếp theo."
+                            "Tọa độ GPS chỉ được hiển thị trong biểu mẫu. " +
+                            "Ứng dụng chưa gửi yêu cầu SOS lên hệ thống cứu hộ."
                 )
             },
             confirmButton = {
@@ -304,6 +512,7 @@ private fun SosTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(SosBackground)
+            .statusBarsPadding()
             .padding(
                 horizontal = 14.dp,
                 vertical = 14.dp
@@ -376,8 +585,13 @@ private fun SosEmergencyBanner() {
     }
 }
 
+
 @Composable
-private fun SosLocationCard() {
+private fun SosLocationCard(
+    uiState: SendSosUiState,
+    onRetry: () -> Unit,
+    onRequestPermission: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -389,7 +603,7 @@ private fun SosLocationCard() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                Icons.Default.LocationOn,
+                imageVector = Icons.Default.LocationOn,
                 contentDescription = null,
                 tint = SosCyan
             )
@@ -397,7 +611,7 @@ private fun SosLocationCard() {
             Spacer(Modifier.width(6.dp))
 
             Text(
-                "VỊ TRÍ CỦA BẠN",
+                text = "VỊ TRÍ CỦA BẠN",
                 color = SosCyan,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
@@ -407,20 +621,92 @@ private fun SosLocationCard() {
         Spacer(Modifier.height(12.dp))
 
         Text(
-            "Chưa xác định vị trí GPS",
+            text = uiState.locationText,
             color = SosText,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(6.dp))
+        if (
+            uiState.latitude != null &&
+            uiState.longitude != null
+        ) {
+            Spacer(Modifier.height(8.dp))
 
-        Text(
-            "Tọa độ GPS sẽ được tích hợp trong CCF-81.",
-            color = SosMuted,
-            fontSize = 12.sp
-        )
+            Text(
+                text = "Vĩ độ: %.6f".format(
+                    java.util.Locale.US,
+                    uiState.latitude
+                ),
+                color = SosText,
+                fontSize = 13.sp
+            )
+
+            Text(
+                text = "Kinh độ: %.6f".format(
+                    java.util.Locale.US,
+                    uiState.longitude
+                ),
+                color = SosText,
+                fontSize = 13.sp
+            )
+
+            uiState.locationAccuracyMeters?.let { accuracy ->
+                Text(
+                    text = "Độ chính xác ước tính: %.1f m".format(
+                        java.util.Locale.US,
+                        accuracy
+                    ),
+                    color = SosMuted,
+                    fontSize = 12.sp
+                )
+            }
+
+            Text(
+                text = "Vị trí được ghi nhận từ thiết bị, không bảo đảm chính xác tuyệt đối.",
+                color = SosMuted,
+                fontSize = 11.sp
+            )
+        }
+
+        if (uiState.isLoadingLocation) {
+            Spacer(Modifier.height(10.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = SosCyan,
+                strokeWidth = 2.dp
+            )
+        }
+
+        uiState.locationError?.let { error ->
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = error,
+                color = SosPink,
+                fontSize = 12.sp
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            if (
+                error.contains("quyền", ignoreCase = true)
+            ) {
+                OutlinedButton(
+                    onClick = onRequestPermission
+                ) {
+                    Text("Cấp quyền vị trí", color = SosCyan)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = onRetry
+                ) {
+                    Text("Thử lại GPS", color = SosCyan)
+                }
+            }
+        }
     }
 }
+
 
 @Composable
 private fun SosSectionTitle(title: String) {

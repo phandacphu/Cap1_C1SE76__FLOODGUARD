@@ -31,5 +31,21 @@ data class SendSosUiState(
     val peopleCount: SosPeopleCount? = null,
     val waterLevel: SosWaterLevel? = null,
     val note: String = "",
+
+    // CCF-81: Tọa độ GPS của yêu cầu SOS
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+
+    // Độ chính xác GPS (mét), nếu thiết bị cung cấp
+    val locationAccuracyMeters: Float? = null,
+
+    // Thời điểm ghi nhận tọa độ, tính bằng Unix milliseconds
+    val locationTimestampMillis: Long? = null,
+
+    // Trạng thái lấy vị trí
+    val isLoadingLocation: Boolean = false,
+    val locationError: String? = null,
+
+    // Nội dung hiển thị cho người dùng
     val locationText: String = "Chưa xác định vị trí GPS"
 )
