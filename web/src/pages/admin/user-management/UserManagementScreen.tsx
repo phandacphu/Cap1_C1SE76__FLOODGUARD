@@ -10,7 +10,7 @@ export interface User {
   fullName: string;
   email: string;
   phone: string;
-  role: "resident" | "rescue" | "admin";
+  role: "resident" | "rescue" | "admin" | null; // Null-safe cho role
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -116,7 +116,8 @@ export default function UserManagementScreen() {
   };
 
   const confirmChangeRole = (user: User, newRole: "resident" | "rescue" | "admin") => {
-    if (window.confirm(`Xác nhận đổi vai trò của ${user.fullName} thành ${newRole.toUpperCase()}?`)) {
+    const userName = user.fullName || "Người dùng";
+    if (window.confirm(`Xác nhận đổi vai trò của ${userName} thành ${newRole.toUpperCase()}?`)) {
       handlePatchUser(user.id, { role: newRole });
     }
   };
@@ -220,15 +221,15 @@ export default function UserManagementScreen() {
                   return (
                     <tr key={u.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-4">
-                        <div className="font-semibold text-white">{u.fullName}</div>
-                        <div className="text-xs text-slate-400 mt-1">{u.email} • {u.phone}</div>
+                        <div className="font-semibold text-white">{u.fullName || "Chưa cập nhật tên"}</div>
+                        <div className="text-xs text-slate-400 mt-1">{u.email || "Không có email"} • {u.phone || "Không có SĐT"}</div>
                         {isSelf && <span className="inline-block mt-1 px-1.5 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded">TÀI KHOẢN CỦA BẠN</span>}
                       </td>
                       <td className="px-4 py-4">
                         <select
                           disabled={isSelf || isProcessing}
-                          value={u.role}
-                          onChange={(e) => confirmChangeRole(u, e.target.value as User["role"])}
+                          value={u.role || "resident"}
+                          onChange={(e) => confirmChangeRole(u, e.target.value as User["role"] & string)}
                           className={`px-2 py-1 rounded text-xs font-bold uppercase border bg-transparent focus:outline-none ${
                             u.role === 'admin' ? 'text-rose-400 border-rose-500/30' :
                             u.role === 'rescue' ? 'text-amber-400 border-amber-500/30' :
@@ -250,7 +251,7 @@ export default function UserManagementScreen() {
                         </span>
                       </td>
                       <td className="px-4 py-4 text-xs font-mono text-slate-400">
-                        {new Date(u.createdAt).toLocaleDateString("vi-VN")}
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN") : "N/A"}
                       </td>
                       <td className="px-4 py-4 text-right">
                         <button
