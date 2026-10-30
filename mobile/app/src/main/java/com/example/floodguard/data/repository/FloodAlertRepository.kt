@@ -2,6 +2,7 @@ package com.example.floodguard.data.repository
 
 import com.example.floodguard.data.model.FloodAlertDto
 import com.example.floodguard.data.remote.api.FloodAlertApi
+import kotlinx.coroutines.CancellationException
 
 class FloodAlertRepository(
     private val floodAlertApi: FloodAlertApi
@@ -46,8 +47,9 @@ class FloodAlertRepository(
                 )
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-
             Result.failure(e)
         }
     }
@@ -91,8 +93,9 @@ class FloodAlertRepository(
                 )
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-
             Result.failure(e)
         }
     }

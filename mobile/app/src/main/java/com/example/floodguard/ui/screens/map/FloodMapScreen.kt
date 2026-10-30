@@ -1194,6 +1194,68 @@ private fun FloodGoogleMap(
                         }
                 }
 
+
+                // CCF-60 TC05: Warning Marker từ Backend
+                if (state.isFloodLayerEnabled) {
+                    state.floodAlerts
+                        .filter { alert ->
+                            alert.status.equals(
+                                "active",
+                                ignoreCase = true
+                            )
+                        }
+                        .forEach { alert ->
+
+                            val floodArea = state.floodAreas.find { area ->
+                                area.id == alert.areaId &&
+                                        area.status.equals(
+                                            "active",
+                                            ignoreCase = true
+                                        ) &&
+                                        area.geometry.type.equals(
+                                            "polygon",
+                                            ignoreCase = true
+                                        )
+                            }
+
+                            if (floodArea != null) {
+                                val points = floodArea.geometry.points
+
+                                val validPoints = points.filter { point ->
+                                    point.latitude.isFinite() &&
+                                            point.longitude.isFinite() &&
+                                            point.latitude in -90.0..90.0 &&
+                                            point.longitude in -180.0..180.0
+                                }
+
+                                if (validPoints.size >= 3) {
+
+                                    // Tọa độ đại diện, không phải vị trí GPS của cảnh báo
+                                    val latitude =
+                                        validPoints.map { it.latitude }.average()
+
+                                    val longitude =
+                                        validPoints.map { it.longitude }.average()
+
+                                    val markerState = rememberUpdatedMarkerState(
+                                        position = LatLng(latitude, longitude)
+                                    )
+
+                                    Marker(
+                                        state = markerState,
+                                        title = "[Cảnh báo] ${alert.title}",
+                                        snippet = "Mức độ: ${alert.severity}",
+                                        onClick = {
+                                            onSelectFloodAlert(alert.id)
+                                            true
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                }
+
+
                 if (state.isUserLayerEnabled) {
                     userLocation?.let { location ->
                         val markerState = rememberUpdatedMarkerState(
