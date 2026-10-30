@@ -48,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +90,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.rememberUpdatedMarkerState
+import kotlinx.coroutines.delay
 
 // =====================================================
 // COLORS
@@ -800,6 +802,21 @@ private fun FloodGoogleMap(
         mutableStateOf("Đang kiểm tra quyền vị trí...")
     }
 
+    // CCF-65: Trạng thái xử lý lỗi GPS
+    var isGpsTimedOut by remember {
+        mutableStateOf(false)
+    }
+
+    // Tăng giá trị để khởi động lại phiên theo dõi GPS khi người dùng thử lại
+    var gpsRetryKey by remember {
+        mutableIntStateOf(0)
+    }
+
+    // Đánh dấu đã nhận được tọa độ trong phiên theo dõi hiện tại
+    var hasReceivedGpsLocation by remember {
+        mutableStateOf(false)
+    }
+
     val fusedLocationClient = remember {
         LocationServices.getFusedLocationProviderClient(context)
     }
@@ -875,7 +892,8 @@ private fun FloodGoogleMap(
     DisposableEffect(
         hasLocationPermission,
         isScreenActive,
-        isLocationServiceEnabled
+        isLocationServiceEnabled,
+        gpsRetryKey
     ) {
 
         if (!hasLocationPermission) {
@@ -902,8 +920,13 @@ private fun FloodGoogleMap(
 
         } else {
 
+            hasReceivedGpsLocation = false
+            isGpsTimedOut = false
+
+            var isCallbackActive = true
+
             locationMessage =
-                "Đang theo dõi vị trí hiện tại..."
+                "Đang lấy vị trí hiện tại..."
 
             val locationRequest =
                 LocationRequest.Builder(
@@ -921,9 +944,11 @@ private fun FloodGoogleMap(
                     override fun onLocationResult(
                         result: LocationResult
                     ) {
+                        if (!isCallbackActive) {
+                            return
+                        }
 
-                        val location =
-                            result.lastLocation
+                        val location = result.lastLocation
 
                         if (location == null) {
 
@@ -932,6 +957,9 @@ private fun FloodGoogleMap(
 
                             return
                         }
+
+                        hasReceivedGpsLocation = true
+                        isGpsTimedOut = false
 
                         userLocation =
                             LatLng(
@@ -951,17 +979,19 @@ private fun FloodGoogleMap(
                     Looper.getMainLooper()
                 )
                 .addOnFailureListener {
+                    if (isCallbackActive) {
+                        isGpsTimedOut = true
 
-                    locationMessage =
-                        "Không thể lấy vị trí hiện tại"
+                        locationMessage =
+                            "Không thể lấy vị trí hiện tại. Vui lòng thử lại."
+                    }
                 }
 
             onDispose {
+                isCallbackActive = false
 
                 fusedLocationClient
-                    .removeLocationUpdates(
-                        locationCallback
-                    )
+                    .removeLocationUpdates(locationCallback)
             }
         }
     }
@@ -1032,6 +1062,33 @@ private fun FloodGoogleMap(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // CCF-65: Timeout khi GPS không trả về tọa độ sau 15 giây
+    LaunchedEffect(
+        hasLocationPermission,
+        isLocationServiceEnabled,
+        isScreenActive,
+        gpsRetryKey,
+        hasReceivedGpsLocation,
+        isGpsTimedOut
+    ) {
+        if (
+            hasLocationPermission &&
+            isLocationServiceEnabled &&
+            isScreenActive &&
+            !hasReceivedGpsLocation &&
+            !isGpsTimedOut
+        ) {
+            delay(15_000L)
+
+            if (!hasReceivedGpsLocation && !isGpsTimedOut) {
+                isGpsTimedOut = true
+
+                locationMessage =
+                    "Không thể xác định vị trí sau 15 giây. Vui lòng thử lại."
+            }
         }
     }
 
@@ -1336,7 +1393,8 @@ private fun FloodGoogleMap(
             if (
                 !hasLocationPermission ||
                 !isLocationServiceEnabled ||
-                userLocation == null
+                userLocation == null ||
+                isGpsTimedOut
             ) {
 
                 Column(
@@ -1400,6 +1458,30 @@ private fun FloodGoogleMap(
                                     } else {
                                         "Cấp quyền vị trí"
                                     },
+                                color = Color.White,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    else if (
+                        hasLocationPermission &&
+                        isLocationServiceEnabled &&
+                        isGpsTimedOut
+                    ) {
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+                                isGpsTimedOut = false
+                                hasReceivedGpsLocation = false
+                                gpsRetryKey++
+                            }
+                        ) {
+                            Text(
+                                text = "Thử lại GPS",
                                 color = Color.White,
                                 fontSize = 10.sp
                             )
