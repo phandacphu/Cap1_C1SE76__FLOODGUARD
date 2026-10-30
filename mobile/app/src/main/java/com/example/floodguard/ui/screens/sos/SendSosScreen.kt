@@ -512,6 +512,7 @@ private fun SosTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(SosBackground)
+            .statusBarsPadding()
             .padding(
                 horizontal = 14.dp,
                 vertical = 14.dp
