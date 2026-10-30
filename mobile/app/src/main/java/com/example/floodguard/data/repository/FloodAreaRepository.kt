@@ -2,6 +2,7 @@ package com.example.floodguard.data.repository
 
 import com.example.floodguard.data.model.FloodAreaDto
 import com.example.floodguard.data.remote.api.FloodAreaApi
+import kotlinx.coroutines.CancellationException
 
 class FloodAreaRepository(
     private val floodAreaApi: FloodAreaApi
@@ -46,8 +47,9 @@ class FloodAreaRepository(
                 )
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-
             Result.failure(e)
         }
     }
