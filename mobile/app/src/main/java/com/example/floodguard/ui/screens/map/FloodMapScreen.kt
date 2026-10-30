@@ -11,6 +11,7 @@ import android.content.Intent
 import android.location.LocationManager
 import android.net.Uri
 import android.provider.Settings
+import android.view.MotionEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,10 +55,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -161,6 +166,9 @@ fun FloodMapScreen(
     onRetryFloodAlerts: () -> Unit,
 ) {
 
+    val scrollState = rememberScrollState()
+    var isDraggingMap by remember { mutableStateOf(false) }
+
     Scaffold(
         containerColor = MapBackground,
 
@@ -178,7 +186,8 @@ fun FloodMapScreen(
                 .background(MapBackground)
                 .padding(innerPadding)
                 .verticalScroll(
-                    rememberScrollState()
+                    state = scrollState,
+                    enabled = !isDraggingMap
                 )
         ) {
 
@@ -208,7 +217,8 @@ fun FloodMapScreen(
 
             FloodGoogleMap(
                 state = state,
-                onSelectFloodAlert = onSelectFloodAlert
+                onSelectFloodAlert = onSelectFloodAlert,
+                onMapDragging = { isDraggingMap = it }
             )
 
             Row(
@@ -709,7 +719,8 @@ private fun FloodLayerItem(
 @Composable
 private fun FloodGoogleMap(
     state: FloodMapUiState,
-    onSelectFloodAlert: (String?) -> Unit
+    onSelectFloodAlert: (String?) -> Unit,
+    onMapDragging: (Boolean) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -1067,7 +1078,23 @@ private fun FloodGoogleMap(
         ) {
 
             GoogleMap(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInteropFilter { event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                onMapDragging(true)
+                            }
+
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                onMapDragging(false)
+                            }
+                        }
+
+                        // Không tiêu thụ sự kiện để Google Maps xử lý.
+                        false
+                    },
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
                     isMyLocationEnabled =
