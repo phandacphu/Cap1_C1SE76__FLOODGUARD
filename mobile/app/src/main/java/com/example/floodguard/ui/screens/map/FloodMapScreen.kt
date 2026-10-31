@@ -11,7 +11,6 @@ import android.content.Intent
 import android.location.LocationManager
 import android.net.Uri
 import android.provider.Settings
-import android.view.MotionEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,6 +30,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.MyLocation
@@ -56,18 +57,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.DisposableEffect
 import androidx.core.app.ActivityCompat
@@ -169,7 +169,10 @@ fun FloodMapScreen(
 ) {
 
     val scrollState = rememberScrollState()
-    var isDraggingMap by remember { mutableStateOf(false) }
+
+    var isTouchingMap by remember {
+        mutableStateOf(false)
+    }
 
     Scaffold(
         containerColor = MapBackground,
@@ -189,7 +192,7 @@ fun FloodMapScreen(
                 .padding(innerPadding)
                 .verticalScroll(
                     state = scrollState,
-                    enabled = !isDraggingMap
+                    enabled = !isTouchingMap
                 )
         ) {
 
@@ -220,12 +223,12 @@ fun FloodMapScreen(
             FloodGoogleMap(
                 state = state,
                 onSelectFloodAlert = onSelectFloodAlert,
-                onMapDragging = { isDraggingMap = it }
+                onMapTouchChanged = { isTouchingMap = it }
             )
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
                     .padding(
                         horizontal = 18.dp,
                         vertical = 8.dp
@@ -507,10 +510,10 @@ fun FloodMapScreen(
             Spacer(
                 modifier = Modifier.height(24.dp)
             )
-        }
-    }
-}
 
+        } // Column chính
+    } // Scaffold
+} // FloodMapScreen
 // =====================================================
 // HEADER
 // =====================================================
@@ -722,7 +725,7 @@ private fun FloodLayerItem(
 private fun FloodGoogleMap(
     state: FloodMapUiState,
     onSelectFloodAlert: (String?) -> Unit,
-    onMapDragging: (Boolean) -> Unit
+    onMapTouchChanged: (Boolean) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -1112,11 +1115,19 @@ private fun FloodGoogleMap(
         }
     }
 
+    val currentOnMapTouchChanged by rememberUpdatedState(onMapTouchChanged)
+
+    DisposableEffect(Unit) {
+        onDispose {
+            currentOnMapTouchChanged(false)
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .height(430.dp),
+            .height(300.dp),
 
         shape = RoundedCornerShape(18.dp),
 
@@ -1137,20 +1148,25 @@ private fun FloodGoogleMap(
             GoogleMap(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInteropFilter { event ->
-                        when (event.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> {
-                                onMapDragging(true)
-                            }
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial
+                            )
 
-                            MotionEvent.ACTION_UP,
-                            MotionEvent.ACTION_CANCEL -> {
-                                onMapDragging(false)
+                            currentOnMapTouchChanged(true)
+
+                            try {
+                                do {
+                                    val event = awaitPointerEvent(
+                                        pass = PointerEventPass.Initial
+                                    )
+                                } while (event.changes.any { it.pressed })
+                            } finally {
+                                currentOnMapTouchChanged(false)
                             }
                         }
-
-                        // Không tiêu thụ sự kiện để Google Maps xử lý.
-                        false
                     },
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
