@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { floodAreaService } from '../../api/floodAreaService';
@@ -7,6 +7,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { ADMIN_NAV } from '../../components/layout/navConfig';
+import { useAdminOverview } from '../admin/useAdminOverview';
 import type { FloodArea, SeverityLevel } from '../../types/floodArea';
 
 const SEVERITY_COLOR_MAP: Record<
@@ -50,8 +51,15 @@ const escapeHtml = (unsafe?: string | null): string => {
 };
 
 export const FloodMapView: React.FC = () => {
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+
+  // Lấy dữ liệu alerts dùng chung từ hook useAdminOverview nếu là Admin
+  const { overview } = useAdminOverview(isAdmin ? token : null, logout);
+  const activeAlertsCount = useMemo(() => {
+    if (!overview?.alerts?.ok || !Array.isArray(overview.alerts.data)) return 0;
+    return overview.alerts.data.length;
+  }, [overview]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -64,7 +72,7 @@ export const FloodMapView: React.FC = () => {
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Fetch API an toàn
+  // Fetch API vùng ngập an toàn không gây cascading render
   useEffect(() => {
     let ignore = false;
 
@@ -100,7 +108,7 @@ export const FloodMapView: React.FC = () => {
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  // Khởi tạo Leaflet Map với Tile Server ổn định
+  // Khởi tạo Leaflet Map và tile OpenStreetMap
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -111,7 +119,6 @@ export const FloodMapView: React.FC = () => {
       zoomControl: true,
     });
 
-    // Dùng subdomains {s} để tránh rate-limit kết nối OSM
     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       subdomains: ['a', 'b', 'c'],
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
@@ -123,9 +130,9 @@ export const FloodMapView: React.FC = () => {
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
-    // Kích hoạt tính lại kích thước nhiều đợt để đảm bảo sau khi Layout dựng xong map render full
+    // Invalidate size nhiều nhịp sau khi layout ổn định để map không bị xám
     const t1 = setTimeout(() => map.invalidateSize(), 100);
-    const t2 = setTimeout(() => map.invalidateSize(), 500);
+    const t2 = setTimeout(() => map.invalidateSize(), 400);
 
     return () => {
       clearTimeout(t1);
@@ -135,7 +142,7 @@ export const FloodMapView: React.FC = () => {
     };
   }, []);
 
-  // Render Polygons
+  // Render Polygons lên map
   const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !polygonLayerGroupRef.current) return;
 
@@ -196,10 +203,6 @@ export const FloodMapView: React.FC = () => {
       renderPolygons();
     }
   }, [renderPolygons]);
-
-  const activeCriticalCount = floodAreas.filter(
-    (a) => a.status === 'active' && (a.severity === 'critical' || a.severity === 'high')
-  ).length;
 
   const mapContent = (
     <div className="w-full space-y-4 font-sans text-slate-100 pb-6">
@@ -332,7 +335,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={activeCriticalCount} />}
+      header={<AdminHeader alertCount={activeAlertsCount} />}
     >
       {mapContent}
     </AppShell>
