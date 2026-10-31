@@ -40,6 +40,8 @@ import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
 import com.example.floodguard.ui.screens.sos.SendSosScreen
+import com.example.floodguard.ui.screens.sos.SendSosViewModel
+
 
 @Composable
 fun AppNavGraph(
@@ -703,9 +705,31 @@ fun AppNavGraph(
             )
         }
 
-        // SEND SOS — CCF-80
+
+        // SEND SOS — CCF-83
         composable(route = AppRoutes.SEND_SOS) {
+
+            val rescueRepository = remember(sessionManager) {
+                val retrofit =
+                    ApiClient.createAuthenticatedRetrofit(
+                        sessionManager
+                    )
+
+                RescueRequestRepository(
+                    api = retrofit.create(
+                        RescueRequestApi::class.java
+                    )
+                )
+            }
+
+            val sendSosViewModel: SendSosViewModel = viewModel {
+                SendSosViewModel(
+                    repository = rescueRepository
+                )
+            }
+
             SendSosScreen(
+                viewModel = sendSosViewModel,
                 onBack = {
                     val returned = navController.popBackStack()
 
