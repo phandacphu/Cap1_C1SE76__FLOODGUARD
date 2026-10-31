@@ -100,7 +100,7 @@ export const FloodMapView: React.FC = () => {
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  // Khởi tạo bản đồ OpenStreetMap
+  // Khởi tạo Leaflet Map với Tile Server ổn định
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -111,26 +111,31 @@ export const FloodMapView: React.FC = () => {
       zoomControl: true,
     });
 
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Dùng subdomains {s} để tránh rate-limit kết nối OSM
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      subdomains: ['a', 'b', 'c'],
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
       maxZoom: 19,
-    }).addTo(map);
+    });
+
+    tileLayer.addTo(map);
 
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
-    const resizeTimer = setTimeout(() => {
-      map.invalidateSize();
-    }, 250);
+    // Kích hoạt tính lại kích thước nhiều đợt để đảm bảo sau khi Layout dựng xong map render full
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 500);
 
     return () => {
-      clearTimeout(resizeTimer);
+      clearTimeout(t1);
+      clearTimeout(t2);
       map.remove();
       mapInstanceRef.current = null;
     };
   }, []);
 
-  // Vẽ Polygons
+  // Render Polygons
   const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !polygonLayerGroupRef.current) return;
 
@@ -191,6 +196,10 @@ export const FloodMapView: React.FC = () => {
       renderPolygons();
     }
   }, [renderPolygons]);
+
+  const activeCriticalCount = floodAreas.filter(
+    (a) => a.status === 'active' && (a.severity === 'critical' || a.severity === 'high')
+  ).length;
 
   const mapContent = (
     <div className="w-full space-y-4 font-sans text-slate-100 pb-6">
@@ -323,7 +332,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={floodAreas.filter(a => a.status === "active" && (a.severity === "critical" || a.severity === "high")).length} />}
+      header={<AdminHeader alertCount={activeCriticalCount} />}
     >
       {mapContent}
     </AppShell>
