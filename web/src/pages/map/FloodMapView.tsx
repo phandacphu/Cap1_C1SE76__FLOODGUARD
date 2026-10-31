@@ -3,6 +3,10 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { floodAreaService } from '../../api/floodAreaService';
 import { useAuth } from '../../context/AuthContext';
+import { AppShell } from '../../components/layout/AppShell';
+import { AdminHeader } from '../../components/layout/AdminHeader';
+import { RescueLayout } from '../../components/layout/RescueLayout';
+import { ADMIN_NAV } from '../../components/layout/navConfig';
 import type { FloodArea, SeverityLevel } from '../../types/floodArea';
 
 const SEVERITY_COLOR_MAP: Record<
@@ -46,7 +50,8 @@ const escapeHtml = (unsafe?: string | null): string => {
 };
 
 export const FloodMapView: React.FC = () => {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -56,36 +61,46 @@ export const FloodMapView: React.FC = () => {
   const [dataLoading, setDataLoading] = useState<boolean>(true);
   const [dataError, setDataError] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
+  const [reloadTrigger, setReloadTrigger] = useState<number>(0);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Fetch API Backend
+  // Fetch API an toàn
   useEffect(() => {
-    let cancelled = false;
-    const fetchAreas = async () => {
+    let ignore = false;
+
+    const loadFloodAreas = async () => {
       try {
-        setDataLoading(true);
-        setDataError(null);
         const data = await floodAreaService.getFloodAreas(token);
-        if (!cancelled) {
+        if (!ignore) {
           setFloodAreas(data);
+          setDataError(null);
+          setLastUpdated(new Date());
         }
       } catch (err: unknown) {
-        if (!cancelled) {
+        if (!ignore) {
           setDataError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ API vùng ngập');
         }
       } finally {
-        if (!cancelled) {
+        if (!ignore) {
           setDataLoading(false);
         }
       }
     };
 
-    void fetchAreas();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    void loadFloodAreas();
 
-  // Khởi tạo Leaflet Map với Tile Server chính thức của OpenStreetMap (Không cần Key)
+    return () => {
+      ignore = true;
+    };
+  }, [token, reloadTrigger]);
+
+  const handleRetry = useCallback(() => {
+    setDataLoading(true);
+    setDataError(null);
+    setReloadTrigger((prev) => prev + 1);
+  }, []);
+
+  // Khởi tạo bản đồ OpenStreetMap
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -104,13 +119,18 @@ export const FloodMapView: React.FC = () => {
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
+    const resizeTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+
     return () => {
+      clearTimeout(resizeTimer);
       map.remove();
       mapInstanceRef.current = null;
     };
   }, []);
 
-  // Render Polygons
+  // Vẽ Polygons
   const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !polygonLayerGroupRef.current) return;
 
@@ -156,11 +176,7 @@ export const FloodMapView: React.FC = () => {
         `;
 
         polygon.bindPopup(popupContent);
-
-        polygon.on('click', () => {
-          setSelectedArea(area);
-        });
-
+        polygon.on('click', () => setSelectedArea(area));
         polygonLayerGroupRef.current?.addLayer(polygon);
       }
     });
@@ -176,15 +192,15 @@ export const FloodMapView: React.FC = () => {
     }
   }, [renderPolygons]);
 
-  return (
-    <div className="w-full space-y-4 font-sans text-slate-100 pb-10">
+  const mapContent = (
+    <div className="w-full space-y-4 font-sans text-slate-100 pb-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#1E3A5F]/40 pb-3">
         <div>
           <h1 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
             Bản Đồ Cảnh Báo Vùng Ngập Lụt (OpenStreetMap)
           </h1>
           <p className="text-xs font-mono text-slate-400 mt-0.5">
-            Dữ liệu tọa độ đa giác từ API Backend • Phục vụ cứu hộ và điều hướng
+            Dữ liệu tọa độ đa giác từ API Backend • Phục vụ cứu hộ và điều hướng C4I
           </p>
         </div>
 
@@ -209,31 +225,37 @@ export const FloodMapView: React.FC = () => {
       </div>
 
       {dataError && (
-        <div className="bg-rose-950/40 border border-rose-700/60 p-3.5 rounded-lg text-rose-200 text-xs font-mono">
-          ⚠️ [LỖI API VÙNG NGẬP]: {dataError}
+        <div className="bg-rose-950/50 border border-rose-700 p-3.5 rounded-lg text-rose-200 text-xs font-mono flex items-center justify-between">
+          <span>⚠️ [LỖI API VÙNG NGẬP]: {dataError}</span>
+          <button
+            onClick={handleRetry}
+            className="px-2.5 py-1 bg-rose-900/80 hover:bg-rose-800 rounded text-[11px] font-mono border border-rose-600 transition-colors"
+          >
+            Thử lại
+          </button>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3 bg-[#081B30] border border-[#1E3A5F] rounded-xl overflow-hidden relative min-h-[520px]">
+        <div className="lg:col-span-3 bg-[#081B30] border border-[#1E3A5F] rounded-xl overflow-hidden relative min-h-[560px] shadow-lg">
           {dataLoading && (
             <div className="absolute inset-0 bg-[#081B30]/90 z-20 flex flex-col items-center justify-center space-y-2 font-mono text-xs text-cyan-400">
               <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
               <span>Đang tải dữ liệu vùng ngập và bản đồ OpenStreetMap...</span>
             </div>
           )}
-          <div ref={mapContainerRef} className="w-full h-[520px] z-0" />
+          <div ref={mapContainerRef} className="w-full h-[560px] z-0" />
         </div>
 
-        <div className="bg-[#081B30] border border-[#1E3A5F] rounded-xl p-4 flex flex-col justify-between">
+        <div className="bg-[#081B30] border border-[#1E3A5F] rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center justify-between border-b border-[#1E3A5F]/40 pb-2">
               <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Vùng ngập API</span>
               <span className="text-[11px] font-mono text-slate-400">Tổng: {floodAreas.length}</span>
             </div>
 
-            <div className="space-y-2 mt-3 max-h-[440px] overflow-y-auto pr-1">
-              {floodAreas.length === 0 && !dataLoading && (
+            <div className="space-y-2 mt-3 max-h-[460px] overflow-y-auto pr-1">
+              {floodAreas.length === 0 && !dataLoading && !dataError && (
                 <div className="text-xs font-mono text-slate-400 text-center py-8">
                   Không tìm thấy vùng ngập nào trong cơ sở dữ liệu.
                 </div>
@@ -267,9 +289,44 @@ export const FloodMapView: React.FC = () => {
               })}
             </div>
           </div>
+
+          <div className="border-t border-[#1E3A5F]/40 pt-3 mt-3 flex items-center justify-between text-[11px] font-mono text-slate-400">
+            <span>Độ phân giải: GeoJSON</span>
+            <button
+              onClick={handleRetry}
+              className="hover:text-cyan-400 underline"
+            >
+              Làm mới
+            </button>
+          </div>
         </div>
       </div>
     </div>
+  );
+
+  if (!isAdmin) {
+    return (
+      <RescueLayout
+        loading={dataLoading}
+        onRefresh={handleRetry}
+        updatedAt={lastUpdated}
+      >
+        {mapContent}
+      </RescueLayout>
+    );
+  }
+
+  return (
+    <AppShell
+      nav={ADMIN_NAV}
+      brandSub="COMMAND C4I"
+      brandTag="ADMIN"
+      roleLabel="QUẢN TRỊ VIÊN C4I"
+      accent="water"
+      header={<AdminHeader alertCount={0} />}
+    >
+      {mapContent}
+    </AppShell>
   );
 };
 
