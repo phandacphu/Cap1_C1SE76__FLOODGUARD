@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { floodAreaService } from '../../api/floodAreaService';
@@ -7,7 +7,6 @@ import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { ADMIN_NAV } from '../../components/layout/navConfig';
-import { useAdminOverview } from '../admin/useAdminOverview';
 import type { FloodArea, SeverityLevel } from '../../types/floodArea';
 
 const SEVERITY_COLOR_MAP: Record<
@@ -50,16 +49,11 @@ const escapeHtml = (unsafe?: string | null): string => {
     .replace(/'/g, '&#039;');
 };
 
-export const FloodMapView: React.FC = () => {
-  const { user, token, logout } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+const ALERT_COUNT_CACHE_KEY = 'floodguard_active_alerts_count';
 
-  // Lấy dữ liệu alerts dùng chung từ hook useAdminOverview nếu là Admin
-  const { overview } = useAdminOverview(isAdmin ? token : null, logout);
-  const activeAlertsCount = useMemo(() => {
-    if (!overview?.alerts?.ok || !Array.isArray(overview.alerts.data)) return 0;
-    return overview.alerts.data.length;
-  }, [overview]);
+export const FloodMapView: React.FC = () => {
+  const { user, token } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -72,7 +66,52 @@ export const FloodMapView: React.FC = () => {
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Fetch API vùng ngập an toàn không gây cascading render
+  // Đọc trực tiếp cache khi khởi tạo state để tránh lỗi setState trong effect
+  const [adminAlertCount, setAdminAlertCount] = useState<number>(() => {
+    try {
+      const cached = sessionStorage.getItem(ALERT_COUNT_CACHE_KEY);
+      return cached !== null ? Number(cached) || 0 : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Chỉ fetch API nếu trong sessionStorage chưa có giá trị cache
+  useEffect(() => {
+    if (!isAdmin || !token) return;
+
+    let ignore = false;
+    const hasCache = sessionStorage.getItem(ALERT_COUNT_CACHE_KEY) !== null;
+    if (hasCache) return;
+
+    const fetchAlertCount = async () => {
+      try {
+        const res = await fetch('/api/flood-alerts/active', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const count = Array.isArray(data) ? data.length : (Array.isArray(data?.data) ? data.data.length : 0);
+        if (!ignore) {
+          setAdminAlertCount(count);
+          sessionStorage.setItem(ALERT_COUNT_CACHE_KEY, String(count));
+        }
+      } catch {
+        // Bỏ qua lỗi phụ để không ảnh hưởng trang bản đồ chính
+      }
+    };
+
+    void fetchAlertCount();
+
+    return () => {
+      ignore = true;
+    };
+  }, [isAdmin, token]);
+
+  // Fetch API vùng ngập an toàn
   useEffect(() => {
     let ignore = false;
 
@@ -108,7 +147,7 @@ export const FloodMapView: React.FC = () => {
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
-  // Khởi tạo Leaflet Map và tile OpenStreetMap
+  // Khởi tạo bản đồ OpenStreetMap
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -130,7 +169,6 @@ export const FloodMapView: React.FC = () => {
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
-    // Invalidate size nhiều nhịp sau khi layout ổn định để map không bị xám
     const t1 = setTimeout(() => map.invalidateSize(), 100);
     const t2 = setTimeout(() => map.invalidateSize(), 400);
 
@@ -142,7 +180,7 @@ export const FloodMapView: React.FC = () => {
     };
   }, []);
 
-  // Render Polygons lên map
+  // Render Polygons lên bản đồ
   const renderPolygons = useCallback(() => {
     if (!mapInstanceRef.current || !polygonLayerGroupRef.current) return;
 
@@ -335,7 +373,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={activeAlertsCount} />}
+      header={<AdminHeader alertCount={adminAlertCount} />}
     >
       {mapContent}
     </AppShell>
