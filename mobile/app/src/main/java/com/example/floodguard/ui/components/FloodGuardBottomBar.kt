@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
@@ -48,6 +49,7 @@ fun FloodGuardBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(BottomBackground)
+            .navigationBarsPadding()
             .border(
                 width = 1.dp,
                 color = BottomBorder

@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
+import com.example.floodguard.ui.screens.sos.SendSosScreen
 
 @Composable
 fun AppNavGraph(
@@ -197,11 +198,9 @@ fun AppNavGraph(
                     }
                 },
                 onSosClick = {
-                    Toast.makeText(
-                        context,
-                        "SOS chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.SEND_SOS) {
+                        launchSingleTop = true
+                    }
                 },
                 onMapClick = {
                     navController.navigate(AppRoutes.MAP)
@@ -222,11 +221,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
@@ -349,11 +346,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
@@ -414,11 +409,9 @@ fun AppNavGraph(
                     }
                 },
                 onSosClick = {
-                    Toast.makeText(
-                        context,
-                        "SOS chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.SEND_SOS) {
+                        launchSingleTop = true
+                    }
                 },
                 onBottomNavigate = { route ->
                     when (route) {
@@ -435,11 +428,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
@@ -517,11 +508,9 @@ fun AppNavGraph(
                         AppRoutes.SAFE_LOCATION -> Unit
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.PROFILE -> {
@@ -615,11 +604,9 @@ fun AppNavGraph(
                         }
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.PROFILE -> {
@@ -680,11 +667,9 @@ fun AppNavGraph(
                     ).show()
                 },
                 onSosClick = {
-                    Toast.makeText(
-                        context,
-                        "SOS chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    navController.navigate(AppRoutes.SEND_SOS) {
+                        launchSingleTop = true
+                    }
                 },
                 onBottomNavigate = { route ->
                     when (route) {
@@ -697,11 +682,9 @@ fun AppNavGraph(
                         AppRoutes.MAP -> Unit
 
                         AppRoutes.SEND_SOS -> {
-                            Toast.makeText(
-                                context,
-                                "SOS chưa được triển khai",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            navController.navigate(AppRoutes.SEND_SOS) {
+                                launchSingleTop = true
+                            }
                         }
 
                         AppRoutes.SAFE_LOCATION -> {
@@ -714,6 +697,24 @@ fun AppNavGraph(
                             navController.navigate(AppRoutes.PROFILE) {
                                 launchSingleTop = true
                             }
+                        }
+                    }
+                }
+            )
+        }
+
+        // SEND SOS — CCF-80
+        composable(route = AppRoutes.SEND_SOS) {
+            SendSosScreen(
+                onBack = {
+                    val returned = navController.popBackStack()
+
+                    if (!returned) {
+                        navController.navigate(AppRoutes.HOME) {
+                            popUpTo(AppRoutes.SEND_SOS) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
                         }
                     }
                 }
