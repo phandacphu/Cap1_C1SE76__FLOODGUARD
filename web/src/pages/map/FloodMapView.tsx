@@ -323,7 +323,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={0} />}
+      header={<AdminHeader alertCount={floodAreas.filter(a => a.status === "active" && (a.severity === "critical" || a.severity === "high")).length} />}
     >
       {mapContent}
     </AppShell>
