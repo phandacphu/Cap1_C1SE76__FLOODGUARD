@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchAdminOverview, type AdminOverview } from "./adminApi";
 
-const AUTO_REFRESH_MS = 30_000;
+// Đã tăng thời gian refresh lên 5 phút (300_000 ms) để giảm quota Firestore
+const AUTO_REFRESH_MS = 300_000;
 
 interface State {
   overview: AdminOverview | null;
@@ -10,7 +11,7 @@ interface State {
 }
 
 /**
- * Loads the dashboard data, refreshes it every 30 s and on demand.
+ * Loads the dashboard data, refreshes it every 5 minutes and on demand.
  * `onUnauthorized` runs when the token is rejected (401).
  */
 export function useAdminOverview(token: string | null, onUnauthorized: () => void) {
@@ -42,7 +43,12 @@ export function useAdminOverview(token: string | null, onUnauthorized: () => voi
   }, [token, round]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setRound((r) => r + 1), AUTO_REFRESH_MS);
+    const id = window.setInterval(() => {
+      // Chỉ tăng round (kích hoạt fetch lại data) nếu tab đang mở
+      if (document.visibilityState === 'visible') {
+        setRound((r) => r + 1);
+      }
+    }, AUTO_REFRESH_MS);
     return () => window.clearInterval(id);
   }, []);
 
