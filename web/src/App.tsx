@@ -25,6 +25,24 @@ export const App: React.FC = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
+          {/* Web Map Routes */}
+          <Route
+            path="/map"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+                <FloodMapView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/map"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+                <FloodMapView />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Admin Routes */}
           <Route
             path="/admin/dashboard"
@@ -59,16 +77,6 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
                 <RescueSosDetail />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Web Map - RBAC ADMIN & RESCUE_STAFF */}
-          <Route
-            path="/map"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
-                <FloodMapView />
               </ProtectedRoute>
             }
           />
