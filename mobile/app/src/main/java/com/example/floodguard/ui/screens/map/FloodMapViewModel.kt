@@ -1,5 +1,6 @@
 package com.example.floodguard.ui.screens.map
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.floodguard.data.repository.FloodAreaRepository
@@ -45,6 +46,24 @@ class FloodMapViewModel(
             result
                 .onSuccess { floodAreas ->
 
+                    Log.d(
+                        "FloodMapTC04",
+                        "API returned ${floodAreas.size} flood areas"
+                    )
+
+                    floodAreas.forEach { area ->
+                        Log.d(
+                            "FloodMapTC04",
+                            "id=${area.id}, " +
+                                    "status=${area.status}, " +
+                                    "severity=${area.severity}, " +
+                                    "type=${area.geometry.type}, " +
+                                    "points=${area.geometry.points.joinToString { point ->
+                                        "(${point.latitude}, ${point.longitude})"
+                                    }}"
+                        )
+                    }
+
                     _uiState.value =
                         _uiState.value.copy(
                             floodAreas = floodAreas,
@@ -56,10 +75,11 @@ class FloodMapViewModel(
 
                     _uiState.value =
                         _uiState.value.copy(
+                            floodAreas = emptyList(),
                             isLoadingFloodAreas = false,
                             floodAreasError =
-                                error.message
-                                    ?: "Không thể tải dữ liệu vùng ngập"
+                                "Không thể cập nhật vùng ngập. " +
+                                        "Vui lòng kiểm tra kết nối mạng và thử lại."
                         )
                 }
         }
@@ -92,10 +112,12 @@ class FloodMapViewModel(
 
                     _uiState.value =
                         _uiState.value.copy(
+                            floodAlerts = emptyList(),
+                            selectedFloodAlertId = null,
                             isLoadingFloodAlerts = false,
                             floodAlertsError =
-                                error.message
-                                    ?: "Không thể tải dữ liệu cảnh báo"
+                                "Không thể cập nhật cảnh báo lũ. " +
+                                        "Vui lòng kiểm tra kết nối mạng và thử lại."
                         )
                 }
         }

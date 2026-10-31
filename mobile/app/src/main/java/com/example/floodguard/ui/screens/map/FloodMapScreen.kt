@@ -11,6 +11,7 @@ import android.content.Intent
 import android.location.LocationManager
 import android.net.Uri
 import android.provider.Settings
+import android.view.MotionEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,10 +56,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,11 +85,12 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.maps.android.compose.Polygon
+import com.google.maps.android.compose.rememberUpdatedMarkerState
+import kotlinx.coroutines.delay
 
 // =====================================================
 // COLORS
@@ -161,6 +168,9 @@ fun FloodMapScreen(
     onRetryFloodAlerts: () -> Unit,
 ) {
 
+    val scrollState = rememberScrollState()
+    var isDraggingMap by remember { mutableStateOf(false) }
+
     Scaffold(
         containerColor = MapBackground,
 
@@ -178,7 +188,8 @@ fun FloodMapScreen(
                 .background(MapBackground)
                 .padding(innerPadding)
                 .verticalScroll(
-                    rememberScrollState()
+                    state = scrollState,
+                    enabled = !isDraggingMap
                 )
         ) {
 
@@ -208,7 +219,8 @@ fun FloodMapScreen(
 
             FloodGoogleMap(
                 state = state,
-                onSelectFloodAlert = onSelectFloodAlert
+                onSelectFloodAlert = onSelectFloodAlert,
+                onMapDragging = { isDraggingMap = it }
             )
 
             Row(
@@ -629,7 +641,7 @@ private fun FloodGpsInfo() {
             )
 
             Text(
-                text = "GPS được lấy khi người dùng cấp quyền vị trí",
+                text = "FloodGuard sử dụng GPS để hiển thị vị trí của bạn trên bản đồ. Bạn vẫn có thể xem bản đồ khi không cấp quyền.",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -709,7 +721,8 @@ private fun FloodLayerItem(
 @Composable
 private fun FloodGoogleMap(
     state: FloodMapUiState,
-    onSelectFloodAlert: (String?) -> Unit
+    onSelectFloodAlert: (String?) -> Unit,
+    onMapDragging: (Boolean) -> Unit
 ) {
 
     val context = LocalContext.current
@@ -789,6 +802,21 @@ private fun FloodGoogleMap(
         mutableStateOf("Đang kiểm tra quyền vị trí...")
     }
 
+    // CCF-65: Trạng thái xử lý lỗi GPS
+    var isGpsTimedOut by remember {
+        mutableStateOf(false)
+    }
+
+    // Tăng giá trị để khởi động lại phiên theo dõi GPS khi người dùng thử lại
+    var gpsRetryKey by remember {
+        mutableIntStateOf(0)
+    }
+
+    // Đánh dấu đã nhận được tọa độ trong phiên theo dõi hiện tại
+    var hasReceivedGpsLocation by remember {
+        mutableStateOf(false)
+    }
+
     val fusedLocationClient = remember {
         LocationServices.getFusedLocationProviderClient(context)
     }
@@ -848,8 +876,10 @@ private fun FloodGoogleMap(
 
 
     LaunchedEffect(Unit) {
-
-        if (!hasLocationPermission) {
+        if (
+            !hasLocationPermission &&
+            !hasRequestedLocationPermissionBefore
+        ) {
             permissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
@@ -862,7 +892,8 @@ private fun FloodGoogleMap(
     DisposableEffect(
         hasLocationPermission,
         isScreenActive,
-        isLocationServiceEnabled
+        isLocationServiceEnabled,
+        gpsRetryKey
     ) {
 
         if (!hasLocationPermission) {
@@ -889,8 +920,13 @@ private fun FloodGoogleMap(
 
         } else {
 
+            hasReceivedGpsLocation = false
+            isGpsTimedOut = false
+
+            var isCallbackActive = true
+
             locationMessage =
-                "Đang theo dõi vị trí hiện tại..."
+                "Đang lấy vị trí hiện tại..."
 
             val locationRequest =
                 LocationRequest.Builder(
@@ -908,9 +944,11 @@ private fun FloodGoogleMap(
                     override fun onLocationResult(
                         result: LocationResult
                     ) {
+                        if (!isCallbackActive) {
+                            return
+                        }
 
-                        val location =
-                            result.lastLocation
+                        val location = result.lastLocation
 
                         if (location == null) {
 
@@ -919,6 +957,9 @@ private fun FloodGoogleMap(
 
                             return
                         }
+
+                        hasReceivedGpsLocation = true
+                        isGpsTimedOut = false
 
                         userLocation =
                             LatLng(
@@ -938,17 +979,19 @@ private fun FloodGoogleMap(
                     Looper.getMainLooper()
                 )
                 .addOnFailureListener {
+                    if (isCallbackActive) {
+                        isGpsTimedOut = true
 
-                    locationMessage =
-                        "Không thể lấy vị trí hiện tại"
+                        locationMessage =
+                            "Không thể lấy vị trí hiện tại. Vui lòng thử lại."
+                    }
                 }
 
             onDispose {
+                isCallbackActive = false
 
                 fusedLocationClient
-                    .removeLocationUpdates(
-                        locationCallback
-                    )
+                    .removeLocationUpdates(locationCallback)
             }
         }
     }
@@ -1022,6 +1065,33 @@ private fun FloodGoogleMap(
         }
     }
 
+    // CCF-65: Timeout khi GPS không trả về tọa độ sau 15 giây
+    LaunchedEffect(
+        hasLocationPermission,
+        isLocationServiceEnabled,
+        isScreenActive,
+        gpsRetryKey,
+        hasReceivedGpsLocation,
+        isGpsTimedOut
+    ) {
+        if (
+            hasLocationPermission &&
+            isLocationServiceEnabled &&
+            isScreenActive &&
+            !hasReceivedGpsLocation &&
+            !isGpsTimedOut
+        ) {
+            delay(15_000L)
+
+            if (!hasReceivedGpsLocation && !isGpsTimedOut) {
+                isGpsTimedOut = true
+
+                locationMessage =
+                    "Không thể xác định vị trí sau 15 giây. Vui lòng thử lại."
+            }
+        }
+    }
+
     LaunchedEffect(userLocation) {
 
         val location = userLocation
@@ -1065,7 +1135,23 @@ private fun FloodGoogleMap(
         ) {
 
             GoogleMap(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInteropFilter { event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                onMapDragging(true)
+                            }
+
+                            MotionEvent.ACTION_UP,
+                            MotionEvent.ACTION_CANCEL -> {
+                                onMapDragging(false)
+                            }
+                        }
+
+                        // Không tiêu thụ sự kiện để Google Maps xử lý.
+                        false
+                    },
                 cameraPositionState = cameraPositionState,
                 properties = MapProperties(
                     isMyLocationEnabled =
@@ -1192,12 +1278,76 @@ private fun FloodGoogleMap(
                         }
                 }
 
+
+                // CCF-60 TC05: Warning Marker từ Backend
+                if (state.isFloodLayerEnabled) {
+                    state.floodAlerts
+                        .filter { alert ->
+                            alert.status.equals(
+                                "active",
+                                ignoreCase = true
+                            )
+                        }
+                        .forEach { alert ->
+
+                            val floodArea = state.floodAreas.find { area ->
+                                area.id == alert.areaId &&
+                                        area.status.equals(
+                                            "active",
+                                            ignoreCase = true
+                                        ) &&
+                                        area.geometry.type.equals(
+                                            "polygon",
+                                            ignoreCase = true
+                                        )
+                            }
+
+                            if (floodArea != null) {
+                                val points = floodArea.geometry.points
+
+                                val validPoints = points.filter { point ->
+                                    point.latitude.isFinite() &&
+                                            point.longitude.isFinite() &&
+                                            point.latitude in -90.0..90.0 &&
+                                            point.longitude in -180.0..180.0
+                                }
+
+                                if (validPoints.size >= 3) {
+
+                                    // Tọa độ đại diện, không phải vị trí GPS của cảnh báo
+                                    val latitude =
+                                        validPoints.map { it.latitude }.average()
+
+                                    val longitude =
+                                        validPoints.map { it.longitude }.average()
+
+                                    val markerState = rememberUpdatedMarkerState(
+                                        position = LatLng(latitude, longitude)
+                                    )
+
+                                    Marker(
+                                        state = markerState,
+                                        title = "[Cảnh báo] ${alert.title}",
+                                        snippet = "Mức độ: ${alert.severity}",
+                                        onClick = {
+                                            onSelectFloodAlert(alert.id)
+                                            true
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                }
+
+
                 if (state.isUserLayerEnabled) {
                     userLocation?.let { location ->
+                        val markerState = rememberUpdatedMarkerState(
+                            position = location
+                        )
+
                         Marker(
-                            state = MarkerState(
-                                position = location
-                            ),
+                            state = markerState,
                             title = "Vị trí của bạn"
                         )
                     }
@@ -1220,13 +1370,17 @@ private fun FloodGoogleMap(
                         }
                         .forEach { safeLocation ->
 
+                            val markerPosition = LatLng(
+                                safeLocation.location.latitude,
+                                safeLocation.location.longitude
+                            )
+
+                            val markerState = rememberUpdatedMarkerState(
+                                position = markerPosition
+                            )
+
                             Marker(
-                                state = MarkerState(
-                                    position = LatLng(
-                                        safeLocation.location.latitude,
-                                        safeLocation.location.longitude
-                                    )
-                                ),
+                                state = markerState,
                                 title = safeLocation.name,
                                 snippet = "DỮ LIỆU THỬ NGHIỆM — " +
                                         "Chưa xác minh điểm tránh trú"
@@ -1239,7 +1393,8 @@ private fun FloodGoogleMap(
             if (
                 !hasLocationPermission ||
                 !isLocationServiceEnabled ||
-                userLocation == null
+                userLocation == null ||
+                isGpsTimedOut
             ) {
 
                 Column(
@@ -1303,6 +1458,30 @@ private fun FloodGoogleMap(
                                     } else {
                                         "Cấp quyền vị trí"
                                     },
+                                color = Color.White,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+
+                    else if (
+                        hasLocationPermission &&
+                        isLocationServiceEnabled &&
+                        isGpsTimedOut
+                    ) {
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = {
+                                isGpsTimedOut = false
+                                hasReceivedGpsLocation = false
+                                gpsRetryKey++
+                            }
+                        ) {
+                            Text(
+                                text = "Thử lại GPS",
                                 color = Color.White,
                                 fontSize = 10.sp
                             )

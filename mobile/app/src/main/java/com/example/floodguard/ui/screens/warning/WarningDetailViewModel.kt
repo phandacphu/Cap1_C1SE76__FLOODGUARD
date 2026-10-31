@@ -75,28 +75,11 @@ class WarningDetailViewModel(
                         WarningDetail(
                             id = alert.id,
 
-                            systemStatus =
-                                when {
-
-                                    !alert.status.equals(
-                                        "active",
-                                        ignoreCase = true
-                                    ) -> {
-                                        "CẢNH BÁO ĐÃ TẮT"
-                                    }
-
-                                    isAlertEffectiveNow(
-                                        status = alert.status,
-                                        startAt = alert.startAt,
-                                        endAt = alert.endAt
-                                    ) -> {
-                                        "CẢNH BÁO ĐANG CÓ HIỆU LỰC"
-                                    }
-
-                                    else -> {
-                                        "CẢNH BÁO ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
-                                    }
-                                },
+                            systemStatus = getWarningStatus(
+                                status = alert.status,
+                                startAt = alert.startAt,
+                                endAt = alert.endAt
+                            ),
 
                             screenTitle = "Chi tiết cảnh báo",
 
@@ -196,38 +179,43 @@ private fun formatWarningDateTime(
     }.getOrDefault(isoTime)
 }
 
-private fun isAlertEffectiveNow(
+private fun getWarningStatus(
     status: String,
     startAt: String,
     endAt: String?
-): Boolean {
+): String {
 
     if (!status.equals("active", ignoreCase = true)) {
-        return false
+        return "CẢNH BÁO ĐÃ TẮT"
     }
 
     val now = Instant.now()
 
-    val start =
-        runCatching {
-            Instant.parse(startAt)
-        }.getOrNull()
-            ?: return false
+    val start = runCatching {
+        Instant.parse(startAt)
+    }.getOrNull()
+        ?: return "KHÔNG XÁC ĐỊNH THỜI GIAN"
 
-    val end =
-        endAt
-            ?.takeIf { it.isNotBlank() }
-            ?.let {
-                runCatching {
-                    Instant.parse(it)
-                }.getOrNull()
-            }
+    val end = endAt
+        ?.takeIf { it.isNotBlank() }
+        ?.let {
+            runCatching {
+                Instant.parse(it)
+            }.getOrNull()
+                ?: return "KHÔNG XÁC ĐỊNH THỜI GIAN"
+        }
 
-    val hasStarted =
-        !now.isBefore(start)
+    return when {
+        end != null && !now.isBefore(end) -> {
+            "CẢNH BÁO ĐÃ HẾT HẠN"
+        }
 
-    val hasNotEnded =
-        end == null || !now.isAfter(end)
+        now.isBefore(start) -> {
+            "CẢNH BÁO ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
+        }
 
-    return hasStarted && hasNotEnded
+        else -> {
+            "CẢNH BÁO ĐANG CÓ HIỆU LỰC"
+        }
+    }
 }
