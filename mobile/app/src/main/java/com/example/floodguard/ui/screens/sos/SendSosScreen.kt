@@ -288,13 +288,22 @@ fun SendSosScreen(
                         )
                     }
                 )
+                uiState.validationErrors.location?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
 
             item {
                 SosSectionTitle(
                     "LOẠI TÌNH HUỐNG (CHỌN NHIỀU)"
                 )
+
+                uiState.validationErrors.situations?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
+
+
 
             items(SosSituation.entries.toList()) { situation ->
                 SosSituationRow(
@@ -310,6 +319,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "SỐ NGƯỜI CẦN HỖ TRỢ"
                 )
+
+                uiState.validationErrors.peopleCount?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
                 Spacer(Modifier.height(8.dp))
 
                 Row(
@@ -332,6 +345,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "MỨC NƯỚC ƯỚC TÍNH"
                 )
+
+                uiState.validationErrors.waterLevel?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -375,7 +392,22 @@ fun SendSosScreen(
             item {
                 Button(
                     onClick = {
-                        showDemoDialog = true
+                        val isValid = viewModel.validateForm()
+
+                        android.util.Log.d(
+                            "SosValidation",
+                            "SOS button clicked, isValid=$isValid"
+                        )
+
+                        if (isValid) {
+                            showDemoDialog = true
+                        } else {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Thông tin SOS chưa đầy đủ. Vui lòng kiểm tra các mục báo lỗi.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()

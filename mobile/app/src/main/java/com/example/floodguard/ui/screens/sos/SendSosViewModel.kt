@@ -118,6 +118,47 @@ class SendSosViewModel : ViewModel() {
         }
     }
 
+
+    fun validateForm(): Boolean {
+        val current = _uiState.value
+
+        val hasValidLocation =
+            current.latitude?.isFinite() == true &&
+                    current.longitude?.isFinite() == true &&
+                    current.latitude in -90.0..90.0 &&
+                    current.longitude in -180.0..180.0 &&
+                    current.locationTimestampMillis?.let { timestamp ->
+                        System.currentTimeMillis() - timestamp in 0L..30_000L
+                    } == true &&
+                    !current.isLoadingLocation &&
+                    current.locationError == null
+
+        val errors = SosFormErrors(
+            situations = if (current.selectedSituations.isEmpty()) {
+                "Vui lòng chọn ít nhất một tình huống."
+            } else null,
+
+            peopleCount = if (current.peopleCount == null) {
+                "Vui lòng chọn số người cần hỗ trợ."
+            } else null,
+
+            waterLevel = if (current.waterLevel == null) {
+                "Vui lòng chọn mức nước ước tính."
+            } else null,
+
+            location = if (!hasValidLocation) {
+                "Vị trí GPS chưa hợp lệ hoặc đã cũ. Vui lòng thử lại GPS."
+            } else null
+        )
+
+        _uiState.update {
+            it.copy(validationErrors = errors)
+        }
+
+        return !errors.hasErrors()
+    }
+
+
     // Xóa dữ liệu biểu mẫu
     fun resetForm() {
         _uiState.value = SendSosUiState()

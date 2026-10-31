@@ -26,11 +26,27 @@ enum class SosWaterLevel(
     DANGEROUS("Trên 2m / nguy cấp", "> 2.0m")
 }
 
+
+data class SosFormErrors(
+    val situations: String? = null,
+    val peopleCount: String? = null,
+    val waterLevel: String? = null,
+    val location: String? = null
+) {
+    fun hasErrors(): Boolean =
+        situations != null ||
+                peopleCount != null ||
+                waterLevel != null ||
+                location != null
+}
+
+
 data class SendSosUiState(
     val selectedSituations: Set<SosSituation> = emptySet(),
     val peopleCount: SosPeopleCount? = null,
     val waterLevel: SosWaterLevel? = null,
     val note: String = "",
+    val validationErrors: SosFormErrors = SosFormErrors(),
 
     // CCF-81: Tọa độ GPS của yêu cầu SOS
     val latitude: Double? = null,
