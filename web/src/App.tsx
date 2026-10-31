@@ -9,8 +9,8 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
+import { FloodMapView } from './pages/map/FloodMapView';
 
-/** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   return <Navigate to={isAuthenticated && user ? homePathForRole(user.role) : '/login'} replace />;
@@ -25,17 +25,61 @@ export const App: React.FC = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
-          {/* Only Rescue Staff may open the rescue screens */}
-          <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
-            <Route path="/rescue/dashboard" element={<RescueDashboard />} />
-            <Route path="/rescue/sos" element={<RescueSosList />} />
-            <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
-          </Route>
+          {/* Web Map Routes */}
+          <Route
+            path="/map"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+                <FloodMapView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/map"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+                <FloodMapView />
+              </ProtectedRoute>
+            }
+          />
 
-          {/* Only Admin may open the admin screens */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          </Route>
+          {/* Admin Routes */}
+          <Route
+            path="/admin/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+
+          {/* Rescue Routes */}
+          <Route
+            path="/rescue/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/rescue" element={<Navigate to="/rescue/dashboard" replace />} />
+          <Route
+            path="/rescue/sos"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueSosList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rescue/sos/:id"
+            element={
+              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
+                <RescueSosDetail />
+              </ProtectedRoute>
+            }
+          />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
