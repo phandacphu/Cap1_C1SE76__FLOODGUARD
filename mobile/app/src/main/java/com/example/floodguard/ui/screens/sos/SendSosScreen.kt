@@ -587,19 +587,33 @@ fun SendSosScreen(
                             showSubmitConfirmation = true
                         } else {
                             val errors = viewModel.uiState.value.validationErrors
+
                             val situationCount = SosSituation.entries.size
 
                             val targetIndex = when {
                                 errors.location != null -> 1
+
                                 errors.situations != null -> 2
-                                errors.peopleCount != null -> 3 + situationCount
-                                errors.waterLevel != null -> 4 + situationCount
+
+                                errors.peopleCount != null ->
+                                    3 + situationCount
+
+                                errors.exactPeopleCount != null ->
+                                    4 + situationCount
+
+                                errors.waterLevel != null ->
+                                    5 + situationCount
+
+                                errors.urgency != null ->
+                                    6 + situationCount
+
                                 else -> 0
                             }
 
                             scope.launch {
                                 listState.animateScrollToItem(targetIndex)
                             }
+
                             android.widget.Toast.makeText(
                                 context,
                                 "Thông tin SOS chưa đầy đủ. Vui lòng kiểm tra các mục báo lỗi.",

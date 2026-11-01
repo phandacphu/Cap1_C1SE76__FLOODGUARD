@@ -47,11 +47,15 @@ data class SosFormErrors(
     val urgency: String? = null,
     val exactPeopleCount: String? = null
 ) {
+
     fun hasErrors(): Boolean =
         situations != null ||
                 peopleCount != null ||
                 waterLevel != null ||
-                location != null
+                location != null ||
+                urgency != null ||
+                exactPeopleCount != null
+
 }
 
 

@@ -227,4 +227,65 @@ class SendSosViewModelTest {
             viewModel.uiState.value.validationErrors.location
         )
     }
+
+    @Test
+    fun missingUrgency_isInvalid() {
+        val vm = createViewModel()
+
+        vm.toggleSituation(SosSituation.TRAPPED)
+        vm.selectPeopleCount(SosPeopleCount.ONE)
+        vm.selectWaterLevel(SosWaterLevel.WAIST)
+        vm.updateExactPeopleCount("1")
+        vm.updateLocation(createLocation())
+
+        assertFalse(vm.validateForm())
+        assertNotNull(vm.uiState.value.validationErrors.urgency)
+    }
+
+    @Test
+    fun missingExactPeopleCount_isInvalid() {
+        val vm = createViewModel()
+
+        vm.toggleSituation(SosSituation.TRAPPED)
+        vm.selectPeopleCount(SosPeopleCount.ONE)
+        vm.selectWaterLevel(SosWaterLevel.WAIST)
+        vm.selectUrgency(SosUrgency.HIGH)
+        vm.updateLocation(createLocation())
+
+        assertFalse(vm.validateForm())
+        assertNotNull(
+            vm.uiState.value.validationErrors.exactPeopleCount
+        )
+    }
+
+    @Test
+    fun zeroPeopleCount_isInvalid() {
+        val vm = createViewModel()
+
+        fillRequiredFields(vm)
+        vm.updateExactPeopleCount("0")
+        vm.updateLocation(createLocation())
+
+        assertFalse(vm.validateForm())
+        assertNotNull(
+            vm.uiState.value.validationErrors.exactPeopleCount
+        )
+    }
+
+    @Test
+    fun peopleCountMismatch_isInvalid() {
+        val vm = createViewModel()
+
+        fillRequiredFields(vm)
+
+        // Nhóm ONE chỉ chấp nhận đúng 1 người.
+        vm.updateExactPeopleCount("3")
+        vm.updateLocation(createLocation())
+
+        assertFalse(vm.validateForm())
+        assertNotNull(
+            vm.uiState.value.validationErrors.exactPeopleCount
+        )
+    }
+
 }
