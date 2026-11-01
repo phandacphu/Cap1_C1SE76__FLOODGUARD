@@ -17,9 +17,12 @@ const {
   normalizeRescueRequestStatusHistoryData,
 } = require("./rescue-request-status-history.service");
 
+const { logAuditEvent } = require("./audit-logging.service");
+
 const {
-  logAuditEvent,
-} = require("./audit-logging.service");
+  prepareSosStatusNotification,
+  stageSosStatusNotification,
+} = require("./sos-status-notification.service");
 
 function createAcceptError(code, message, statusCode) {
   const error = new Error(message);
@@ -39,10 +42,7 @@ function isValidDocumentId(value) {
   );
 }
 
-async function acceptRescueRequestWithHistory(
-  requestId,
-  rescueStaffId,
-) {
+async function acceptRescueRequestWithHistory(requestId, rescueStaffId) {
   if (!isValidDocumentId(rescueStaffId)) {
     throw createAcceptError(
       "ACCEPT_AUTH_REQUIRED",
@@ -62,9 +62,7 @@ async function acceptRescueRequestWithHistory(
   const normalizedRequestId = requestId.trim();
   const normalizedStaffId = rescueStaffId.trim();
 
-  const userRef = db
-    .collection("users")
-    .doc(normalizedStaffId);
+  const userRef = db.collection("users").doc(normalizedStaffId);
 
   const requestRef = db
     .collection(RESCUE_REQUESTS_COLLECTION)
@@ -119,15 +117,11 @@ async function acceptRescueRequestWithHistory(
       );
     }
 
-    const assignmentDoc =
-      await transaction.get(assignmentRef);
+    const assignmentDoc = await transaction.get(assignmentRef);
 
     const request = requestDoc.data();
 
-    if (
-      request.status !== "submitted" ||
-      assignmentDoc.exists
-    ) {
+    if (request.status !== "submitted" || assignmentDoc.exists) {
       throw createAcceptError(
         "ACCEPT_REQUEST_UNAVAILABLE",
         "Rescue request is no longer available",
@@ -135,22 +129,30 @@ async function acceptRescueRequestWithHistory(
       );
     }
 
-    const assignment =
-      normalizeRescueAssignmentData({
-        requestId: normalizedRequestId,
-        rescueStaffId: normalizedStaffId,
-        status: "accepted",
-        note: null,
-      });
+    const assignment = normalizeRescueAssignmentData({
+      requestId: normalizedRequestId,
+      rescueStaffId: normalizedStaffId,
+      status: "accepted",
+      note: null,
+    });
 
-    const history =
-      normalizeRescueRequestStatusHistoryData({
+    const history = normalizeRescueRequestStatusHistoryData({
+      requestId: normalizedRequestId,
+      oldStatus: request.status,
+      newStatus: "received",
+      changedBy: normalizedStaffId,
+      note: "SOS request accepted by rescue staff",
+    });
+
+    const preparedNotification = await prepareSosStatusNotification(
+      transaction,
+      {
         requestId: normalizedRequestId,
-        oldStatus: request.status,
+        request,
+        historyId: historyRef.id,
         newStatus: "received",
-        changedBy: normalizedStaffId,
-        note: "SOS request accepted by rescue staff",
-      });
+      },
+    );
 
     // All reads are completed before any writes.
     transaction.create(assignmentRef, {
@@ -168,6 +170,8 @@ async function acceptRescueRequestWithHistory(
       ...history,
       changedAt: FieldValue.serverTimestamp(),
     });
+
+    stageSosStatusNotification(transaction, preparedNotification);
   });
 
   // Audit only after the transaction commits successfully.
@@ -191,14 +195,9 @@ async function acceptRescueRequestWithHistory(
     },
   });
 
-  const rescueRequest = await getRescueRequestById(
-    normalizedRequestId,
-  );
+  const rescueRequest = await getRescueRequestById(normalizedRequestId);
 
-  const assignment =
-    await getRescueAssignmentByRequestId(
-      normalizedRequestId,
-    );
+  const assignment = await getRescueAssignmentByRequestId(normalizedRequestId);
 
   return {
     rescueRequest,

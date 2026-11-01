@@ -16,6 +16,11 @@ const {
   normalizeRescueRequestStatusHistoryData,
 } = require("./rescue-request-status-history.service");
 
+const {
+  prepareSosStatusNotification,
+  stageSosStatusNotification,
+} = require("./sos-status-notification.service");
+
 function statusError(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -34,11 +39,7 @@ function isValidDocumentId(value) {
 }
 
 function normalizeStatusUpdate(input) {
-  if (
-    !input ||
-    typeof input !== "object" ||
-    Array.isArray(input)
-  ) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw statusError(
       "INVALID_STATUS_UPDATE",
       "Status update body must be an object",
@@ -56,9 +57,7 @@ function normalizeStatusUpdate(input) {
     );
   }
 
-  if (
-    !["in_progress", "assisted"].includes(input.status)
-  ) {
+  if (!["in_progress", "assisted"].includes(input.status)) {
     throw statusError(
       "INVALID_STATUS_UPDATE",
       "Status must be in_progress or assisted",
@@ -78,38 +77,24 @@ function normalizeStatusUpdate(input) {
 
   return {
     status: input.status,
-    note: typeof input.note === "string"
-      ? input.note.trim() || null
-      : null,
+    note: typeof input.note === "string" ? input.note.trim() || null : null,
   };
 }
 
-async function updateRescueStatusWithHistory(
-  requestId,
-  rescueStaffId,
-  input,
-) {
+async function updateRescueStatusWithHistory(requestId, rescueStaffId, input) {
   if (!isValidDocumentId(rescueStaffId)) {
-    throw statusError(
-      "STATUS_AUTH_REQUIRED",
-      "Authentication is required",
-    );
+    throw statusError("STATUS_AUTH_REQUIRED", "Authentication is required");
   }
 
   if (!isValidDocumentId(requestId)) {
-    throw statusError(
-      "INVALID_STATUS_REQUEST_ID",
-      "Invalid rescue request ID",
-    );
+    throw statusError("INVALID_STATUS_REQUEST_ID", "Invalid rescue request ID");
   }
 
   const data = normalizeStatusUpdate(input);
   const normalizedRequestId = requestId.trim();
   const normalizedStaffId = rescueStaffId.trim();
 
-  const userRef = db.collection("users").doc(
-    normalizedStaffId,
-  );
+  const userRef = db.collection("users").doc(normalizedStaffId);
 
   const requestRef = db
     .collection(RESCUE_REQUESTS_COLLECTION)
@@ -137,10 +122,7 @@ async function updateRescueStatusWithHistory(
     const user = userDoc.data();
 
     if (user.isActive !== true) {
-      throw statusError(
-        "STATUS_ACCOUNT_INACTIVE",
-        "Account is inactive",
-      );
+      throw statusError("STATUS_ACCOUNT_INACTIVE", "Account is inactive");
     }
 
     if (user.role !== "rescue") {
@@ -153,14 +135,10 @@ async function updateRescueStatusWithHistory(
     const requestDoc = await transaction.get(requestRef);
 
     if (!requestDoc.exists) {
-      throw statusError(
-        "STATUS_REQUEST_NOT_FOUND",
-        "Rescue request not found",
-      );
+      throw statusError("STATUS_REQUEST_NOT_FOUND", "Rescue request not found");
     }
 
-    const assignmentDoc =
-      await transaction.get(assignmentRef);
+    const assignmentDoc = await transaction.get(assignmentRef);
 
     if (!assignmentDoc.exists) {
       throw statusError(
@@ -187,17 +165,18 @@ async function updateRescueStatusWithHistory(
 
     const request = requestDoc.data();
 
-    const expected = data.status === "in_progress"
-      ? {
-          requestStatus: "received",
-          assignmentStatus: "accepted",
-          nextAssignmentStatus: "in_progress",
-        }
-      : {
-          requestStatus: "in_progress",
-          assignmentStatus: "in_progress",
-          nextAssignmentStatus: "completed",
-        };
+    const expected =
+      data.status === "in_progress"
+        ? {
+            requestStatus: "received",
+            assignmentStatus: "accepted",
+            nextAssignmentStatus: "in_progress",
+          }
+        : {
+            requestStatus: "in_progress",
+            assignmentStatus: "in_progress",
+            nextAssignmentStatus: "completed",
+          };
 
     if (
       request.status !== expected.requestStatus ||
@@ -209,14 +188,23 @@ async function updateRescueStatusWithHistory(
       );
     }
 
-    const history =
-      normalizeRescueRequestStatusHistoryData({
+    const history = normalizeRescueRequestStatusHistoryData({
+      requestId: normalizedRequestId,
+      oldStatus: request.status,
+      newStatus: data.status,
+      changedBy: normalizedStaffId,
+      note: data.note,
+    });
+
+    const preparedNotification = await prepareSosStatusNotification(
+      transaction,
+      {
         requestId: normalizedRequestId,
-        oldStatus: request.status,
+        request,
+        historyId: historyRef.id,
         newStatus: data.status,
-        changedBy: normalizedStaffId,
-        note: data.note,
-      });
+      },
+    );
 
     // All reads finish before writes.
     // Preserve assignment identities and original assignedAt.
@@ -234,16 +222,13 @@ async function updateRescueStatusWithHistory(
       ...history,
       changedAt: FieldValue.serverTimestamp(),
     });
+
+    stageSosStatusNotification(transaction, preparedNotification);
   });
 
-  const rescueRequest = await getRescueRequestById(
-    normalizedRequestId,
-  );
+  const rescueRequest = await getRescueRequestById(normalizedRequestId);
 
-  const assignment =
-    await getRescueAssignmentByRequestId(
-      normalizedRequestId,
-    );
+  const assignment = await getRescueAssignmentByRequestId(normalizedRequestId);
 
   return { rescueRequest, assignment };
 }

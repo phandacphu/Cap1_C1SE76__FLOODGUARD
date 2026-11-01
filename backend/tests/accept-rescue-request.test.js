@@ -5,9 +5,7 @@ const { Timestamp } = require("firebase-admin/firestore");
 
 process.env.JWT_SECRET = "ccf98-local-test-secret-only";
 
-const fixedTime = Timestamp.fromDate(
-  new Date("2026-10-08T12:00:00.000Z"),
-);
+const fixedTime = Timestamp.fromDate(new Date("2026-10-08T12:00:00.000Z"));
 
 const records = new Map();
 const versions = new Map();
@@ -30,20 +28,14 @@ function snapshot(ref) {
   return {
     id: ref.id,
     exists: data !== undefined,
-    data: () =>
-      data === undefined ? undefined : { ...data },
+    data: () => (data === undefined ? undefined : { ...data }),
   };
 }
 
 function resolveTimestamps(data) {
   const saved = { ...data };
 
-  for (const field of [
-    "assignedAt",
-    "updatedAt",
-    "changedAt",
-    "timestamp",
-  ]) {
+  for (const field of ["assignedAt", "updatedAt", "changedAt", "timestamp"]) {
     if (Object.hasOwn(saved, field)) {
       saved[field] = fixedTime;
     }
@@ -70,23 +62,17 @@ const db = {
 
           // Audit must run after acceptance commits.
           assert.equal(
-            records.get(
-              `rescue_requests/${data.target.id}`,
-            )?.status,
+            records.get(`rescue_requests/${data.target.id}`)?.status,
             "received",
           );
 
           assert.equal(
-            records.has(
-              `rescue_assignments/${data.target.id}`,
-            ),
+            records.has(`rescue_assignments/${data.target.id}`),
             true,
           );
 
           if (failAuditWrite) {
-            throw new Error(
-              "Simulated audit write failure",
-            );
+            throw new Error("Simulated audit write failure");
           }
 
           assert.equal(records.has(ref.key), false);
@@ -112,10 +98,7 @@ const db = {
             "Transaction must read before writing",
           );
 
-          reads.set(
-            ref.key,
-            versions.get(ref.key) || 0,
-          );
+          reads.set(ref.key, versions.get(ref.key) || 0);
 
           return snapshot(ref);
         },
@@ -136,8 +119,7 @@ const db = {
       const result = await callback(transaction);
 
       const conflict = [...reads.entries()].some(
-        ([key, version]) =>
-          (versions.get(key) || 0) !== version,
+        ([key, version]) => (versions.get(key) || 0) !== version,
       );
 
       if (conflict) {
@@ -146,9 +128,7 @@ const db = {
       }
 
       if (failCommit) {
-        throw new Error(
-          "Simulated transaction failure",
-        );
+        throw new Error("Simulated transaction failure");
       }
 
       // Validate all writes before applying any changes.
@@ -166,9 +146,7 @@ const db = {
 
         save(
           ref.key,
-          type === "update"
-            ? { ...records.get(ref.key), ...saved }
-            : saved,
+          type === "update" ? { ...records.get(ref.key), ...saved } : saved,
         );
       }
 
@@ -176,16 +154,12 @@ const db = {
       return result;
     }
 
-    throw new Error(
-      "Simulated transaction retry limit",
-    );
+    throw new Error("Simulated transaction retry limit");
   },
 };
 
 // Replace Firebase before loading application modules.
-const firebasePath = require.resolve(
-  "../src/config/firebase",
-);
+const firebasePath = require.resolve("../src/config/firebase");
 
 require.cache[firebasePath] = {
   id: firebasePath,
@@ -194,15 +168,11 @@ require.cache[firebasePath] = {
   exports: { db },
 };
 
-const routes = require(
-  "../src/routes/rescue-request.routes",
-);
+const routes = require("../src/routes/rescue-request.routes");
 
 const {
   acceptRescueRequestWithHistory,
-} = require(
-  "../src/services/accept-rescue-request.service",
-);
+} = require("../src/services/accept-rescue-request.service");
 
 const app = express();
 app.set("env", "test");
@@ -255,25 +225,18 @@ function reset() {
   });
 }
 
-function tokenFor(
-  id,
-  role = "rescue",
-  expiresIn = "5m",
-) {
-  return jwt.sign(
-    { sub: id, role },
-    process.env.JWT_SECRET,
-    { algorithm: "HS256", expiresIn },
-  );
+function tokenFor(id, role = "rescue", expiresIn = "5m") {
+  return jwt.sign({ sub: id, role }, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    expiresIn,
+  });
 }
 
 function historyFor(requestId) {
   return [...records.entries()]
     .filter(
       ([key, data]) =>
-        key.startsWith(
-          "rescue_request_status_history/",
-        ) &&
+        key.startsWith("rescue_request_status_history/") &&
         data.requestId === requestId,
     )
     .map(([, data]) => data);
@@ -301,10 +264,7 @@ function assertAcceptanceAudit(actorId) {
     role: "rescue",
   });
 
-  assert.equal(
-    audit[0].action,
-    "rescue_request.accept",
-  );
+  assert.equal(audit[0].action, "rescue_request.accept");
 
   assert.deepEqual(audit[0].target, {
     type: "rescue_request",
@@ -317,20 +277,11 @@ function assertAcceptanceAudit(actorId) {
     changedFields: ["status"],
   });
 
-  assert.equal(
-    audit[0].timestamp.toMillis(),
-    fixedTime.toMillis(),
-  );
+  assert.equal(audit[0].timestamp.toMillis(), fixedTime.toMillis());
 
   assert.deepEqual(
     Object.keys(audit[0]).sort(),
-    [
-      "actor",
-      "action",
-      "target",
-      "metadata",
-      "timestamp",
-    ].sort(),
+    ["actor", "action", "target", "metadata", "timestamp"].sort(),
   );
 }
 
@@ -344,14 +295,9 @@ async function runTests() {
     });
 
     const baseUrl =
-      `http://127.0.0.1:${server.address().port}` +
-      "/api/rescue-requests";
+      `http://127.0.0.1:${server.address().port}` + "/api/rescue-requests";
 
-    async function post(
-      token,
-      body = {},
-      requestId = "request-1",
-    ) {
+    async function post(token, body = {}, requestId = "request-1") {
       const headers = {
         "Content-Type": "application/json",
       };
@@ -360,18 +306,14 @@ async function runTests() {
         headers.Authorization = `Bearer ${token}`;
       }
 
-      const response = await fetch(
-        `${baseUrl}/${requestId}/accept`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-        },
-      );
+      const response = await fetch(`${baseUrl}/${requestId}/accept`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
 
       const responseText = await response.text();
-      const contentType =
-        response.headers.get("content-type") || "";
+      const contentType = response.headers.get("content-type") || "";
 
       return {
         status: response.status,
@@ -390,11 +332,7 @@ async function runTests() {
       const before = [...records.entries()];
       const auditWritesBefore = auditWriteCount;
 
-      const result = await post(
-        token,
-        body,
-        requestId,
-      );
+      const result = await post(token, body, requestId);
 
       assert.equal(result.status, expectedStatus);
 
@@ -404,10 +342,7 @@ async function runTests() {
         assert.equal(result.body.success, false);
       }
 
-      assert.deepEqual(
-        [...records.entries()],
-        before,
-      );
+      assert.deepEqual([...records.entries()], before);
 
       assert.equal(
         auditWriteCount,
@@ -422,33 +357,18 @@ async function runTests() {
     await expectRejected(undefined, 401);
     await expectRejected("invalid-token", 401);
 
-    await expectRejected(
-      tokenFor("rescue-1", "rescue", -1),
-      401,
-    );
+    await expectRejected(tokenFor("rescue-1", "rescue", -1), 401);
 
-    await expectRejected(
-      tokenFor("resident", "resident"),
-      403,
-    );
+    await expectRejected(tokenFor("resident", "resident"), 403);
 
-    await expectRejected(
-      tokenFor("admin", "admin"),
-      403,
-    );
+    await expectRejected(tokenFor("admin", "admin"), 403);
 
     // Check database role, not only the JWT role.
-    await expectRejected(
-      tokenFor("resident"),
-      403,
-    );
+    await expectRejected(tokenFor("resident"), 403);
 
     await expectRejected(tokenFor("admin"), 403);
     await expectRejected(tokenFor("inactive"), 403);
-    await expectRejected(
-      tokenFor("deleted-user"),
-      401,
-    );
+    await expectRejected(tokenFor("deleted-user"), 401);
 
     // Client cannot choose staff ID or status.
     for (const body of [
@@ -458,49 +378,27 @@ async function runTests() {
       [],
       "invalid-body",
     ]) {
-      await expectRejected(
-        tokenFor("rescue-1"),
-        400,
-        body,
-      );
+      await expectRejected(tokenFor("rescue-1"), 400, body);
     }
 
-    await expectRejected(
-      tokenFor("rescue-1"),
-      404,
-      {},
-      "missing-request",
-    );
+    await expectRejected(tokenFor("rescue-1"), 404, {}, "missing-request");
 
     const writesBeforeInvalidId = auditWriteCount;
 
     await assert.rejects(
-      () =>
-        acceptRescueRequestWithHistory(
-          "bad/request",
-          "rescue-1",
-        ),
-      (error) =>
-        error.code === "INVALID_ACCEPT_REQUEST_ID",
+      () => acceptRescueRequestWithHistory("bad/request", "rescue-1"),
+      (error) => error.code === "INVALID_ACCEPT_REQUEST_ID",
     );
 
-    assert.equal(
-      auditWriteCount,
-      writesBeforeInvalidId,
-    );
+    assert.equal(auditWriteCount, writesBeforeInvalidId);
 
     // Successful acceptance.
-    const success = await post(
-      tokenFor("rescue-1"),
-    );
+    const success = await post(tokenFor("rescue-1"));
 
     assert.equal(success.status, 200);
     assert.equal(success.body.success, true);
 
-    const {
-      rescueRequest,
-      assignment,
-    } = success.body.data;
+    const { rescueRequest, assignment } = success.body.data;
 
     assert.equal(rescueRequest.id, "request-1");
     assert.equal(rescueRequest.status, "received");
@@ -515,37 +413,26 @@ async function runTests() {
 
     assert.equal(assignment.id, "request-1");
     assert.equal(assignment.requestId, "request-1");
-    assert.equal(
-      assignment.rescueStaffId,
-      "rescue-1",
-    );
+    assert.equal(assignment.rescueStaffId, "rescue-1");
     assert.equal(assignment.status, "accepted");
     assert.equal(assignment.note, null);
 
-    assert.equal(
-      assignment.assignedAt,
-      fixedTime.toDate().toISOString(),
-    );
+    assert.equal(assignment.assignedAt, fixedTime.toDate().toISOString());
 
-    assert.equal(
-      assignment.updatedAt,
-      assignment.assignedAt,
-    );
+    assert.equal(assignment.updatedAt, assignment.assignedAt);
 
-    // Audit is separate from the three atomic SOS writes.
-    assert.equal(lastWrites.length, 3);
+    // Audit is separate from the four atomic SOS writes.
+    assert.equal(lastWrites.length, 4);
 
     assert.deepEqual(
-      lastWrites
-        .map((write) => write.ref.collectionName)
-        .sort(),
+      lastWrites.map((write) => write.ref.collectionName).sort(),
       [
+        "notifications",
         "rescue_assignments",
         "rescue_request_status_history",
         "rescue_requests",
       ],
     );
-
     const history = historyFor("request-1");
 
     assert.equal(history.length, 1);
@@ -553,34 +440,20 @@ async function runTests() {
     assert.equal(history[0].newStatus, "received");
     assert.equal(history[0].changedBy, "rescue-1");
 
-    assert.equal(
-      history[0].changedAt.toMillis(),
-      fixedTime.toMillis(),
-    );
+    assert.equal(history[0].changedAt.toMillis(), fixedTime.toMillis());
 
     assertAcceptanceAudit("rescue-1");
 
     // Repeated acceptance adds no history or audit.
-    await expectRejected(
-      tokenFor("rescue-1"),
-      409,
-    );
+    await expectRejected(tokenFor("rescue-1"), 409);
 
-    await expectRejected(
-      tokenFor("rescue-2"),
-      409,
-    );
+    await expectRejected(tokenFor("rescue-2"), 409);
 
     assert.equal(historyFor("request-1").length, 1);
     assertAcceptanceAudit("rescue-1");
 
     // Requests outside submitted are unavailable.
-    for (const status of [
-      "received",
-      "in_progress",
-      "assisted",
-      "cancelled",
-    ]) {
+    for (const status of ["received", "in_progress", "assisted", "cancelled"]) {
       reset();
 
       save("rescue_requests/request-1", {
@@ -588,10 +461,7 @@ async function runTests() {
         status,
       });
 
-      await expectRejected(
-        tokenFor("rescue-1"),
-        409,
-      );
+      await expectRejected(tokenFor("rescue-1"), 409);
     }
 
     // A submitted request cannot replace an assignment.
@@ -606,10 +476,7 @@ async function runTests() {
       updatedAt: fixedTime,
     });
 
-    await expectRejected(
-      tokenFor("rescue-1"),
-      409,
-    );
+    await expectRejected(tokenFor("rescue-1"), 409);
 
     // Transaction failure leaves no changes or audit.
     reset();
@@ -619,10 +486,7 @@ async function runTests() {
     console.error = () => {};
 
     try {
-      await expectRejected(
-        tokenFor("rescue-1"),
-        500,
-      );
+      await expectRejected(tokenFor("rescue-1"), 500);
     } finally {
       console.error = originalConsoleError;
       failCommit = false;
@@ -635,46 +499,29 @@ async function runTests() {
     reset();
 
     const results = await Promise.allSettled([
-      acceptRescueRequestWithHistory(
-        "request-1",
-        "rescue-1",
-      ),
-      acceptRescueRequestWithHistory(
-        "request-1",
-        "rescue-2",
-      ),
+      acceptRescueRequestWithHistory("request-1", "rescue-1"),
+      acceptRescueRequestWithHistory("request-1", "rescue-2"),
     ]);
 
-    const fulfilled = results.filter(
-      (result) => result.status === "fulfilled",
-    );
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
 
-    const rejected = results.filter(
-      (result) => result.status === "rejected",
-    );
+    const rejected = results.filter((result) => result.status === "rejected");
 
     assert.equal(fulfilled.length, 1);
     assert.equal(rejected.length, 1);
 
-    assert.equal(
-      rejected[0].reason.code,
-      "ACCEPT_REQUEST_UNAVAILABLE",
-    );
+    assert.equal(rejected[0].reason.code, "ACCEPT_REQUEST_UNAVAILABLE");
 
     assert.ok(retryCount > 0);
 
-    const storedAssignment =
-      records.get("rescue_assignments/request-1");
+    const storedAssignment = records.get("rescue_assignments/request-1");
 
     assert.equal(
       storedAssignment.rescueStaffId,
       fulfilled[0].value.assignment.rescueStaffId,
     );
 
-    assert.equal(
-      records.get("rescue_requests/request-1").status,
-      "received",
-    );
+    assert.equal(records.get("rescue_requests/request-1").status, "received");
 
     assert.equal(historyFor("request-1").length, 1);
 
@@ -684,9 +531,7 @@ async function runTests() {
     );
 
     // Only the winner creates one audit record.
-    assertAcceptanceAudit(
-      storedAssignment.rescueStaffId,
-    );
+    assertAcceptanceAudit(storedAssignment.rescueStaffId);
 
     // Logging failure must not change a successful
     // acceptance into an HTTP error.
@@ -702,34 +547,23 @@ async function runTests() {
     };
 
     try {
-      acceptedWithoutAudit = await post(
-        tokenFor("rescue-1"),
-      );
+      acceptedWithoutAudit = await post(tokenFor("rescue-1"));
     } finally {
       console.warn = originalWarn;
       failAuditWrite = false;
     }
 
     assert.equal(acceptedWithoutAudit.status, 200);
-    assert.equal(
-      acceptedWithoutAudit.body.success,
-      true,
-    );
+    assert.equal(acceptedWithoutAudit.body.success, true);
 
     assert.equal(
       acceptedWithoutAudit.body.data.rescueRequest.status,
       "received",
     );
 
-    assert.equal(
-      acceptedWithoutAudit.body.data.assignment.status,
-      "accepted",
-    );
+    assert.equal(acceptedWithoutAudit.body.data.assignment.status, "accepted");
 
-    assert.equal(
-      records.get("rescue_requests/request-1").status,
-      "received",
-    );
+    assert.equal(records.get("rescue_requests/request-1").status, "received");
 
     assert.equal(
       records.get("rescue_assignments/request-1").rescueStaffId,
@@ -740,19 +574,12 @@ async function runTests() {
     assert.equal(auditFor("request-1").length, 0);
     assert.equal(auditWriteCount, 1);
 
-    assert.deepEqual(auditWarnings, [
-      ["[Audit] AUDIT_WRITE_FAILED"],
-    ]);
+    assert.deepEqual(auditWarnings, [["[Audit] AUDIT_WRITE_FAILED"]]);
 
     // The committed acceptance still blocks another attempt.
-    await expectRejected(
-      tokenFor("rescue-2"),
-      409,
-    );
+    await expectRejected(tokenFor("rescue-2"), 409);
 
-    console.log(
-      "Accept rescue request API tests passed",
-    );
+    console.log("Accept rescue request API tests passed");
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => {
@@ -766,9 +593,7 @@ async function runTests() {
 }
 
 runTests().catch((error) => {
-  console.error(
-    "Accept rescue request API tests failed",
-  );
+  console.error("Accept rescue request API tests failed");
   console.error(error);
   process.exitCode = 1;
 });
