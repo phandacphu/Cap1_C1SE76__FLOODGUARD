@@ -1,8 +1,10 @@
-const { db } = require("../config/firebase");
+const { randomUUID } = require("node:crypto");
+
 const {
-  FieldValue,
-  Timestamp,
-} = require("firebase-admin/firestore");
+  stageFloodWarningNotificationEvent,
+} = require("./flood-warning-notification-event.service");
+const { db } = require("../config/firebase");
+const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { isDeepStrictEqual } = require("node:util");
 
 const {
@@ -10,13 +12,9 @@ const {
   normalizeFloodAlertData,
 } = require("./flood-alert.service");
 
-const {
-  FLOOD_AREAS_COLLECTION,
-} = require("./flood-area.service");
+const { FLOOD_AREAS_COLLECTION } = require("./flood-area.service");
 
-const {
-  logAuditEvent,
-} = require("./audit-logging.service");
+const { logAuditEvent } = require("./audit-logging.service");
 
 const ALLOWED_ALERT_FIELDS = [
   "title",
@@ -44,11 +42,7 @@ function normalizeDocumentId(value) {
     value.trim() === ".." ||
     Buffer.byteLength(value.trim(), "utf8") > 1500
   ) {
-    throw alertError(
-      "INVALID_ADMIN_ALERT_ID",
-      "Invalid document ID",
-      400,
-    );
+    throw alertError("INVALID_ADMIN_ALERT_ID", "Invalid document ID", 400);
   }
 
   return value.trim();
@@ -85,10 +79,7 @@ function ensureActiveAdmin(userDoc) {
 async function authorizeAdmin(actorId) {
   const normalizedId = normalizeDocumentId(actorId);
 
-  const userDoc = await db
-    .collection("users")
-    .doc(normalizedId)
-    .get();
+  const userDoc = await db.collection("users").doc(normalizedId).get();
 
   ensureActiveAdmin(userDoc);
 
@@ -97,9 +88,10 @@ async function authorizeAdmin(actorId) {
 
 function normalizeClientTimestamp(value, fieldName) {
   // Require an explicit UTC timestamp from the client.
-  const match = typeof value === "string"
-    ? /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/.exec(value)
-    : null;
+  const match =
+    typeof value === "string"
+      ? /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/.exec(value)
+      : null;
 
   if (!match) {
     throw alertError(
@@ -109,17 +101,13 @@ function normalizeClientTimestamp(value, fieldName) {
     );
   }
 
-  const canonical =
-    `${match[1]}.${(match[2] || "").padEnd(3, "0")}Z`;
+  const canonical = `${match[1]}.${(match[2] || "").padEnd(3, "0")}Z`;
 
   const date = new Date(canonical);
 
   // Reject dates that JavaScript would normalize,
   // such as February 30 or hour 24.
-  if (
-    Number.isNaN(date.getTime()) ||
-    date.toISOString() !== canonical
-  ) {
+  if (Number.isNaN(date.getTime()) || date.toISOString() !== canonical) {
     throw alertError(
       "INVALID_ADMIN_ALERT_DATA",
       `${fieldName} must contain a valid date and time`,
@@ -148,9 +136,7 @@ function normalizeBody(body) {
 
   if (
     fields.length === 0 ||
-    fields.some(
-      (field) => !ALLOWED_ALERT_FIELDS.includes(field),
-    )
+    fields.some((field) => !ALLOWED_ALERT_FIELDS.includes(field))
   ) {
     throw alertError(
       "INVALID_ADMIN_ALERT_DATA",
@@ -163,10 +149,7 @@ function normalizeBody(body) {
 
   for (const field of ["startAt", "endAt"]) {
     if (Object.hasOwn(data, field)) {
-      data[field] = normalizeClientTimestamp(
-        data[field],
-        field,
-      );
+      data[field] = normalizeClientTimestamp(data[field], field);
     }
   }
 
@@ -183,17 +166,11 @@ function normalizeAlertInput(data) {
 
     // Validate IDs even when they came from stored data
     // while constructing a partial update.
-    normalized.areaId = normalizeDocumentId(
-      normalized.areaId,
-    );
+    normalized.areaId = normalizeDocumentId(normalized.areaId);
 
     return normalized;
   } catch (error) {
-    throw alertError(
-      "INVALID_ADMIN_ALERT_DATA",
-      error.message,
-      400,
-    );
+    throw alertError("INVALID_ADMIN_ALERT_DATA", error.message, 400);
   }
 }
 
@@ -222,11 +199,7 @@ function toClientAlert(alertDoc) {
 
 function ensureAlertExists(alertDoc) {
   if (!alertDoc.exists) {
-    throw alertError(
-      "ADMIN_ALERT_NOT_FOUND",
-      "Flood warning not found",
-      404,
-    );
+    throw alertError("ADMIN_ALERT_NOT_FOUND", "Flood warning not found", 404);
   }
 }
 
@@ -240,12 +213,7 @@ function ensureAreaExists(areaDoc) {
   }
 }
 
-async function auditAlertChange(
-  actorId,
-  alertId,
-  action,
-  changedFields,
-) {
+async function auditAlertChange(actorId, alertId, action, changedFields) {
   await logAuditEvent({
     actor: {
       id: actorId,
@@ -267,37 +235,21 @@ async function auditAlertChange(
 async function listFloodAlertsForAdmin(actorId) {
   await authorizeAdmin(actorId);
 
-  const snapshot = await db
-    .collection(FLOOD_ALERTS_COLLECTION)
-    .get();
+  const snapshot = await db.collection(FLOOD_ALERTS_COLLECTION).get();
 
-  return snapshot.docs
-    .map(toClientAlert)
-    .sort((first, second) => {
-      const firstTime = first.startAt
-        ? Date.parse(first.startAt)
-        : 0;
+  return snapshot.docs.map(toClientAlert).sort((first, second) => {
+    const firstTime = first.startAt ? Date.parse(first.startAt) : 0;
 
-      const secondTime = second.startAt
-        ? Date.parse(second.startAt)
-        : 0;
+    const secondTime = second.startAt ? Date.parse(second.startAt) : 0;
 
-      return (
-        secondTime - firstTime ||
-        first.id.localeCompare(second.id)
-      );
-    });
+    return secondTime - firstTime || first.id.localeCompare(second.id);
+  });
 }
 
-async function getFloodAlertDetailForAdmin(
-  actorId,
-  alertId,
-) {
+async function getFloodAlertDetailForAdmin(actorId, alertId) {
   await authorizeAdmin(actorId);
 
-  const normalizedAlertId = normalizeDocumentId(
-    alertId,
-  );
+  const normalizedAlertId = normalizeDocumentId(alertId);
 
   const alertDoc = await db
     .collection(FLOOD_ALERTS_COLLECTION)
@@ -310,26 +262,18 @@ async function getFloodAlertDetailForAdmin(
 }
 
 async function createFloodAlertForAdmin(actorId, body) {
-  const normalizedActorId = normalizeDocumentId(
-    actorId,
-  );
+  const normalizedActorId = normalizeDocumentId(actorId);
 
-  const data = normalizeAlertInput(
-    normalizeBody(body),
-  );
+  const data = normalizeAlertInput(normalizeBody(body));
 
-  const actorRef = db
-    .collection("users")
-    .doc(normalizedActorId);
+  const actorRef = db.collection("users").doc(normalizedActorId);
 
-  const areaRef = db
-    .collection(FLOOD_AREAS_COLLECTION)
-    .doc(data.areaId);
+  const areaRef = db.collection(FLOOD_AREAS_COLLECTION).doc(data.areaId);
 
   // Allocate once, outside the retryable callback.
-  const alertRef = db
-    .collection(FLOOD_ALERTS_COLLECTION)
-    .doc();
+  const alertRef = db.collection(FLOOD_ALERTS_COLLECTION).doc();
+
+  const notificationRevision = randomUUID();
 
   await db.runTransaction(async (transaction) => {
     const actorDoc = await transaction.get(actorRef);
@@ -341,9 +285,19 @@ async function createFloodAlertForAdmin(actorId, body) {
     // All reads are completed before writing.
     transaction.create(alertRef, {
       ...data,
+      notificationRevision,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    stageFloodWarningNotificationEvent(
+      transaction,
+      alertRef.id,
+      notificationRevision,
+      null,
+      data,
+      areaDoc.data(),
+    );
   });
 
   await auditAlertChange(
@@ -359,91 +313,93 @@ async function createFloodAlertForAdmin(actorId, body) {
   return toClientAlert(createdDoc);
 }
 
-async function updateFloodAlertForAdmin(
-  actorId,
-  alertId,
-  body,
-) {
-  const normalizedActorId = normalizeDocumentId(
-    actorId,
-  );
+async function updateFloodAlertForAdmin(actorId, alertId, body) {
+  const normalizedActorId = normalizeDocumentId(actorId);
 
-  const normalizedAlertId = normalizeDocumentId(
-    alertId,
-  );
+  const normalizedAlertId = normalizeDocumentId(alertId);
 
   const input = normalizeBody(body);
 
-  const actorRef = db
-    .collection("users")
-    .doc(normalizedActorId);
+  const actorRef = db.collection("users").doc(normalizedActorId);
 
   const alertRef = db
     .collection(FLOOD_ALERTS_COLLECTION)
     .doc(normalizedAlertId);
 
-  const changedFields = await db.runTransaction(
-    async (transaction) => {
-      const actorDoc = await transaction.get(actorRef);
-      ensureActiveAdmin(actorDoc);
+  const notificationRevision = randomUUID();
 
-      const alertDoc = await transaction.get(alertRef);
-      ensureAlertExists(alertDoc);
+  const changedFields = await db.runTransaction(async (transaction) => {
+    const actorDoc = await transaction.get(actorRef);
+    ensureActiveAdmin(actorDoc);
 
-      const existing = alertDoc.data();
-      const merged = {};
+    const alertDoc = await transaction.get(alertRef);
+    ensureAlertExists(alertDoc);
 
-      for (const field of ALLOWED_ALERT_FIELDS) {
-        if (Object.hasOwn(input, field)) {
-          merged[field] = input[field];
-        } else if (Object.hasOwn(existing, field)) {
-          merged[field] = existing[field];
-        }
+    const existing = alertDoc.data();
+    const merged = {};
+
+    for (const field of ALLOWED_ALERT_FIELDS) {
+      if (Object.hasOwn(input, field)) {
+        merged[field] = input[field];
+      } else if (Object.hasOwn(existing, field)) {
+        merged[field] = existing[field];
       }
+    }
 
-      // Validate the entire result, including the
-      // relationship between startAt and endAt.
-      const normalized = normalizeAlertInput(merged);
+    // Validate the entire result, including the
+    // relationship between startAt and endAt.
+    const normalized = normalizeAlertInput(merged);
 
-      const areaRef = db
-        .collection(FLOOD_AREAS_COLLECTION)
-        .doc(normalized.areaId);
+    const areaRef = db
+      .collection(FLOOD_AREAS_COLLECTION)
+      .doc(normalized.areaId);
 
-      const areaDoc = await transaction.get(areaRef);
-      ensureAreaExists(areaDoc);
+    const areaDoc = await transaction.get(areaRef);
+    ensureAreaExists(areaDoc);
 
-      const changes = {};
+    const changes = {};
 
-      for (const field of Object.keys(input)) {
-        const oldValue = existing[field];
-        const newValue = normalized[field];
+    for (const field of Object.keys(input)) {
+      const oldValue = existing[field];
+      const newValue = normalized[field];
 
-        const equal =
-          oldValue instanceof Timestamp &&
-          newValue instanceof Timestamp
-            ? oldValue.isEqual(newValue)
-            : isDeepStrictEqual(oldValue, newValue);
+      const equal =
+        oldValue instanceof Timestamp && newValue instanceof Timestamp
+          ? oldValue.isEqual(newValue)
+          : isDeepStrictEqual(oldValue, newValue);
 
-        if (!equal) {
-          changes[field] = newValue;
-        }
+      if (!equal) {
+        changes[field] = newValue;
       }
+    }
 
-      const fields = Object.keys(changes);
+    const fields = Object.keys(changes);
 
-      if (fields.length === 0) {
-        return [];
-      }
+    if (fields.length === 0) {
+      return [];
+    }
 
-      // Preserve createdAt and unrelated stored fields.
-      transaction.update(alertRef, {
-        ...changes,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+    // Preserve createdAt and unrelated stored fields.
+    transaction.update(alertRef, {
+      ...changes,
+      notificationRevision,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-      return fields;
-    },
-  );
+    stageFloodWarningNotificationEvent(
+      transaction,
+      normalizedAlertId,
+      notificationRevision,
+      existing,
+      {
+        ...existing,
+        ...normalized,
+      },
+      areaDoc.data(),
+    );
+
+    return fields;
+  });
 
   if (changedFields.length > 0) {
     await auditAlertChange(
