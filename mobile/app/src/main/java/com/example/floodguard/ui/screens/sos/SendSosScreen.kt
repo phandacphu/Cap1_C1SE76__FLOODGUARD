@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
@@ -60,6 +62,8 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 
 
@@ -80,6 +84,9 @@ fun SendSosScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
 
     // CCF-81: Theo dõi vòng đời màn SOS
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -90,6 +97,36 @@ fun SendSosScreen(
                 .isAtLeast(Lifecycle.State.STARTED)
         )
     }
+
+
+    var locationIsExpired by remember {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(
+        uiState.locationTimestampMillis,
+        uiState.isLoadingLocation,
+        isScreenActive
+    ) {
+        locationIsExpired = false
+
+        val timestamp = uiState.locationTimestampMillis
+            ?: return@LaunchedEffect
+
+        if (!isScreenActive || uiState.isLoadingLocation) {
+            return@LaunchedEffect
+        }
+
+        val ageMillis = System.currentTimeMillis() - timestamp
+
+        if (ageMillis < 0L || ageMillis > 30_000L) {
+            locationIsExpired = true
+        } else {
+            delay(30_001L - ageMillis)
+            locationIsExpired = true
+        }
+    }
+
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -258,6 +295,7 @@ fun SendSosScreen(
         }
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -276,6 +314,7 @@ fun SendSosScreen(
             item {
                 SosLocationCard(
                     uiState = uiState,
+                    isExpired = locationIsExpired,
                     onRetry = {
                         gpsRetryKey++
                     },
@@ -288,13 +327,22 @@ fun SendSosScreen(
                         )
                     }
                 )
+                uiState.validationErrors.location?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
 
             item {
                 SosSectionTitle(
                     "LOẠI TÌNH HUỐNG (CHỌN NHIỀU)"
                 )
+
+                uiState.validationErrors.situations?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
+
+
 
             items(SosSituation.entries.toList()) { situation ->
                 SosSituationRow(
@@ -310,6 +358,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "SỐ NGƯỜI CẦN HỖ TRỢ"
                 )
+
+                uiState.validationErrors.peopleCount?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
                 Spacer(Modifier.height(8.dp))
 
                 Row(
@@ -332,6 +384,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "MỨC NƯỚC ƯỚC TÍNH"
                 )
+
+                uiState.validationErrors.waterLevel?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -375,7 +431,36 @@ fun SendSosScreen(
             item {
                 Button(
                     onClick = {
-                        showDemoDialog = true
+                        val isValid = viewModel.validateForm()
+
+                        android.util.Log.d(
+                            "SosValidation",
+                            "SOS button clicked, isValid=$isValid"
+                        )
+
+                        if (isValid) {
+                            showDemoDialog = true
+                        } else {
+                            val errors = viewModel.uiState.value.validationErrors
+                            val situationCount = SosSituation.entries.size
+
+                            val targetIndex = when {
+                                errors.location != null -> 1
+                                errors.situations != null -> 2
+                                errors.peopleCount != null -> 3 + situationCount
+                                errors.waterLevel != null -> 4 + situationCount
+                                else -> 0
+                            }
+
+                            scope.launch {
+                                listState.animateScrollToItem(targetIndex)
+                            }
+                            android.widget.Toast.makeText(
+                                context,
+                                "Thông tin SOS chưa đầy đủ. Vui lòng kiểm tra các mục báo lỗi.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -445,6 +530,7 @@ fun SendSosScreen(
                     OutlinedButton(
                         onClick = {
                             viewModel.resetForm()
+                            gpsRetryKey++
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
@@ -589,6 +675,7 @@ private fun SosEmergencyBanner() {
 @Composable
 private fun SosLocationCard(
     uiState: SendSosUiState,
+    isExpired: Boolean,
     onRetry: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
@@ -625,6 +712,16 @@ private fun SosLocationCard(
             color = SosText,
             fontWeight = FontWeight.Bold
         )
+
+        if (isExpired) {
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "GPS đã quá 30 giây. Vui lòng cập nhật vị trí trước khi gửi SOS.",
+                color = SosPink,
+                fontSize = 12.sp
+            )
+        }
 
         if (
             uiState.latitude != null &&
@@ -677,6 +774,7 @@ private fun SosLocationCard(
             )
         }
 
+
         uiState.locationError?.let { error ->
             Spacer(Modifier.height(8.dp))
 
@@ -686,24 +784,30 @@ private fun SosLocationCard(
                 fontSize = 12.sp
             )
 
-            Spacer(Modifier.height(8.dp))
+            if (error.contains("quyền", ignoreCase = true)) {
+                Spacer(Modifier.height(8.dp))
 
-            if (
-                error.contains("quyền", ignoreCase = true)
-            ) {
                 OutlinedButton(
                     onClick = onRequestPermission
                 ) {
                     Text("Cấp quyền vị trí", color = SosCyan)
                 }
-            } else {
-                OutlinedButton(
-                    onClick = onRetry
-                ) {
-                    Text("Thử lại GPS", color = SosCyan)
-                }
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onRetry,
+            enabled = !uiState.isLoadingLocation,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Cập nhật GPS",
+                color = SosCyan
+            )
+        }
+
     }
 }
 
