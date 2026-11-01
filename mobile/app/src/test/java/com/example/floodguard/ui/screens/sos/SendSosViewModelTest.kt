@@ -503,4 +503,62 @@ class SendSosViewModelTest {
         assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
     }
 
+    @Test
+    fun exactPeopleCount_fourDigitsAreNotTruncated() {
+        val vm = createViewModel()
+
+        fillRequiredFields(vm)
+        vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
+        vm.updateExactPeopleCount("1234")
+        vm.updateLocation(createLocation())
+
+        assertEquals("1234", vm.uiState.value.exactPeopleCount)
+        assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
+        assertTrue(vm.validateForm())
+    }
+
+    @Test
+    fun exactPeopleCount_overIntRangeIsRejected() {
+        val vm = createViewModel()
+
+        fillRequiredFields(vm)
+        vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
+        vm.updateExactPeopleCount("99999999999999999999")
+        vm.updateLocation(createLocation())
+
+        assertEquals(
+            "99999999999999999999",
+            vm.uiState.value.exactPeopleCount
+        )
+        assertNotNull(
+            vm.uiState.value.validationErrors.exactPeopleCount
+        )
+        assertFalse(vm.validateForm())
+    }
+
+    @Test
+    fun submitSos_fourDigitPeopleCountIsPreserved() =
+        runTest(testDispatcher) {
+            var capturedRequest: CreateSosRequest? = null
+
+            val vm = validViewModel({ request ->
+                capturedRequest = request
+                Result.success(
+                    createdSos().copy(
+                        numberOfPeople = request.numberOfPeople
+                    )
+                )
+            })
+
+            vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
+            vm.updateExactPeopleCount("1234")
+
+            assertTrue(vm.validateForm())
+
+            vm.submitSos()
+            runCurrent()
+
+            assertEquals(1234, capturedRequest?.numberOfPeople)
+            assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
+        }
 }

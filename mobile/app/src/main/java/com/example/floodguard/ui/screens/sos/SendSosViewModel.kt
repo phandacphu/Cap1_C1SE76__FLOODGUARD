@@ -96,15 +96,19 @@ class SendSosViewModel(
         }
     }
 
+
     fun updateExactPeopleCount(value: String) {
         _uiState.update { current ->
             if (!canEdit(current)) return@update current
-            val filtered = value.take(3) // Preserve invalid input for validation instead of silently changing it
+
             current.copy(
-                exactPeopleCount = filtered,
+                exactPeopleCount = value,
                 submitError = null,
                 validationErrors = current.validationErrors.copy(
-                    exactPeopleCount = exactPeopleCountError(filtered, current.peopleCount)
+                    exactPeopleCount = exactPeopleCountError(
+                        value,
+                        current.peopleCount
+                    )
                 )
             )
         }
