@@ -189,9 +189,19 @@ dependencies {
         libs.junit
     )
 
+
     testImplementation(
         "org.robolectric:robolectric:4.16"
     )
+
+    testImplementation(
+        "com.squareup.okhttp3:mockwebserver:4.12.0"
+    )
+
+    testImplementation(
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2"
+    )
+
 
     androidTestImplementation(
         platform(

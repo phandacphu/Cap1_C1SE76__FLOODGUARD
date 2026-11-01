@@ -27,17 +27,35 @@ enum class SosWaterLevel(
 }
 
 
+enum class SosUrgency(
+    val apiValue: String,
+    val label: String
+) {
+    LOW("low", "Thấp"),
+    MEDIUM("medium", "Trung bình"),
+    HIGH("high", "Cao"),
+    CRITICAL("critical", "Cực kỳ khẩn cấp")
+}
+
+
+
 data class SosFormErrors(
     val situations: String? = null,
     val peopleCount: String? = null,
     val waterLevel: String? = null,
-    val location: String? = null
+    val location: String? = null,
+    val urgency: String? = null,
+    val exactPeopleCount: String? = null
 ) {
+
     fun hasErrors(): Boolean =
         situations != null ||
                 peopleCount != null ||
                 waterLevel != null ||
-                location != null
+                location != null ||
+                urgency != null ||
+                exactPeopleCount != null
+
 }
 
 
@@ -63,5 +81,16 @@ data class SendSosUiState(
     val locationError: String? = null,
 
     // Nội dung hiển thị cho người dùng
-    val locationText: String = "Chưa xác định vị trí GPS"
+
+    val locationText: String = "Chưa xác định vị trí GPS",
+
+// CCF-83: Thông tin cần thiết để gửi SOS
+    val urgency: SosUrgency? = null,
+    val exactPeopleCount: String = "",
+
+// Trạng thái gửi yêu cầu SOS
+    val isSubmitting: Boolean = false,
+    val submitError: String? = null,
+    val submittedSosId: String? = null
+
 )
