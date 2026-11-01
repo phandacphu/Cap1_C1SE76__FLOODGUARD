@@ -105,6 +105,65 @@ class RescueRequestRepositoryTest {
         assertFalse(body.contains("\"residentId\""))
     }
 
+    private suspend fun assertInvalid201(body: String) {
+        server.enqueue(MockResponse().setResponseCode(201).setBody(body))
+        val result = repository.createSos(sampleRequest())
+        assertTrue("201 must contain a valid SOS ID", result.isFailure)
+        assertTrue(
+            result.exceptionOrNull()?.message.orEmpty()
+                .contains("không hợp lệ", ignoreCase = true)
+        )
+    }
+
+    @Test
+    fun createSos_201MissingBody_isFailure() = runBlocking {
+        assertInvalid201("")
+    }
+
+    @Test
+    fun createSos_201MissingData_isFailure() = runBlocking {
+        assertInvalid201("""{"success":true,"data":null}""")
+    }
+
+    @Test
+    fun createSos_201MissingId_isFailure() = runBlocking {
+        assertInvalid201(
+            """{"success":true,"data":{"rescueRequest":{"status":"submitted"}}}"""
+        )
+    }
+
+    @Test
+    fun createSos_201EmptyId_isFailure() = runBlocking {
+        assertInvalid201(
+            """{"success":true,"data":{"rescueRequest":{"id":""}}}"""
+        )
+    }
+
+    @Test
+    fun createSos_201WhitespaceId_isFailure() = runBlocking {
+        assertInvalid201(
+            """{"success":true,"data":{"rescueRequest":{"id":"   "}}}"""
+        )
+    }
+
+    @Test
+    fun createSos_201MalformedJson_isFailure() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(201).setBody("{not-valid-json")
+        )
+        assertTrue(repository.createSos(sampleRequest()).isFailure)
+    }
+
+    @Test
+    fun createSos_200IsNotCreateSuccess() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"success":true,"data":{"rescueRequest":{"id":"test-sos"}}}"""
+            )
+        )
+        assertTrue(repository.createSos(sampleRequest()).isFailure)
+    }
+
     @Test
     fun createSos_error400() = runBlocking {
         assertHttpError(

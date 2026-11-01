@@ -3,9 +3,23 @@ package com.example.floodguard.ui.screens.sos
 
 import android.location.Location
 import com.example.floodguard.data.remote.api.RescueRequestApi
+import com.example.floodguard.data.remote.dto.rescue.CreateSosRequest
+import com.example.floodguard.data.remote.dto.rescue.CreatedSosDto
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import java.io.IOException
 import com.example.floodguard.data.repository.RescueRequestRepository
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -14,11 +28,27 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
+@OptIn(ExperimentalCoroutinesApi::class)
 class SendSosViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
 
     // CCF-83: Tạo Repository dành riêng cho Unit Test.
     // Không thực hiện request thật trong các bài test validation.
-    private fun createViewModel(): SendSosViewModel {
+    private fun createViewModel(
+        onCreate: (suspend (CreateSosRequest) -> Result<CreatedSosDto>)? = null,
+        nowMillis: () -> Long = System::currentTimeMillis
+    ): SendSosViewModel {
         val retrofit = Retrofit.Builder()
             .baseUrl("http://127.0.0.1:65535/")
             .addConverterFactory(GsonConverterFactory.create())
@@ -30,7 +60,11 @@ class SendSosViewModelTest {
 
         val repository = RescueRequestRepository(api)
 
-        return SendSosViewModel(repository)
+        return if (onCreate == null) {
+            SendSosViewModel(repository, nowMillis = nowMillis)
+        } else {
+            SendSosViewModel(repository, onCreate, nowMillis)
+        }
     }
 
     // Tạo tọa độ GPS giả lập cho Unit Test.
@@ -286,6 +320,187 @@ class SendSosViewModelTest {
         assertNotNull(
             vm.uiState.value.validationErrors.exactPeopleCount
         )
+    }
+
+    private fun validViewModel(
+        onCreate: suspend (CreateSosRequest) -> Result<CreatedSosDto>,
+        nowMillis: () -> Long = System::currentTimeMillis
+    ): SendSosViewModel = createViewModel(onCreate, nowMillis).also { vm ->
+        fillRequiredFields(vm)
+        vm.updateLocation(createLocation(timestamp = nowMillis()))
+        assertTrue(vm.validateForm())
+    }
+
+    private fun createdSos() = CreatedSosDto(
+        id = "test-sos-123",
+        status = "submitted",
+        urgency = "high",
+        numberOfPeople = 1
+    )
+
+    @Test
+    fun exactPeopleCount_errorRemainsUntilValidValue() {
+        val vm = createViewModel()
+        fillRequiredFields(vm)
+        vm.updateExactPeopleCount("0")
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("4")
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("-1")
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("1a")
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("1")
+        assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
+    }
+
+    @Test
+    fun changingPeopleGroup_revalidatesExactCount() {
+        val vm = createViewModel()
+        fillRequiredFields(vm) // ONE, exact = 1
+        vm.selectPeopleCount(SosPeopleCount.TWO_THREE)
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("2")
+        assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
+        vm.selectPeopleCount(SosPeopleCount.ONE)
+        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+    }
+
+    @Test
+    fun submitSos_successAndDuplicateAfterSuccessBlocked() = runTest(testDispatcher) {
+        var calls = 0
+        var received: CreateSosRequest? = null
+        val vm = validViewModel({ request ->
+            calls++
+            received = request
+            Result.success(createdSos())
+        })
+
+        vm.submitSos()
+        assertTrue(vm.uiState.value.isSubmitting)
+        runCurrent()
+        assertFalse(vm.uiState.value.isSubmitting)
+        assertNull(vm.uiState.value.submitError)
+        assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
+        assertEquals(1, calls)
+        assertEquals("high", received?.urgency)
+        assertEquals(1, received?.numberOfPeople)
+
+        vm.submitSos()
+        runCurrent()
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun submitSos_backendErrorKeepsFormAndShowsError() = runTest(testDispatcher) {
+        val vm = validViewModel({
+            Result.failure(IllegalStateException("HTTP 409: SOS đang xử lý"))
+        })
+        vm.submitSos()
+        runCurrent()
+        assertFalse(vm.uiState.value.isSubmitting)
+        assertNull(vm.uiState.value.submittedSosId)
+        assertTrue(vm.uiState.value.submitError.orEmpty().contains("409"))
+        assertEquals("1", vm.uiState.value.exactPeopleCount)
+        assertNotNull(vm.uiState.value.latitude)
+    }
+
+    @Test
+    fun submitSos_networkErrorAndTimeoutKeepForm() = runTest(testDispatcher) {
+        val vm = validViewModel({ throw IOException("timeout: trạng thái chưa xác định") })
+        vm.submitSos()
+        runCurrent()
+        assertFalse(vm.uiState.value.isSubmitting)
+        assertNull(vm.uiState.value.submittedSosId)
+        assertTrue(vm.uiState.value.submitError.orEmpty().contains("timeout"))
+        assertEquals(SosPeopleCount.ONE, vm.uiState.value.peopleCount)
+        assertEquals("1", vm.uiState.value.exactPeopleCount)
+    }
+
+    @Test
+    fun submitSos_blocksDoubleTapWhilePending() = runTest(testDispatcher) {
+        val response = CompletableDeferred<Result<CreatedSosDto>>()
+        var calls = 0
+        val vm = validViewModel({
+            calls++
+            response.await()
+        })
+        vm.submitSos()
+        vm.submitSos()
+        runCurrent()
+        assertTrue(vm.uiState.value.isSubmitting)
+        assertEquals(1, calls)
+
+        response.complete(Result.success(createdSos()))
+        advanceUntilIdle()
+        assertEquals(1, calls)
+        assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
+    }
+
+    @Test
+    fun submitSos_formAndGpsCannotMutateWhileSubmitting() = runTest(testDispatcher) {
+        val response = CompletableDeferred<Result<CreatedSosDto>>()
+        val vm = validViewModel({ response.await() })
+        vm.submitSos()
+        runCurrent()
+        val original = vm.uiState.value
+
+        vm.updateNote("Thay ghi chú")
+        vm.updateExactPeopleCount("999")
+        vm.selectUrgency(SosUrgency.CRITICAL)
+        vm.selectPeopleCount(SosPeopleCount.FOUR_SIX)
+        vm.selectWaterLevel(SosWaterLevel.CHEST)
+        vm.toggleSituation(SosSituation.INJURED)
+        vm.startLocationLoading()
+        vm.setLocationError("GPS đã tắt")
+        vm.updateLocation(createLocation(latitude = 20.0))
+        vm.resetForm()
+
+        assertEquals(original, vm.uiState.value)
+        response.complete(Result.success(createdSos()))
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun submitSos_rechecksGpsAtActualPostTime() = runTest(testDispatcher) {
+        var now = 1_900_000_000_000L
+        var calls = 0
+        val vm = validViewModel({
+            calls++
+            Result.success(createdSos())
+        }, nowMillis = { now })
+
+        vm.submitSos() // First validation passes, coroutine has not run yet.
+        assertTrue(vm.uiState.value.isSubmitting)
+        now += 31_000L
+        runCurrent() // GPS is expired immediately before Repository POST.
+
+        assertEquals(0, calls)
+        assertFalse(vm.uiState.value.isSubmitting)
+        assertNull(vm.uiState.value.submittedSosId)
+        assertNotNull(vm.uiState.value.validationErrors.location)
+        assertTrue(vm.uiState.value.submitError.orEmpty().contains("GPS"))
+    }
+
+    @Test
+    fun submitSos_resetWhileSubmittingDoesNotClearRequest() = runTest(testDispatcher) {
+        val response = CompletableDeferred<Result<CreatedSosDto>>()
+        val vm = validViewModel({ response.await() })
+        vm.submitSos()
+        runCurrent()
+        vm.resetForm()
+        assertTrue(vm.uiState.value.isSubmitting)
+        assertEquals("1", vm.uiState.value.exactPeopleCount)
+
+        response.complete(Result.success(createdSos()))
+        advanceUntilIdle()
+        vm.resetForm()
+        assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
     }
 
 }

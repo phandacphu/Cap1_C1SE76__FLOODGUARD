@@ -87,6 +87,7 @@ fun SendSosScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val formEnabled = !uiState.isSubmitting && uiState.submittedSosId == null
 
 
     // CCF-81: Theo dõi vòng đời màn SOS
@@ -171,7 +172,9 @@ fun SendSosScreen(
                         permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
 
             if (granted) {
-                gpsRetryKey++
+                if (!viewModel.uiState.value.isSubmitting &&
+                    viewModel.uiState.value.submittedSosId == null
+                ) gpsRetryKey++
             } else {
                 viewModel.setLocationError(
                     "Chưa được cấp quyền truy cập vị trí."
@@ -181,6 +184,9 @@ fun SendSosScreen(
 
 
     LaunchedEffect(gpsRetryKey, isScreenActive) {
+        if (viewModel.uiState.value.isSubmitting ||
+            viewModel.uiState.value.submittedSosId != null
+        ) return@LaunchedEffect
 
         if (!isScreenActive) {
             // Xóa vị trí cũ khi ứng dụng không còn hoạt động.
@@ -320,11 +326,12 @@ fun SendSosScreen(
                 SosLocationCard(
                     uiState = uiState,
                     isExpired = locationIsExpired,
+                    enabled = formEnabled,
                     onRetry = {
-                        gpsRetryKey++
+                        if (formEnabled) gpsRetryKey++
                     },
                     onRequestPermission = {
-                        permissionLauncher.launch(
+                        if (formEnabled) permissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_COARSE_LOCATION
@@ -353,6 +360,7 @@ fun SendSosScreen(
                 SosSituationRow(
                     situation = situation,
                     selected = situation in uiState.selectedSituations,
+                    enabled = formEnabled,
                     onClick = {
                         viewModel.toggleSituation(situation)
                     }
@@ -377,6 +385,7 @@ fun SendSosScreen(
                             text = count.label,
                             selected = uiState.peopleCount == count,
                             modifier = Modifier.weight(1f),
+                            enabled = formEnabled,
                             onClick = {
                                 viewModel.selectPeopleCount(count)
                             }
@@ -407,6 +416,7 @@ fun SendSosScreen(
                             keyboardType = KeyboardType.Number
                         ),
                         singleLine = true,
+                        enabled = formEnabled,
                         isError = uiState.validationErrors.exactPeopleCount != null,
                         modifier = Modifier.fillMaxWidth(),
 
@@ -463,6 +473,7 @@ fun SendSosScreen(
                                     level = level,
                                     selected = uiState.waterLevel == level,
                                     modifier = Modifier.weight(1f),
+                                    enabled = formEnabled,
                                     onClick = {
                                         viewModel.selectWaterLevel(level)
                                     }
@@ -492,7 +503,7 @@ fun SendSosScreen(
                                         SosCard
                                     }
                                 )
-                                .clickable {
+                                .clickable(enabled = formEnabled) {
                                     viewModel.selectUrgency(urgency)
                                 }
                                 .padding(8.dp),
@@ -500,6 +511,7 @@ fun SendSosScreen(
                         ) {
                             RadioButton(
                                 selected = uiState.urgency == urgency,
+                                enabled = formEnabled,
                                 onClick = {
                                     viewModel.selectUrgency(urgency)
                                 }
@@ -532,6 +544,7 @@ fun SendSosScreen(
 
                 SosNoteField(
                     note = uiState.note,
+                    enabled = formEnabled,
                     onNoteChange = viewModel::updateNote
                 )
             }
@@ -692,9 +705,12 @@ fun SendSosScreen(
 
                     OutlinedButton(
                         onClick = {
-                            viewModel.resetForm()
-                            gpsRetryKey++
+                            if (formEnabled) {
+                                viewModel.resetForm()
+                                gpsRetryKey++
+                            }
                         },
+                        enabled = formEnabled,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -878,6 +894,7 @@ private fun SosEmergencyBanner() {
 private fun SosLocationCard(
     uiState: SendSosUiState,
     isExpired: Boolean,
+    enabled: Boolean,
     onRetry: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
@@ -990,7 +1007,8 @@ private fun SosLocationCard(
                 Spacer(Modifier.height(8.dp))
 
                 OutlinedButton(
-                    onClick = onRequestPermission
+                    onClick = onRequestPermission,
+                    enabled = enabled
                 ) {
                     Text("Cấp quyền vị trí", color = SosCyan)
                 }
@@ -1001,7 +1019,7 @@ private fun SosLocationCard(
 
         OutlinedButton(
             onClick = onRetry,
-            enabled = !uiState.isLoadingLocation,
+            enabled = enabled && !uiState.isLoadingLocation,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
@@ -1029,6 +1047,7 @@ private fun SosSectionTitle(title: String) {
 private fun SosSituationRow(
     situation: SosSituation,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Row(
@@ -1038,7 +1057,7 @@ private fun SosSituationRow(
             .background(
                 if (selected) SosCardSelected else SosCard
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1078,6 +1097,7 @@ private fun SosChoiceChip(
     text: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Box(
@@ -1087,7 +1107,7 @@ private fun SosChoiceChip(
             .background(
                 if (selected) SosCyan else SosCard
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -1104,6 +1124,7 @@ private fun SosWaterLevelCard(
     level: SosWaterLevel,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val accent = if (level == SosWaterLevel.DANGEROUS) {
@@ -1119,7 +1140,7 @@ private fun SosWaterLevelCard(
             .background(
                 if (selected) SosCardSelected else SosCard
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
@@ -1165,6 +1186,7 @@ private fun SosWaterLevelCard(
 @Composable
 private fun SosNoteField(
     note: String,
+    enabled: Boolean,
     onNoteChange: (String) -> Unit
 ) {
     Column(
@@ -1176,6 +1198,7 @@ private fun SosNoteField(
     ) {
         OutlinedTextField(
             value = note,
+            enabled = enabled,
             onValueChange = { newValue ->
                 onNoteChange(newValue.take(200))
             },
