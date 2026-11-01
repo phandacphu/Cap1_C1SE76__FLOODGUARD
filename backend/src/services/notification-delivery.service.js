@@ -84,7 +84,7 @@ async function deliverNotification(notificationId, provider = null) {
 
     const data = snapshot.data();
 
-    // TEST 3: A sent notification must not be sent again.
+    // A sent notification must not be sent again.
     if (data.deliveryStatus === "sent") {
       return {
         claimed: false,
@@ -92,8 +92,11 @@ async function deliverNotification(notificationId, provider = null) {
       };
     }
 
-    // TEST 11: Never resend if the previous outcome is unknown.
-    if (data.deliveryOutcomeUnknown === true) {
+    // Never resend if the previous outcome is unknown.
+    if (
+      data.deliveryOutcomeUnknown === true ||
+      data.deliveryRequiresReconciliation === true
+    ) {
       return {
         claimed: false,
         code: "NOTIFICATION_OUTCOME_UNKNOWN",
@@ -113,11 +116,32 @@ async function deliverNotification(notificationId, provider = null) {
         ? data.retryCount
         : 0;
 
-    // Stop after reaching the maximum retry attempts.
+    // Stop after reaching the maximum attempts.
+    // Also mark older exhausted notifications as final failures.
     if (failureCount >= MAX_DELIVERY_ATTEMPTS) {
+      if (data.deliveryFinalFailure !== true) {
+        transaction.update(notificationRef, {
+          deliveryStatus: "failed",
+          deliveryFinalFailure: true,
+          deliveryFinalFailureReason: "attempts_exhausted",
+          deliveryFailedAt: FieldValue.serverTimestamp(),
+          nextRetryAt: null,
+        });
+      }
+
       return {
         claimed: false,
         code: "NOTIFICATION_MAX_ATTEMPTS",
+      };
+    }
+
+    if (
+      data.deliveryFinalFailure === true ||
+      data.deliveryFailureType === "permanent"
+    ) {
+      return {
+        claimed: false,
+        code: "NOTIFICATION_FINAL_FAILURE",
       };
     }
 
@@ -148,6 +172,11 @@ async function deliverNotification(notificationId, provider = null) {
       transaction.update(notificationRef, {
         deliveryStatus: "failed",
         deliveryOutcomeUnknown: true,
+        deliveryRequiresReconciliation: true,
+        deliveryFailureType: "unknown",
+        deliveryFinalFailure: false,
+        deliveryFinalFailureReason: null,
+        lastDeliveryCode: "NOTIFICATION_OUTCOME_UNKNOWN",
         nextRetryAt: null,
         deliveryLeaseId: null,
         deliveryLeaseUntil: null,
@@ -194,7 +223,6 @@ async function deliverNotification(notificationId, provider = null) {
   }
 
   // 5. Send outside the Firestore Transaction.
-  // The transport handles provider errors and timeouts.
   const sendResult = await sendNotificationViaTransport(
     claim.notification,
     provider,
@@ -220,34 +248,60 @@ async function deliverNotification(notificationId, provider = null) {
       // CASE A: Provider confirmed acceptance.
       changes.deliveryStatus = "sent";
       changes.deliveryOutcomeUnknown = false;
+      changes.deliveryRequiresReconciliation = false;
+      changes.deliveryFailureType = null;
+      changes.deliveryFinalFailure = false;
+      changes.deliveryFinalFailureReason = null;
+      changes.deliveryFailedAt = null;
+      changes.lastDeliveryCode = "PROVIDER_ACCEPTED";
       changes.nextRetryAt = null;
     } else if (sendResult.outcomeUnknown === true) {
-      // CASE B: Timeout - provider may have accepted the push.
-      // Do not schedule an automatic retry.
+      // CASE B: Provider may have accepted the notification.
+      // Stop automatic retries and require reconciliation.
       changes.deliveryStatus = "failed";
       changes.deliveryOutcomeUnknown = true;
+      changes.deliveryRequiresReconciliation = true;
+      changes.deliveryFailureType = "unknown";
+      changes.deliveryFinalFailure = false;
+      changes.deliveryFinalFailureReason = null;
       changes.retryCount = claim.failureCount + 1;
       changes.nextRetryAt = null;
     } else if (sendResult.attempted) {
-      // CASE C: Known failure - schedule retry with backoff.
+      // CASE C: A definite failure.
       const failureCount = claim.failureCount + 1;
+      const permanent = sendResult.failureType === "permanent";
+      const exhausted = failureCount >= MAX_DELIVERY_ATTEMPTS;
+      const finalFailure = permanent || exhausted;
 
       changes.deliveryStatus = "failed";
       changes.deliveryOutcomeUnknown = false;
+      changes.deliveryRequiresReconciliation = false;
+      changes.deliveryFailureType = permanent ? "permanent" : "transient";
+      changes.deliveryFinalFailure = finalFailure;
+      changes.deliveryFinalFailureReason = permanent
+        ? "permanent_error"
+        : exhausted
+          ? "attempts_exhausted"
+          : null;
+      changes.deliveryFailedAt = finalFailure
+        ? FieldValue.serverTimestamp()
+        : null;
       changes.retryCount = failureCount;
 
-      changes.nextRetryAt =
-        failureCount >= MAX_DELIVERY_ATTEMPTS
-          ? null
-          : Timestamp.fromMillis(Date.now() + getRetryDelayMs(failureCount));
+      changes.nextRetryAt = finalFailure
+        ? null
+        : Timestamp.fromMillis(Date.now() + getRetryDelayMs(failureCount));
     }
 
     if (changes.deliveryStatus) {
       const providerResponseCode = sendResult.accepted
         ? "PROVIDER_ACCEPTED"
-        : sendResult.code === TRANSPORT_TIMEOUT
-          ? "NOTIFICATION_TRANSPORT_TIMEOUT"
-          : "NOTIFICATION_TRANSPORT_SEND_FAILED";
+        : (sendResult.providerResponseCode ??
+          (sendResult.code === TRANSPORT_TIMEOUT
+            ? "NOTIFICATION_TRANSPORT_TIMEOUT"
+            : "NOTIFICATION_TRANSPORT_SEND_FAILED"));
+
+      changes.lastDeliveryCode = providerResponseCode;
 
       stageNotificationDeliveryLog(
         transaction,
@@ -269,6 +323,14 @@ async function deliverNotification(notificationId, provider = null) {
       persisted: true,
       deliveryStatus: changes.deliveryStatus ?? snapshot.data().deliveryStatus,
       retryCount: changes.retryCount ?? snapshot.data().retryCount,
+      finalFailure:
+        changes.deliveryFinalFailure ??
+        snapshot.data().deliveryFinalFailure ??
+        false,
+      requiresReconciliation:
+        changes.deliveryRequiresReconciliation ??
+        snapshot.data().deliveryRequiresReconciliation ??
+        false,
     };
   });
 
