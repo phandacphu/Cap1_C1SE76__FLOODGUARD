@@ -8,6 +8,10 @@ const {
 
 const { buildEventNotificationId } = require("./notification-trigger.service");
 
+const {
+  stageNotificationDeliveryLog,
+} = require("./notification-delivery-log.service");
+
 const STATUS_EVENTS = {
   received: {
     previousStatus: "submitted",
@@ -137,6 +141,18 @@ function stageSosStatusNotification(transaction, prepared) {
     lastAttemptAt: null,
     nextRetryAt: null,
   });
+
+  stageNotificationDeliveryLog(
+    transaction,
+    {
+      notificationId: prepared.notificationRef.id,
+      eventId: prepared.data.eventId,
+      status: "queued",
+      retryCount: 0,
+      providerResponseCode: "LOCAL_QUEUED",
+    },
+    "queued",
+  );
 }
 
 module.exports = {

@@ -9,6 +9,10 @@ const {
 const { buildEventNotificationId } = require("./notification-trigger.service");
 
 const {
+  stageNotificationDeliveryLog,
+} = require("./notification-delivery-log.service");
+
+const {
   SUBSCRIPTIONS_COLLECTION,
   buildSubscriptionId,
 } = require("./flood-warning-subscription.service");
@@ -195,6 +199,18 @@ async function createFloodWarningNotificationForRecipient(
       lastAttemptAt: null,
       nextRetryAt: null,
     });
+
+    stageNotificationDeliveryLog(
+      transaction,
+      {
+        notificationId,
+        eventId: notificationEventId,
+        status: "queued",
+        retryCount: 0,
+        providerResponseCode: "LOCAL_QUEUED",
+      },
+      "queued",
+    );
 
     return {
       created: true,

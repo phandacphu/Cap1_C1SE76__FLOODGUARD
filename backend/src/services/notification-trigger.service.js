@@ -1,12 +1,16 @@
-
 const { createHash } = require("node:crypto");
 const { FieldValue } = require("firebase-admin/firestore");
+
 const { db } = require("../config/firebase");
 
 const {
   NOTIFICATIONS_COLLECTION,
   normalizeNotificationData,
 } = require("./notification.service");
+
+const {
+  stageNotificationDeliveryLog,
+} = require("./notification-delivery-log.service");
 
 function normalizeEventId(eventId) {
   if (
@@ -44,18 +48,17 @@ async function triggerNotification(input) {
   const eventId = normalizeEventId(input.eventId);
   const data = normalizeNotificationData(input);
 
-  const notificationId = buildEventNotificationId(
-    eventId,
-    data.recipientId,
-  );
+  const notificationId = buildEventNotificationId(eventId, data.recipientId);
 
   const notificationRef = db
     .collection(NOTIFICATIONS_COLLECTION)
     .doc(notificationId);
 
   try {
-    // Atomic create: fails if the document already exists.
-    await notificationRef.create({
+    // Create notification and queued log atomically.
+    const batch = db.batch();
+
+    batch.create(notificationRef, {
       ...data,
       eventId,
       createdAt: FieldValue.serverTimestamp(),
@@ -65,6 +68,20 @@ async function triggerNotification(input) {
       lastAttemptAt: null,
       nextRetryAt: null,
     });
+
+    stageNotificationDeliveryLog(
+      batch,
+      {
+        notificationId,
+        eventId,
+        status: "queued",
+        retryCount: 0,
+        providerResponseCode: "LOCAL_QUEUED",
+      },
+      "queued",
+    );
+
+    await batch.commit();
 
     const savedDoc = await notificationRef.get();
 

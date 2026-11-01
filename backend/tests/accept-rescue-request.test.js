@@ -421,18 +421,37 @@ async function runTests() {
 
     assert.equal(assignment.updatedAt, assignment.assignedAt);
 
-    // Audit is separate from the four atomic SOS writes.
-    assert.equal(lastWrites.length, 4);
+    // Audit is separate from the five atomic SOS writes.
+    assert.equal(lastWrites.length, 5);
 
     assert.deepEqual(
       lastWrites.map((write) => write.ref.collectionName).sort(),
       [
+        "notification_delivery_logs",
         "notifications",
         "rescue_assignments",
         "rescue_request_status_history",
         "rescue_requests",
       ],
     );
+
+    const queuedLog = lastWrites.find(
+      (write) => write.ref.collectionName === "notification_delivery_logs",
+    ).data;
+
+    const notificationWrite = lastWrites.find(
+      (write) => write.ref.collectionName === "notifications",
+    );
+
+    assert.equal(queuedLog.notificationId, notificationWrite.ref.id);
+    assert.equal(queuedLog.eventId, notificationWrite.data.eventId);
+    assert.equal(queuedLog.status, "queued");
+    assert.equal(queuedLog.providerResponseCode, "LOCAL_QUEUED");
+    assert.equal(queuedLog.retryCount, 0);
+    assert.ok(queuedLog.correlationId);
+    assert.equal(Object.hasOwn(queuedLog, "body"), false);
+    assert.equal(Object.hasOwn(queuedLog, "recipientId"), false);
+
     const history = historyFor("request-1");
 
     assert.equal(history.length, 1);

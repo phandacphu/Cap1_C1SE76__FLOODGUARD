@@ -1,18 +1,26 @@
-
 const assert = require("node:assert/strict");
 
 // Mock Firestore in memory. No real Firebase connection.
 const store = new Map();
 let failNextCreate = false;
 
+const logStore = new Map();
+
+function getCollectionStore(name) {
+  assert.ok(name === "notifications" || name === "notification_delivery_logs");
+
+  return name === "notifications" ? store : logStore;
+}
+
 const mockDb = {
   collection(name) {
-    assert.equal(name, "notifications");
+    const collectionStore = getCollectionStore(name);
 
     return {
       doc(id) {
         return {
           id,
+          collectionName: name,
 
           async create(data) {
             if (failNextCreate) {
@@ -20,17 +28,17 @@ const mockDb = {
               throw new Error("MOCK_FIRESTORE_UNAVAILABLE");
             }
 
-            if (store.has(id)) {
+            if (collectionStore.has(id)) {
               const error = new Error("Document already exists");
               error.code = 6;
               throw error;
             }
 
-            store.set(id, { ...data });
+            collectionStore.set(id, { ...data });
           },
 
           async get() {
-            const data = store.get(id);
+            const data = collectionStore.get(id);
 
             return {
               id,
@@ -39,6 +47,44 @@ const mockDb = {
             };
           },
         };
+      },
+    };
+  },
+
+  batch() {
+    const writes = [];
+
+    return {
+      create(ref, data) {
+        writes.push({ ref, data });
+        return this;
+      },
+
+      async commit() {
+        if (failNextCreate) {
+          failNextCreate = false;
+          throw new Error("MOCK_FIRESTORE_UNAVAILABLE");
+        }
+
+        // Validate every write before changing either collection.
+        const seen = new Set();
+
+        for (const { ref } of writes) {
+          const collectionStore = getCollectionStore(ref.collectionName);
+          const key = `${ref.collectionName}/${ref.id}`;
+
+          if (collectionStore.has(ref.id) || seen.has(key)) {
+            const error = new Error("Document already exists");
+            error.code = 6;
+            throw error;
+          }
+
+          seen.add(key);
+        }
+
+        for (const { ref, data } of writes) {
+          getCollectionStore(ref.collectionName).set(ref.id, { ...data });
+        }
       },
     };
   },
@@ -98,10 +144,7 @@ async function runTests() {
   });
 
   assert.equal(anotherRecipient.created, true);
-  assert.notEqual(
-    anotherRecipient.notification.id,
-    first.notification.id,
-  );
+  assert.notEqual(anotherRecipient.notification.id, first.notification.id);
   assert.equal(store.size, 2);
 
   console.log("PASS 3: Different recipient");
@@ -117,10 +160,7 @@ async function runTests() {
     triggerNotification(concurrentInput),
   ]);
 
-  assert.equal(
-    results.filter((result) => result.created).length,
-    1,
-  );
+  assert.equal(results.filter((result) => result.created).length, 1);
   assert.equal(results[0].notification.id, results[1].notification.id);
   assert.equal(store.size, 3);
 
@@ -154,7 +194,72 @@ async function runTests() {
 
   console.log("PASS 6: Firestore failure handling");
 
-  console.log("All 6 Notification Trigger mock tests passed");
+  // TEST 7: Each created notification has exactly one queued log.
+  assert.equal(logStore.size, store.size);
+
+  for (const [notificationId, notification] of store) {
+    const matchingLogs = [...logStore.values()].filter(
+      (log) => log.notificationId === notificationId,
+    );
+
+    assert.equal(matchingLogs.length, 1);
+
+    const log = matchingLogs[0];
+
+    assert.equal(log.status, "queued");
+    assert.equal(log.eventId, notification.eventId);
+    assert.equal(log.retryCount, 0);
+    assert.equal(log.providerResponseCode, "LOCAL_QUEUED");
+    assert.ok(log.correlationId);
+    assert.ok(log.timestamp);
+    assert.equal(Object.hasOwn(log, "title"), false);
+    assert.equal(Object.hasOwn(log, "body"), false);
+    assert.equal(Object.hasOwn(log, "recipientId"), false);
+  }
+
+  console.log("PASS 7: One safe queued log per notification");
+
+  // TEST 8: Log conflict must not leave a notification without its log.
+  const {
+    buildNotificationDeliveryLogId,
+  } = require("../src/services/notification-delivery-log.service");
+
+  const {
+    buildEventNotificationId,
+  } = require("../src/services/notification-trigger.service");
+
+  const conflictInput = {
+    ...sample,
+    eventId: "sos:log-conflict:received",
+  };
+
+  const conflictNotificationId = buildEventNotificationId(
+    conflictInput.eventId,
+    conflictInput.recipientId,
+  );
+
+  const conflictLogId = buildNotificationDeliveryLogId(
+    conflictNotificationId,
+    "queued",
+  );
+
+  logStore.set(conflictLogId, { marker: "existing-log" });
+
+  try {
+    await assert.rejects(
+      triggerNotification(conflictInput),
+      (error) => error.code === 6,
+    );
+
+    assert.equal(store.has(conflictNotificationId), false);
+    assert.deepEqual(logStore.get(conflictLogId), { marker: "existing-log" });
+  } finally {
+    logStore.delete(conflictLogId);
+  }
+
+  console.log("PASS 8: Log conflict prevents partial notification creation");
+
+  console.log("All 8 Notification Trigger mock tests passed");
 }
 
 runTests().catch((error) => {
