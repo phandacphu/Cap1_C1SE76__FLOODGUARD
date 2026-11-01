@@ -6,6 +6,7 @@ import { homePathForRole } from './api/authApi';
 import { Login } from './pages/Login';
 import { Unauthorized } from './pages/Unauthorized';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
+import FloodAreaManagementScreen from './pages/admin/flood-area/FloodAreaManagementScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -35,6 +36,7 @@ export const App: React.FC = () => {
           {/* Only Admin may open the admin screens */}
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
