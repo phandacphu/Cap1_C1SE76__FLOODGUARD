@@ -1,12 +1,12 @@
+const {
+  classifyNotificationDeliveryError,
+} = require("./notification-failure-policy.service");
 
-const TRANSPORT_NOT_CONFIGURED =
-  "NOTIFICATION_TRANSPORT_NOT_CONFIGURED";
+const TRANSPORT_NOT_CONFIGURED = "NOTIFICATION_TRANSPORT_NOT_CONFIGURED";
 
-const TRANSPORT_SEND_FAILED =
-  "NOTIFICATION_TRANSPORT_SEND_FAILED";
+const TRANSPORT_SEND_FAILED = "NOTIFICATION_TRANSPORT_SEND_FAILED";
 
-const TRANSPORT_TIMEOUT =
-  "NOTIFICATION_TRANSPORT_TIMEOUT";
+const TRANSPORT_TIMEOUT = "NOTIFICATION_TRANSPORT_TIMEOUT";
 
 const DEFAULT_TRANSPORT_TIMEOUT_MS = 10000;
 
@@ -34,21 +34,13 @@ async function sendNotificationViaTransport(
     };
   }
 
-  if (
-    typeof provider !== "object" ||
-    typeof provider.send !== "function"
-  ) {
+  if (typeof provider !== "object" || typeof provider.send !== "function") {
     throw new Error("Invalid notification transport provider");
   }
 
-  const timeoutMs =
-    options?.timeoutMs ?? DEFAULT_TRANSPORT_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TRANSPORT_TIMEOUT_MS;
 
-  if (
-    !Number.isInteger(timeoutMs) ||
-    timeoutMs < 1 ||
-    timeoutMs > 60000
-  ) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) {
     throw new Error("Invalid notification transport timeout");
   }
 
@@ -56,6 +48,19 @@ async function sendNotificationViaTransport(
   const timeoutMarker = Symbol("transport_timeout");
 
   let timeoutId;
+  let timedOut = false;
+
+  function timeoutResult() {
+    return {
+      attempted: true,
+      accepted: false,
+      code: TRANSPORT_TIMEOUT,
+      failureType: "unknown",
+      retryable: false,
+      providerResponseCode: TRANSPORT_TIMEOUT,
+      outcomeUnknown: true,
+    };
+  }
 
   try {
     const sendPromise = Promise.resolve().then(() =>
@@ -66,39 +71,39 @@ async function sendNotificationViaTransport(
 
     const timeoutPromise = new Promise((resolve) => {
       timeoutId = setTimeout(() => {
-        controller.abort();
+        timedOut = true;
+
+        // Settle the timeout before aborting the provider.
+        // An abort rejection must not turn this into a retryable failure.
         resolve(timeoutMarker);
+        controller.abort();
       }, timeoutMs);
     });
 
-    const result = await Promise.race([
-      sendPromise,
-      timeoutPromise,
-    ]);
+    const result = await Promise.race([sendPromise, timeoutPromise]);
 
-    if (result === timeoutMarker) {
-      return {
-        attempted: true,
-        accepted: false,
-        code: TRANSPORT_TIMEOUT,
-
-        // The provider might have accepted the request.
-        outcomeUnknown: true,
-      };
+    if (result === timeoutMarker || timedOut) {
+      return timeoutResult();
     }
 
     return {
       attempted: true,
       accepted: true,
-      providerMessageId:
-        typeof result === "string" ? result : null,
+      providerMessageId: typeof result === "string" ? result : null,
     };
-  } catch {
-    // Never expose provider errors or credentials.
+  } catch (error) {
+    if (timedOut) {
+      return timeoutResult();
+    }
+
+    // Return only fixed policy fields; never expose raw provider errors.
+    const classification = classifyNotificationDeliveryError(error);
+
     return {
       attempted: true,
       accepted: false,
       code: TRANSPORT_SEND_FAILED,
+      ...classification,
     };
   } finally {
     clearTimeout(timeoutId);

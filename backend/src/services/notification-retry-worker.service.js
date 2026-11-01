@@ -1,9 +1,7 @@
 const { db } = require("../config/firebase");
 const { Timestamp } = require("firebase-admin/firestore");
 
-const {
-  NOTIFICATIONS_COLLECTION,
-} = require("./notification.service");
+const { NOTIFICATIONS_COLLECTION } = require("./notification.service");
 
 const {
   deliverNotification,
@@ -35,10 +33,7 @@ async function findUnlockedCandidates(
     candidates.length < batchSize &&
     scanned < MAX_SCAN_DOCUMENTS_PER_QUERY
   ) {
-    const limit = Math.min(
-      pageSize,
-      MAX_SCAN_DOCUMENTS_PER_QUERY - scanned,
-    );
+    const limit = Math.min(pageSize, MAX_SCAN_DOCUMENTS_PER_QUERY - scanned);
 
     let query = baseQuery.limit(limit);
 
@@ -68,16 +63,20 @@ async function findUnlockedCandidates(
         continue;
       }
 
-      // Do not retry notifications with an unknown
-      // provider delivery outcome.
-      if (data.deliveryOutcomeUnknown === true) {
+      // Do not retry unknown outcomes, notifications requiring
+      // reconciliation, or notifications with a final failure.
+      if (
+        data.deliveryOutcomeUnknown === true ||
+        data.deliveryRequiresReconciliation === true ||
+        data.deliveryFinalFailure === true ||
+        data.deliveryFailureType === "permanent"
+      ) {
         continue;
       }
 
       // Skip notifications that already reached the retry limit.
       const failureCount =
-        Number.isInteger(data.retryCount) &&
-        data.retryCount >= 0
+        Number.isInteger(data.retryCount) && data.retryCount >= 0
           ? data.retryCount
           : 0;
 
@@ -85,8 +84,7 @@ async function findUnlockedCandidates(
         continue;
       }
 
-      const leaseUntil =
-        data.deliveryLeaseUntil?.toMillis?.() ?? 0;
+      const leaseUntil = data.deliveryLeaseUntil?.toMillis?.() ?? 0;
 
       if (leaseUntil > nowMs) {
         continue;
@@ -101,10 +99,7 @@ async function findUnlockedCandidates(
 
     // Restart from the beginning after examining the final page.
     // Otherwise, the next batch continues from the saved cursor.
-    if (
-      examined === snapshot.size &&
-      snapshot.size < limit
-    ) {
+    if (examined === snapshot.size && snapshot.size < limit) {
       scanCursors[scanKey] = null;
       break;
     }
@@ -117,11 +112,7 @@ async function runNotificationRetryBatch(
   provider = null,
   batchSize = DEFAULT_BATCH_SIZE,
 ) {
-  if (
-    !Number.isInteger(batchSize) ||
-    batchSize < 1 ||
-    batchSize > 100
-  ) {
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100) {
     throw new Error("Invalid notification batch size");
   }
 
@@ -136,16 +127,11 @@ async function runNotificationRetryBatch(
     };
   }
 
-  if (
-    typeof provider !== "object" ||
-    typeof provider.send !== "function"
-  ) {
+  if (typeof provider !== "object" || typeof provider.send !== "function") {
     throw new Error("Invalid notification transport provider");
   }
 
-  const collection = db.collection(
-    NOTIFICATIONS_COLLECTION,
-  );
+  const collection = db.collection(NOTIFICATIONS_COLLECTION);
 
   const now = Timestamp.now();
 
@@ -181,11 +167,7 @@ async function runNotificationRetryBatch(
     }
 
     for (const doc of candidates) {
-      if (
-        doc &&
-        !seen.has(doc.id) &&
-        selected.length < batchSize
-      ) {
+      if (doc && !seen.has(doc.id) && selected.length < batchSize) {
         seen.add(doc.id);
         selected.push(doc);
       }
@@ -202,10 +184,7 @@ async function runNotificationRetryBatch(
   // Process sequentially to limit outgoing requests.
   for (const doc of selected) {
     try {
-      const result = await deliverNotification(
-        doc.id,
-        provider,
-      );
+      const result = await deliverNotification(doc.id, provider);
 
       if (!result.attempted) {
         summary.skipped++;
@@ -222,9 +201,7 @@ async function runNotificationRetryBatch(
     } catch {
       // Do not expose credentials or raw provider errors.
       summary.failed++;
-      console.warn(
-        "[NotificationRetryWorker] DELIVERY_PROCESSING_FAILED",
-      );
+      console.warn("[NotificationRetryWorker] DELIVERY_PROCESSING_FAILED");
     }
   }
 
