@@ -7,6 +7,7 @@ const app = express();
 
 const authRoutes = require("./routes/auth.routes");
 const floodAreaRoutes = require("./routes/flood-area.routes");
+const floodHistoryRoutes = require("./routes/flood-history.routes");
 const floodAlertRoutes = require("./routes/flood-alert.routes");
 const safeLocationRoutes = require(
   "./routes/safe-location.routes",
@@ -49,6 +50,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/flood-areas", floodAreaRoutes);
+app.use("/api/flood-history", floodHistoryRoutes);
 app.use("/api/flood-alerts", floodAlertRoutes);
 app.use("/api/flood-forecast", floodForecastRoutes);
 app.use("/api/safe-locations", safeLocationRoutes);
