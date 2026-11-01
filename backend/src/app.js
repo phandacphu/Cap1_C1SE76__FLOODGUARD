@@ -18,6 +18,7 @@ const adminFloodAlertRoutes = require("./routes/admin-flood-alert.routes");
 const adminSafeLocationRoutes = require("./routes/admin-safe-location.routes");
 const adminSosMonitoringRoutes = require("./routes/admin-sos-monitoring.routes");
 const floodWarningSubscriptionRoutes = require("./routes/flood-warning-subscription.routes");
+const adminNotificationLogRoutes = require("./routes/admin-notification-log.routes");
 
 // Middleware
 app.use(helmet());
@@ -46,4 +47,5 @@ app.use("/api/admin/flood-alerts", adminFloodAlertRoutes);
 app.use("/api/admin/safe-locations", adminSafeLocationRoutes);
 app.use("/api/admin/rescue-requests", adminSosMonitoringRoutes);
 app.use("/api/flood-warning-subscriptions", floodWarningSubscriptionRoutes);
+app.use("/api/admin/notification-logs", adminNotificationLogRoutes);
 module.exports = app;
