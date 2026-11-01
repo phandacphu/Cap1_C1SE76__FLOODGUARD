@@ -189,6 +189,10 @@ dependencies {
         libs.junit
     )
 
+    testImplementation(
+        "org.robolectric:robolectric:4.16"
+    )
+
     androidTestImplementation(
         platform(
             libs.androidx.compose.bom

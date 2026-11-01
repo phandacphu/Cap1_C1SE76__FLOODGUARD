@@ -32,8 +32,7 @@ class SendSosViewModel : ViewModel() {
     // Chọn hoặc bỏ chọn tình huống cứu hộ
     fun toggleSituation(situation: SosSituation) {
         _uiState.update { current ->
-            val updatedSituations =
-                current.selectedSituations.toMutableSet()
+            val updatedSituations = current.selectedSituations.toMutableSet()
 
             if (situation in updatedSituations) {
                 updatedSituations.remove(situation)
@@ -42,7 +41,11 @@ class SendSosViewModel : ViewModel() {
             }
 
             current.copy(
-                selectedSituations = updatedSituations
+                selectedSituations = updatedSituations,
+                validationErrors = current.validationErrors.copy(
+                    situations = if (updatedSituations.isNotEmpty()) null
+                    else current.validationErrors.situations
+                )
             )
         }
     }
@@ -50,14 +53,24 @@ class SendSosViewModel : ViewModel() {
     // Chọn số người cần hỗ trợ
     fun selectPeopleCount(count: SosPeopleCount) {
         _uiState.update { current ->
-            current.copy(peopleCount = count)
+            current.copy(
+                peopleCount = count,
+                validationErrors = current.validationErrors.copy(
+                    peopleCount = null
+                )
+            )
         }
     }
 
     // Chọn mức nước ước tính
     fun selectWaterLevel(level: SosWaterLevel) {
         _uiState.update { current ->
-            current.copy(waterLevel = level)
+            current.copy(
+                waterLevel = level,
+                validationErrors = current.validationErrors.copy(
+                    waterLevel = null
+                )
+            )
         }
     }
 
@@ -98,7 +111,10 @@ class SendSosViewModel : ViewModel() {
                 locationTimestampMillis = location.time,
                 isLoadingLocation = false,
                 locationError = null,
-                locationText = "Đã xác định vị trí GPS"
+                locationText = "Đã xác định vị trí GPS",
+                validationErrors = current.validationErrors.copy(
+                    location = null
+                )
             )
         }
     }
