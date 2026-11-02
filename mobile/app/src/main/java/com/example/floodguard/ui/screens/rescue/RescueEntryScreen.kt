@@ -28,6 +28,13 @@ fun RescueEntryScreen(
     onLogout: suspend () -> Result<Unit>,
     onLoggedOut: () -> Unit
 ) {
+    if (!accessDenied) {
+        RescueOverviewScreen(
+            onLogout = onLogout,
+            onLoggedOut = onLoggedOut
+        )
+        return
+    }
     var isLoggingOut by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
