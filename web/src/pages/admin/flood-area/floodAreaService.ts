@@ -3,7 +3,7 @@ import { FloodAreaError, type FloodAreaInput, type FloodAreaItem } from "./flood
 export const DATA_SOURCE: "mock" | "api" = "api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "https://floodguard-backend-demo.onrender.com/api";
-const TIMEOUT_MS = 70000; // Cập nhật timeout 70s đồng bộ với Web login
+const TIMEOUT_MS = 70000;
 
 function getAuthHeaders() {
   const token = localStorage.getItem("floodguard_token");
@@ -14,7 +14,6 @@ function getAuthHeaders() {
   };
 }
 
-// Gộp chung fetch và xử lý response để AbortController bao phủ cả quá trình parse JSON
 async function fetchApi(endpoint: string, options: RequestInit, isMutation: boolean, expectedStatus?: number) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -32,8 +31,8 @@ async function fetchApi(endpoint: string, options: RequestInit, isMutation: bool
         if (errorData && errorData.message) {
           errorMessage = errorData.message;
         }
-      } catch {
-        // Bỏ qua nếu response lỗi không chứa JSON hợp lệ
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") throw err;
       }
 
       if (response.status === 409) {
@@ -46,7 +45,8 @@ async function fetchApi(endpoint: string, options: RequestInit, isMutation: bool
     let data;
     try {
       data = await response.json();
-    } catch {
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") throw err;
       throw new FloodAreaError("Phản hồi từ máy chủ sai định dạng (không phải JSON).", 500);
     }
 
@@ -80,6 +80,34 @@ function pickInput(input: Partial<FloodAreaInput>): Partial<FloodAreaInput> {
   return result as Partial<FloodAreaInput>;
 }
 
+// Kiểm tra toàn diện cấu trúc của một vùng ngập (bằng kiểu unknown an toàn)
+function validateAreaItem(data: unknown): data is FloodAreaItem {
+  if (!data || typeof data !== "object") return false;
+  
+  const a = data as Record<string, unknown>;
+  
+  if (typeof a.id !== "string" || a.id.trim() === "") return false;
+  if (typeof a.name !== "string" || a.name.trim() === "") return false;
+  
+  const validSeverities = ["low", "medium", "high", "critical"];
+  if (typeof a.severity !== "string" || !validSeverities.includes(a.severity)) return false;
+  
+  const validStatuses = ["active", "inactive"];
+  if (typeof a.status !== "string" || !validStatuses.includes(a.status)) return false;
+  
+  const geo = a.geometry as Record<string, unknown>;
+  if (!geo || typeof geo !== "object" || geo.type !== "polygon") return false;
+  if (!Array.isArray(geo.points)) return false;
+  
+  for (const p of geo.points) {
+    if (!p || typeof p !== "object") return false;
+    const pt = p as Record<string, unknown>;
+    if (typeof pt.latitude !== "number" || typeof pt.longitude !== "number") return false;
+  }
+  
+  return true;
+}
+
 export async function listAreas(): Promise<FloodAreaItem[]> {
   const data = await fetchApi("/admin/flood-areas", { method: "GET", headers: getAuthHeaders() }, false);
   
@@ -88,15 +116,13 @@ export async function listAreas(): Promise<FloodAreaItem[]> {
     throw new FloodAreaError("Dữ liệu danh sách vùng ngập sai cấu trúc.", 500);
   }
 
-  // Validate khắt khe: mảng không chứa null và phải đủ trường cơ bản
   for (let i = 0; i < areas.length; i++) {
-    const a = areas[i];
-    if (!a || typeof a !== "object" || typeof a.id !== "string" || !a.name || !a.geometry) {
+    if (!validateAreaItem(areas[i])) {
       throw new FloodAreaError("Một số vùng ngập bị lỗi dữ liệu hoặc thiếu trường quan trọng từ hệ thống.", 500);
     }
   }
 
-  return areas as FloodAreaItem[];
+  return areas;
 }
 
 export async function createArea(input: FloodAreaInput): Promise<FloodAreaItem> {
@@ -105,15 +131,14 @@ export async function createArea(input: FloodAreaInput): Promise<FloodAreaItem> 
     method: "POST", 
     headers: getAuthHeaders(),
     body: JSON.stringify(payload)
-  }, true, 201); // Ép cứng phải trả về HTTP 201
+  }, true, 201); 
 
   const floodArea = data?.data?.floodArea;
   
-  // Validate ID là chuỗi và không rỗng
-  if (!floodArea || typeof floodArea.id !== "string" || floodArea.id.trim() === "") {
-    throw new FloodAreaError("Dữ liệu vùng ngập trả về sai cấu trúc (thiếu hoặc sai ID).", 500);
+  if (!validateAreaItem(floodArea)) {
+    throw new FloodAreaError("Dữ liệu vùng ngập trả về sai cấu trúc hoặc thiếu trường quan trọng.", 500);
   }
-  return floodArea as FloodAreaItem;
+  return floodArea;
 }
 
 export async function updateArea(id: string, patch: Partial<FloodAreaInput>): Promise<FloodAreaItem> {
@@ -125,10 +150,11 @@ export async function updateArea(id: string, patch: Partial<FloodAreaInput>): Pr
   }, true);
 
   const floodArea = data?.data?.floodArea;
-  if (!floodArea || typeof floodArea.id !== "string" || floodArea.id.trim() === "") {
-    throw new FloodAreaError("Dữ liệu cập nhật trả về sai cấu trúc (thiếu hoặc sai ID).", 500);
+  
+  if (!validateAreaItem(floodArea)) {
+    throw new FloodAreaError("Dữ liệu cập nhật trả về sai cấu trúc hoặc thiếu trường quan trọng.", 500);
   }
-  return floodArea as FloodAreaItem;
+  return floodArea;
 }
 
 export async function deleteArea(id: string): Promise<void> {
