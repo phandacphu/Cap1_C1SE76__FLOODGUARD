@@ -19,6 +19,7 @@ import com.example.floodguard.data.remote.api.RescueRequestApi
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.FloodHistoryRepository
 import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.data.repository.RescueRequestRepository
 import com.example.floodguard.ui.screens.auth.login.LoginScreen
@@ -631,9 +632,14 @@ fun AppNavGraph(
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
                     ),
+
                     safeLocationRepository = SafeLocationRepository(
                         safeLocationApi = ApiClient.safeLocationApi
+                    ),
+                    floodHistoryRepository = FloodHistoryRepository(
+                        api = ApiClient.floodHistoryApi
                     )
+
                 )
             }
 

@@ -78,6 +78,8 @@ import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.android.gms.location.LocationServices
@@ -142,7 +144,14 @@ fun FloodMapRoute(
         onRetryFloodAreas = viewModel::loadFloodAreas,
         onSelectFloodAlert = viewModel::selectFloodAlert,
         onRetryFloodAlerts = viewModel::loadFloodAlerts,
-    )
+        onToggleHistoryPointsLayer = viewModel::toggleHistoryPointsLayer,
+        onRetryHistoryPoints = viewModel::loadHistoryPoints,
+        onToggleHistoryBuffersLayer = viewModel::toggleHistoryBuffersLayer,
+        onRetryHistoryBuffers = viewModel::loadHistoryBuffers,
+        onToggleHistoryRadarLayer = viewModel::toggleHistoryRadarLayer,
+        onRetryHistoryRadar = viewModel::loadHistoryRadar,
+
+        )
 }
 
 // =====================================================
@@ -166,7 +175,13 @@ fun FloodMapScreen(
     onRetryFloodAreas: () -> Unit,
     onSelectFloodAlert: (String?) -> Unit,
     onRetryFloodAlerts: () -> Unit,
-) {
+    onToggleHistoryPointsLayer: () -> Unit,
+    onRetryHistoryPoints: () -> Unit,
+    onToggleHistoryBuffersLayer: () -> Unit,
+    onRetryHistoryBuffers: () -> Unit,
+    onToggleHistoryRadarLayer: () -> Unit,
+    onRetryHistoryRadar: () -> Unit,
+    ) {
 
     val scrollState = rememberScrollState()
 
@@ -216,14 +231,283 @@ fun FloodMapScreen(
                 onToggleShelterLayer = onToggleShelterLayer
             )
 
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+            ) {
+                FloodLayerItem(
+                    text = "Điểm ngập lịch sử (${state.historyPoints.size})",
+                    selected = state.isHistoryPointsLayerEnabled,
+                    onClick = onToggleHistoryPointsLayer
+                )
+            }
+
+            if (state.isHistoryPointsLayerEnabled) {
+                Text(
+                    text = "Dữ liệu ngập lịch sử tham khảo. " +
+                            "Không phải cảnh báo ngập hiện tại.",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = 6.dp
+                    )
+                )
+
+                if (state.isLoadingHistoryPoints) {
+                    Text(
+                        text = "Đang tải điểm ngập lịch sử...",
+                        color = MapSecondary,
+                        modifier = Modifier.padding(18.dp)
+                    )
+                } else if (state.historyPointsError != null) {
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+                        Text(
+                            text = state.historyPointsError,
+                            color = Color(0xFFE57373)
+                        )
+
+                        OutlinedButton(
+                            onClick = onRetryHistoryPoints
+                        ) {
+                            Text("Thử lại")
+                        }
+                    }
+                } else if (state.historyPoints.isEmpty()) {
+                    Text(
+                        text = "Không có điểm ngập lịch sử để hiển thị.",
+                        color = MapSecondary,
+                        modifier = Modifier.padding(18.dp)
+                    )
+                }
+            }
+
             Spacer(
                 modifier = Modifier.height(12.dp)
             )
+
+
+            // ============================================
+            // HISTORICAL FLOOD BUFFERS
+            // ============================================
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+            ) {
+                FloodLayerItem(
+                    text = "Vùng ngập (${state.historyBufferFeatureCount})",
+                    selected = state.isHistoryBuffersLayerEnabled,
+                    onClick = onToggleHistoryBuffersLayer
+                )
+            }
+
+            if (state.isHistoryBuffersLayerEnabled) {
+
+                Text(
+                    text = "Vùng đệm nghiên cứu 220 m và 450 m. " +
+                            "Không phải ranh giới ngập thực tế đã xác minh.",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = 6.dp
+                    )
+                )
+
+                if (state.isLoadingHistoryBuffers) {
+
+                    Text(
+                        text = "Đang tải vùng đệm tham khảo...",
+                        color = MapSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(18.dp)
+                    )
+
+                } else if (state.historyBuffersError != null) {
+
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+                        Text(
+                            text = state.historyBuffersError
+                                ?: "Không thể tải vùng đệm lịch sử.",
+                            color = Color(0xFFE57373),
+                            fontSize = 11.sp
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = onRetryHistoryBuffers
+                        ) {
+                            Text("Thử lại")
+                        }
+                    }
+
+                } else if (state.historyBufferFeatureCount == 0) {
+
+                    Text(
+                        text = "Không có vùng đệm tham khảo.",
+                        color = MapSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(18.dp)
+                    )
+                }
+            }
+
+
+            // ============================================
+            // HISTORICAL FLOOD RADAR
+            // ============================================
+
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+            ) {
+                FloodLayerItem(
+                    text = "Vùng phân tích Radar (${state.historyRadarFeatureCount})",
+                    selected = state.isHistoryRadarLayerEnabled,
+                    onClick = onToggleHistoryRadarLayer
+                )
+            }
+
+            if (state.isHistoryRadarLayerEnabled) {
+
+                Text(
+                    text = "Vùng phân tích Radar phục vụ nghiên cứu " +
+                            "ngập lịch sử. Chưa được xác minh là " +
+                            "khu vực ngập thực tế.",
+                    color = MapSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = 6.dp
+                    )
+                )
+
+                if (state.isLoadingHistoryRadar) {
+
+                    Text(
+                        text = "Đang tải dữ liệu phân tích Radar...",
+                        color = MapSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(18.dp)
+                    )
+
+                } else if (state.historyRadarError != null) {
+
+                    Column(
+                        modifier = Modifier.padding(18.dp)
+                    ) {
+                        Text(
+                            text = state.historyRadarError
+                                ?: "Không thể tải dữ liệu Radar.",
+                            color = Color(0xFFE57373),
+                            fontSize = 11.sp
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        OutlinedButton(
+                            onClick = onRetryHistoryRadar
+                        ) {
+                            Text("Thử lại")
+                        }
+                    }
+
+                } else if (state.historyRadarFeatureCount == 0) {
+
+                    Text(
+                        text = "Không có dữ liệu phân tích Radar.",
+                        color = MapSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(18.dp)
+                    )
+                }
+            }
+
+            Spacer(
+                modifier = Modifier.height(12.dp)
+            )
+
 
             FloodGoogleMap(
                 state = state,
                 onSelectFloodAlert = onSelectFloodAlert,
                 onMapTouchChanged = { isTouchingMap = it }
+            )
+
+
+            Text(
+                text = "CHÚ GIẢI NGẬP LỊCH SỬ",
+                color = MapSecondary,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(
+                    horizontal = 18.dp,
+                    vertical = 8.dp
+                )
+            )
+
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                FloodSeverityLegend(
+                    color = Color(0xFFE53935),
+                    text = "Điểm lịch sử"
+                )
+
+                FloodSeverityLegend(
+                    color = Color(0x33E53935),
+                    text = "Vùng đệm"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(
+                modifier = Modifier.padding(horizontal = 18.dp)
+            ) {
+                FloodSeverityLegend(
+                    color = Color(0x66D32F2F),
+                    text = "Radar nghi ngập"
+                )
+            }
+
+            Text(
+                text = "Dữ liệu ngập lịch sử tham khảo — " +
+                        "không phải cảnh báo ngập hiện tại.",
+                color = MapSecondary,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(
+                    horizontal = 18.dp,
+                    vertical = 6.dp
+                )
+            )
+
+            Text(
+                text = "CHÚ GIẢI CẢNH BÁO HIỆN TẠI",
+                color = MapSecondary,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(
+                    horizontal = 18.dp,
+                    vertical = 8.dp
+                )
             )
 
             Row(
@@ -776,6 +1060,15 @@ private fun FloodGoogleMap(
             )
         }
 
+
+    var isMapLoaded by remember {
+        mutableStateOf(false)
+    }
+
+    var hasFittedHistoryBounds by remember {
+        mutableStateOf(false)
+    }
+
     var userLocation by remember {
         mutableStateOf<LatLng?>(null)
     }
@@ -1099,9 +1392,13 @@ private fun FloodGoogleMap(
 
         val location = userLocation
 
+
         if (
             location != null &&
-            !hasCenteredOnUserLocation
+            !hasCenteredOnUserLocation &&
+            !state.isHistoryPointsLayerEnabled &&
+            !state.isHistoryBuffersLayerEnabled &&
+            !state.isHistoryRadarLayerEnabled
         ) {
 
             cameraPositionState.animate(
@@ -1113,6 +1410,92 @@ private fun FloodGoogleMap(
 
             hasCenteredOnUserLocation = true
         }
+    }
+
+
+    LaunchedEffect(
+        isMapLoaded,
+        state.isHistoryPointsLayerEnabled,
+        state.isHistoryBuffersLayerEnabled,
+        state.isHistoryRadarLayerEnabled,
+        state.historyPoints.size,
+        state.historyBufferPolygons.size,
+        state.historyRadarPolygons.size,
+        state.historyPointsError,
+        state.historyBuffersError,
+        state.historyRadarError
+    ) {
+        if (!isMapLoaded || hasFittedHistoryBounds) {
+            return@LaunchedEffect
+        }
+
+        val pointsReady =
+            !state.isHistoryPointsLayerEnabled ||
+                    state.historyPoints.isNotEmpty() ||
+                    state.historyPointsError != null
+
+        val buffersReady =
+            !state.isHistoryBuffersLayerEnabled ||
+                    state.historyBufferPolygons.isNotEmpty() ||
+                    state.historyBuffersError != null
+
+        val radarReady =
+            !state.isHistoryRadarLayerEnabled ||
+                    state.historyRadarPolygons.isNotEmpty() ||
+                    state.historyRadarError != null
+
+        if (!pointsReady || !buffersReady || !radarReady) {
+            return@LaunchedEffect
+        }
+
+        val locations = mutableListOf<LatLng>()
+
+        if (state.isHistoryPointsLayerEnabled) {
+            state.historyPoints.forEach { point ->
+                locations.add(
+                    LatLng(point.latitude, point.longitude)
+                )
+            }
+        }
+
+        if (state.isHistoryBuffersLayerEnabled) {
+            state.historyBufferPolygons.forEach { polygon ->
+                polygon.outer.forEach { point ->
+                    locations.add(
+                        LatLng(point.latitude, point.longitude)
+                    )
+                }
+            }
+        }
+
+        if (state.isHistoryRadarLayerEnabled) {
+            state.historyRadarPolygons.forEach { polygon ->
+                polygon.outer.forEach { point ->
+                    locations.add(
+                        LatLng(point.latitude, point.longitude)
+                    )
+                }
+            }
+        }
+
+        if (locations.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        val boundsBuilder = LatLngBounds.Builder()
+
+        locations.forEach { location ->
+            boundsBuilder.include(location)
+        }
+
+        cameraPositionState.animate(
+            CameraUpdateFactory.newLatLngBounds(
+                boundsBuilder.build(),
+                36
+            )
+        )
+
+        hasFittedHistoryBounds = true
     }
 
     val currentOnMapTouchChanged by rememberUpdatedState(onMapTouchChanged)
@@ -1168,7 +1551,11 @@ private fun FloodGoogleMap(
                             }
                         }
                     },
+
                 cameraPositionState = cameraPositionState,
+                onMapLoaded = {
+                    isMapLoaded = true
+                },
                 properties = MapProperties(
                     isMyLocationEnabled =
                         hasLocationPermission &&
@@ -1283,6 +1670,7 @@ private fun FloodGoogleMap(
                                     fillColor = fillColor,
                                     strokeColor = strokeColor,
                                     strokeWidth = 4f,
+                                    zIndex = 1f,
                                     clickable = true,
                                     onClick = {
                                         onSelectFloodAlert(
@@ -1294,6 +1682,103 @@ private fun FloodGoogleMap(
                         }
                 }
 
+
+// Điểm ngập lịch sử - dữ liệu tham khảo
+// Không phải cảnh báo ngập thời gian thực.
+                if (state.isHistoryPointsLayerEnabled) {
+                    state.historyPoints.forEachIndexed { index, point ->
+                        Marker(
+                            state = rememberUpdatedMarkerState(
+                                position = LatLng(
+                                    point.latitude,
+                                    point.longitude
+                                )
+                            ),
+                            title = "Điểm ngập lịch sử #${index + 1}",
+                            snippet = "Dữ liệu tham khảo, " +
+                                    "không phải cảnh báo hiện tại",
+                            icon = BitmapDescriptorFactory.defaultMarker(
+                                BitmapDescriptorFactory.HUE_RED
+                            )
+                        )
+                    }
+                }
+
+
+                // =========================================
+                // HISTORICAL FLOOD BUFFERS
+                // Reference data - NOT active flood alerts
+                // =========================================
+
+                if (state.isHistoryBuffersLayerEnabled) {
+
+                    state.historyBufferPolygons.forEach { polygon ->
+
+                        Polygon(
+                            points = polygon.outer.map { point ->
+                                LatLng(
+                                    point.latitude,
+                                    point.longitude
+                                )
+                            },
+
+                            holes = polygon.holes.map { hole ->
+                                hole.map { point ->
+                                    LatLng(
+                                        point.latitude,
+                                        point.longitude
+                                    )
+                                }
+                            },
+
+
+                            fillColor = Color(0x33E53935),
+                            strokeColor = Color(0xFFE53935),
+                            strokeWidth = 2f,
+                            zIndex = 2f,
+                            clickable = false
+
+                        )
+                    }
+                }
+
+
+                // =========================================
+                // HISTORICAL FLOOD RADAR
+                // Research data - NOT active flood alerts
+                // =========================================
+
+                if (state.isHistoryRadarLayerEnabled) {
+
+                    state.historyRadarPolygons.forEach { polygon ->
+
+                        Polygon(
+                            points = polygon.outer.map { point ->
+                                LatLng(
+                                    point.latitude,
+                                    point.longitude
+                                )
+                            },
+
+                            holes = polygon.holes.map { hole ->
+                                hole.map { point ->
+                                    LatLng(
+                                        point.latitude,
+                                        point.longitude
+                                    )
+                                }
+                            },
+
+
+                            fillColor = Color(0x66D32F2F),
+                            strokeColor = Color(0xFFD32F2F),
+                            strokeWidth = 1.5f,
+                            zIndex = 3f,
+                            clickable = false
+
+                        )
+                    }
+                }
 
                 // CCF-60 TC05: Warning Marker từ Backend
                 if (state.isFloodLayerEnabled) {

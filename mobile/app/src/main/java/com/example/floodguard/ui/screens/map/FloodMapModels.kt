@@ -4,6 +4,18 @@ import com.example.floodguard.data.model.FloodAreaDto
 import com.example.floodguard.data.model.FloodAlertDto
 import com.example.floodguard.data.model.SafeLocationDto
 
+
+data class HistoricalFloodPoint(
+    val latitude: Double,
+    val longitude: Double
+)
+
+
+data class HistoricalFloodPolygon(
+    val outer: List<HistoricalFloodPoint>,
+    val holes: List<List<HistoricalFloodPoint>>
+)
+
 data class FloodMapUiState(
     val title: String = "Bản đồ ngập & vị trí",
     val realtimeStatus: String = "TRỰC TUYẾN • GIS REAL-TIME",
@@ -54,5 +66,24 @@ data class FloodMapUiState(
     val floodAlerts: List<FloodAlertDto> = emptyList(),
     val isLoadingFloodAlerts: Boolean = false,
     val floodAlertsError: String? = null,
-    val selectedFloodAlertId: String? = null
+
+    val selectedFloodAlertId: String? = null,
+
+    val isHistoryPointsLayerEnabled: Boolean = true,
+    val historyPoints: List<HistoricalFloodPoint> = emptyList(),
+    val isLoadingHistoryPoints: Boolean = false,
+
+    val historyPointsError: String? = null,
+
+    val isHistoryBuffersLayerEnabled: Boolean = true,
+    val historyBufferFeatureCount: Int = 0,
+    val historyBufferPolygons: List<HistoricalFloodPolygon> = emptyList(),
+    val isLoadingHistoryBuffers: Boolean = false,
+    val historyBuffersError: String? = null,
+    val isHistoryRadarLayerEnabled: Boolean = true,
+    val historyRadarFeatureCount: Int = 0,
+    val historyRadarPolygons: List<HistoricalFloodPolygon> = emptyList(),
+    val isLoadingHistoryRadar: Boolean = false,
+    val historyRadarError: String? = null
+
 )
