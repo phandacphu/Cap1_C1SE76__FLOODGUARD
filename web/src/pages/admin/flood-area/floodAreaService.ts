@@ -2,12 +2,10 @@ import { FloodAreaError, type FloodAreaInput, type FloodAreaItem } from "./flood
 
 export const DATA_SOURCE: "mock" | "api" = "api";
 
-// CCF-124: Sử dụng biến môi trường VITE_API_URL, fallback về URL demo
 const API_BASE_URL = import.meta.env.VITE_API_URL || "https://floodguard-backend-demo.onrender.com/api";
-const TIMEOUT_MS = 15000; // Timeout 15 giây
+const TIMEOUT_MS = 70000; // Cập nhật timeout 70s đồng bộ với Web login
 
 function getAuthHeaders() {
-  // Sửa theo review: dùng "floodguard_token" đồng nhất với AuthContext
   const token = localStorage.getItem("floodguard_token");
   if (!token) throw new FloodAreaError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", 401);
   return {
@@ -16,55 +14,58 @@ function getAuthHeaders() {
   };
 }
 
-// Wrapper xử lý timeout cho fetch
-async function fetchWithTimeout(resource: string, options: RequestInit) {
+// Gộp chung fetch và xử lý response để AbortController bao phủ cả quá trình parse JSON
+async function fetchApi(endpoint: string, options: RequestInit, isMutation: boolean, expectedStatus?: number) {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
   try {
-    const response = await fetch(resource, {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       signal: controller.signal,
     });
-    clearTimeout(id);
-    return response;
-  } catch (error) {
-    clearTimeout(id);
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new FloodAreaError("Kết nối máy chủ bị quá hạn (Timeout). Vui lòng thử lại.", 504);
-    }
-    throw error;
-  }
-}
 
-// Kiểm tra mã HTTP và trường success === true
-async function handleResponse(response: Response, defaultMessage: string, expectedStatus?: number) {
-  if (!response.ok || (expectedStatus && response.status !== expectedStatus)) {
-    let errorMessage = defaultMessage;
-    try {
-      const errorData = await response.json();
-      if (errorData && errorData.message) {
-        errorMessage = errorData.message;
+    if (!response.ok || (expectedStatus && response.status !== expectedStatus)) {
+      let errorMessage = "Đã xảy ra lỗi khi kết nối với máy chủ.";
+      try {
+        const errorData = await response.json();
+        if (errorData && errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        // Bỏ qua nếu response lỗi không chứa JSON hợp lệ
       }
+
+      if (response.status === 409) {
+        throw new FloodAreaError("Vùng này đang được liên kết với một cảnh báo lũ. Hãy chuyển sang ngừng hoạt động thay vì xóa.", 409);
+      }
+
+      throw new FloodAreaError(errorMessage, response.status);
+    }
+
+    let data;
+    try {
+      data = await response.json();
     } catch {
-      // Bỏ qua nếu không parse được JSON
+      throw new FloodAreaError("Phản hồi từ máy chủ sai định dạng (không phải JSON).", 500);
     }
 
-    if (response.status === 409) {
-      throw new FloodAreaError("Vùng này đang được liên kết với một cảnh báo lũ. Hãy chuyển sang ngừng hoạt động thay vì xóa.", 409);
-    }
-
-    throw new FloodAreaError(errorMessage, response.status);
-  }
-
-  try {
-    const data = await response.json();
     if (data.success !== true) {
-      throw new FloodAreaError(data.message || defaultMessage, response.status);
+      throw new FloodAreaError(data.message || "Thao tác không thành công.", response.status || 500);
     }
+
+    clearTimeout(timeoutId);
     return data;
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      const timeoutMsg = isMutation
+        ? "Kết nối máy chủ bị quá hạn. Kết quả có thể chưa xác định, vui lòng làm mới dữ liệu (refresh) trước khi thực hiện lại để tránh trùng lặp thao tác."
+        : "Kết nối máy chủ bị quá hạn (Timeout). Vui lòng thử lại.";
+      throw new FloodAreaError(timeoutMsg, 504);
+    }
     if (error instanceof FloodAreaError) throw error;
-    throw new FloodAreaError("Phản hồi từ máy chủ sai định dạng.", 500);
+    throw new FloodAreaError("Không thể kết nối đến máy chủ.", 500);
   }
 }
 
@@ -80,77 +81,59 @@ function pickInput(input: Partial<FloodAreaInput>): Partial<FloodAreaInput> {
 }
 
 export async function listAreas(): Promise<FloodAreaItem[]> {
-  try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/admin/flood-areas`, {
-      method: "GET",
-      headers: getAuthHeaders(),
-    });
-    const data = await handleResponse(response, "Không thể tải danh sách vùng ngập.");
-
-    // Validate cấu trúc trả về
-    if (!Array.isArray(data?.data?.floodAreas)) {
-      throw new FloodAreaError("Dữ liệu danh sách vùng ngập sai cấu trúc.", 500);
-    }
-    return data.data.floodAreas;
-  } catch (error) {
-    if (error instanceof FloodAreaError) throw error;
-    throw new FloodAreaError("Không thể kết nối tải danh sách vùng ngập.", 500);
+  const data = await fetchApi("/admin/flood-areas", { method: "GET", headers: getAuthHeaders() }, false);
+  
+  const areas = data?.data?.floodAreas;
+  if (!Array.isArray(areas)) {
+    throw new FloodAreaError("Dữ liệu danh sách vùng ngập sai cấu trúc.", 500);
   }
+
+  // Validate khắt khe: mảng không chứa null và phải đủ trường cơ bản
+  for (let i = 0; i < areas.length; i++) {
+    const a = areas[i];
+    if (!a || typeof a !== "object" || typeof a.id !== "string" || !a.name || !a.geometry) {
+      throw new FloodAreaError("Một số vùng ngập bị lỗi dữ liệu hoặc thiếu trường quan trọng từ hệ thống.", 500);
+    }
+  }
+
+  return areas as FloodAreaItem[];
 }
 
 export async function createArea(input: FloodAreaInput): Promise<FloodAreaItem> {
-  try {
-    const payload = pickInput(input);
-    const response = await fetchWithTimeout(`${API_BASE_URL}/admin/flood-areas`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(payload),
-    });
-    
-    // Yêu cầu mã 201 Created
-    const data = await handleResponse(response, "Thêm vùng ngập thất bại.", 201);
+  const payload = pickInput(input);
+  const data = await fetchApi("/admin/flood-areas", { 
+    method: "POST", 
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  }, true, 201); // Ép cứng phải trả về HTTP 201
 
-    const floodArea = data?.data?.floodArea;
-    if (!floodArea || !floodArea.id) {
-      throw new FloodAreaError("Dữ liệu vùng ngập trả về sai cấu trúc.", 500);
-    }
-    return floodArea;
-  } catch (error) {
-    if (error instanceof FloodAreaError) throw error;
-    throw new FloodAreaError("Lỗi kết nối khi thêm vùng ngập.", 500);
+  const floodArea = data?.data?.floodArea;
+  
+  // Validate ID là chuỗi và không rỗng
+  if (!floodArea || typeof floodArea.id !== "string" || floodArea.id.trim() === "") {
+    throw new FloodAreaError("Dữ liệu vùng ngập trả về sai cấu trúc (thiếu hoặc sai ID).", 500);
   }
+  return floodArea as FloodAreaItem;
 }
 
 export async function updateArea(id: string, patch: Partial<FloodAreaInput>): Promise<FloodAreaItem> {
-  try {
-    const payload = pickInput(patch);
-    const response = await fetchWithTimeout(`${API_BASE_URL}/admin/flood-areas/${id}`, {
-      method: "PATCH",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(payload),
-    });
-    const data = await handleResponse(response, "Cập nhật vùng ngập thất bại.");
+  const payload = pickInput(patch);
+  const data = await fetchApi(`/admin/flood-areas/${id}`, { 
+    method: "PATCH", 
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  }, true);
 
-    const floodArea = data?.data?.floodArea;
-    if (!floodArea || !floodArea.id) {
-      throw new FloodAreaError("Dữ liệu cập nhật trả về sai cấu trúc.", 500);
-    }
-    return floodArea;
-  } catch (error) {
-    if (error instanceof FloodAreaError) throw error;
-    throw new FloodAreaError("Lỗi kết nối khi cập nhật vùng ngập.", 500);
+  const floodArea = data?.data?.floodArea;
+  if (!floodArea || typeof floodArea.id !== "string" || floodArea.id.trim() === "") {
+    throw new FloodAreaError("Dữ liệu cập nhật trả về sai cấu trúc (thiếu hoặc sai ID).", 500);
   }
+  return floodArea as FloodAreaItem;
 }
 
 export async function deleteArea(id: string): Promise<void> {
-  try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/admin/flood-areas/${id}`, {
-      method: "DELETE",
-      headers: getAuthHeaders(),
-    });
-    await handleResponse(response, "Xóa vùng ngập thất bại.");
-  } catch (error) {
-    if (error instanceof FloodAreaError) throw error;
-    throw new FloodAreaError("Lỗi kết nối khi xóa vùng ngập.", 500);
-  }
+  await fetchApi(`/admin/flood-areas/${id}`, { 
+    method: "DELETE", 
+    headers: getAuthHeaders() 
+  }, true);
 }
