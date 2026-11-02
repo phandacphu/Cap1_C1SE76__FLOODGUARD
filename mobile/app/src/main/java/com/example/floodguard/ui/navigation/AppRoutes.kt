@@ -8,6 +8,10 @@ object AppRoutes {
 
     const val HOME = "home"
 
+    const val RESCUE_HOME = "rescue_home"
+
+    const val ACCESS_DENIED = "access_denied"
+
     const val MAP = "map"
 
     const val WARNING_LIST = "warning_list"
