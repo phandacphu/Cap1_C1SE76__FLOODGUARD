@@ -38,6 +38,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.floodguard.core.network.ApiClient
+import com.example.floodguard.data.repository.FloodAlertRepository
+import com.example.floodguard.data.repository.FloodAreaRepository
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
@@ -69,6 +74,15 @@ internal fun RescueMapScreen(
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
+    val dataViewModel: RescueMapDataViewModel = viewModel {
+        val areas = FloodAreaRepository(ApiClient.floodAreaApi)
+        val warnings = FloodAlertRepository(ApiClient.floodAlertApi)
+        RescueMapDataViewModel(
+            loadFloodAreas = areas::getFloodAreas,
+            loadActiveWarnings = warnings::getActiveFloodAlerts
+        )
+    }
+    val dataState by dataViewModel.uiState.collectAsStateWithLifecycle()
     var attempt by remember { mutableStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
     var timedOut by remember { mutableStateOf(false) }
@@ -144,11 +158,12 @@ internal fun RescueMapScreen(
             }
 
             if (showInformation) {
-                MapNotice {
-                    MapLabel("Bản đồ nền khu vực Đà Nẵng", MapText)
-                    MapLabel("Kéo để di chuyển, chụm hai ngón để thu/phóng. Không cần cấp quyền vị trí để xem.")
-                    MapLabel("SOS, điểm an toàn và các lớp ngập sẽ được bổ sung sau.")
-                }
+                RescueMapDataPanel(
+                    state = dataState,
+                    onRefresh = dataViewModel::refresh,
+                    onRetryAreas = dataViewModel::retryFloodAreas,
+                    onRetryWarnings = dataViewModel::retryActiveWarnings
+                )
             }
 
             Row(
