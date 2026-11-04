@@ -10,7 +10,11 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.location.LocationManager
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.provider.Settings
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -70,6 +75,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,6 +84,7 @@ import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
@@ -93,6 +100,10 @@ import com.google.android.gms.location.LocationResult
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.rememberUpdatedMarkerState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 // =====================================================
 // COLORS
@@ -113,6 +124,89 @@ private val MapOrange = Color(0xFFFFA000)
 // =====================================================
 // ROUTE
 // =====================================================
+
+private fun buildHistoricalBounds(
+    state: FloodMapUiState
+): LatLngBounds? {
+
+    val builder = LatLngBounds.Builder()
+    var hasCoordinates = false
+
+    fun include(point: HistoricalFloodPoint) {
+        if (
+            point.latitude.isFinite() &&
+            point.longitude.isFinite() &&
+            point.latitude in -90.0..90.0 &&
+            point.longitude in -180.0..180.0
+        ) {
+            builder.include(
+                LatLng(point.latitude, point.longitude)
+            )
+            hasCoordinates = true
+        }
+    }
+
+    if (state.isHistoryPointsLayerEnabled) {
+        state.historyPoints.forEach(::include)
+    }
+
+    if (state.isHistoryBuffersLayerEnabled) {
+        state.historyBufferPolygons.forEach { polygon ->
+            polygon.outer.forEach(::include)
+        }
+    }
+
+    if (state.isHistoryRadarLayerEnabled) {
+        state.historyRadarPolygons.forEach { polygon ->
+            polygon.outer.forEach(::include)
+        }
+    }
+
+
+    return if (hasCoordinates) {
+        builder.build()
+    } else {
+        null
+    }
+}
+
+private fun createHistoryPointIcon(
+    context: Context
+): BitmapDescriptor {
+    val density = context.resources.displayMetrics.density
+    val size = (18f * density).roundToInt()
+
+    val bitmap = Bitmap.createBitmap(
+        size,
+        size,
+        Bitmap.Config.ARGB_8888
+    )
+
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    val center = size / 2f
+
+    // Viền trắng
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(
+        center,
+        center,
+        center - 1f,
+        paint
+    )
+
+    // Tâm đỏ
+    paint.color = android.graphics.Color.rgb(229, 57, 53)
+    canvas.drawCircle(
+        center,
+        center,
+        center - 2f * density,
+        paint
+    )
+
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
 
 @Composable
 fun FloodMapRoute(
@@ -181,7 +275,7 @@ fun FloodMapScreen(
     onRetryHistoryBuffers: () -> Unit,
     onToggleHistoryRadarLayer: () -> Unit,
     onRetryHistoryRadar: () -> Unit,
-    ) {
+) {
 
     val scrollState = rememberScrollState()
 
@@ -284,6 +378,23 @@ fun FloodMapScreen(
                         modifier = Modifier.padding(18.dp)
                     )
                 }
+
+                if (
+                    state.historyPointsLoadStatus == HistoricalLoadStatus.SUCCESS &&
+                    state.historyPointsInvalidFeatureCount > 0
+                ) {
+                    Text(
+                        text = "Đã bỏ qua ${state.historyPointsInvalidFeatureCount} " +
+                                "bản ghi điểm ngập không hợp lệ. " +
+                                "Dữ liệu hiển thị có thể chưa đầy đủ.",
+                        color = MapOrange,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(
+                            horizontal = 18.dp,
+                            vertical = 6.dp
+                        )
+                    )
+                }
             }
 
             Spacer(
@@ -301,7 +412,7 @@ fun FloodMapScreen(
                     .padding(horizontal = 14.dp)
             ) {
                 FloodLayerItem(
-                    text = "Vùng ngập (${state.historyBufferFeatureCount})",
+                    text = "Vùng đệm tham khảo (${state.historyBufferFeatureCount})",
                     selected = state.isHistoryBuffersLayerEnabled,
                     onClick = onToggleHistoryBuffersLayer
                 )
@@ -467,10 +578,7 @@ fun FloodMapScreen(
                 modifier = Modifier.padding(horizontal = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                FloodSeverityLegend(
-                    color = Color(0xFFE53935),
-                    text = "Điểm lịch sử"
-                )
+                FloodHistoryPointLegend()
 
                 FloodSeverityLegend(
                     color = Color(0x33E53935),
@@ -511,8 +619,8 @@ fun FloodMapScreen(
             )
 
             Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
                     .padding(
                         horizontal = 18.dp,
                         vertical = 8.dp
@@ -657,7 +765,7 @@ fun FloodMapScreen(
                     alert.id == state.selectedFloodAlertId
                 }
 
-            selectedFloodAlert?.let { alert ->
+            selectedFloodAlert?.takeIf { state.isFloodLayerEnabled }?.let { alert ->
 
                 FloodWarningInfoCard(
                     title = alert.title,
@@ -1069,12 +1177,14 @@ private fun FloodGoogleMap(
         mutableStateOf(false)
     }
 
-    var userLocation by remember {
-        mutableStateOf<LatLng?>(null)
+    var hasUserInteractedWithMap by remember {
+        mutableStateOf(false)
     }
 
-    var hasCenteredOnUserLocation by remember {
-        mutableStateOf(false)
+    val cameraScope = rememberCoroutineScope()
+
+    var userLocation by remember {
+        mutableStateOf<LatLng?>(null)
     }
 
     var hasLocationPermission by remember {
@@ -1388,114 +1498,54 @@ private fun FloodGoogleMap(
         }
     }
 
-    LaunchedEffect(userLocation) {
-
-        val location = userLocation
-
-
-        if (
-            location != null &&
-            !hasCenteredOnUserLocation &&
-            !state.isHistoryPointsLayerEnabled &&
-            !state.isHistoryBuffersLayerEnabled &&
-            !state.isHistoryRadarLayerEnabled
-        ) {
-
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    location,
-                    16f
-                )
-            )
-
-            hasCenteredOnUserLocation = true
-        }
-    }
-
 
     LaunchedEffect(
         isMapLoaded,
         state.isHistoryPointsLayerEnabled,
         state.isHistoryBuffersLayerEnabled,
         state.isHistoryRadarLayerEnabled,
-        state.historyPoints.size,
-        state.historyBufferPolygons.size,
-        state.historyRadarPolygons.size,
-        state.historyPointsError,
-        state.historyBuffersError,
-        state.historyRadarError
+        state.historyPointsLoadStatus,
+        state.historyBuffersLoadStatus,
+        state.historyRadarLoadStatus,
+        state.historyPoints,
+        state.historyBufferPolygons,
+        state.historyRadarPolygons
     ) {
-        if (!isMapLoaded || hasFittedHistoryBounds) {
-            return@LaunchedEffect
-        }
-
-        val pointsReady =
-            !state.isHistoryPointsLayerEnabled ||
-                    state.historyPoints.isNotEmpty() ||
-                    state.historyPointsError != null
-
-        val buffersReady =
-            !state.isHistoryBuffersLayerEnabled ||
-                    state.historyBufferPolygons.isNotEmpty() ||
-                    state.historyBuffersError != null
-
-        val radarReady =
-            !state.isHistoryRadarLayerEnabled ||
-                    state.historyRadarPolygons.isNotEmpty() ||
-                    state.historyRadarError != null
-
-        if (!pointsReady || !buffersReady || !radarReady) {
-            return@LaunchedEffect
-        }
-
-        val locations = mutableListOf<LatLng>()
-
-        if (state.isHistoryPointsLayerEnabled) {
-            state.historyPoints.forEach { point ->
-                locations.add(
-                    LatLng(point.latitude, point.longitude)
-                )
-            }
-        }
-
-        if (state.isHistoryBuffersLayerEnabled) {
-            state.historyBufferPolygons.forEach { polygon ->
-                polygon.outer.forEach { point ->
-                    locations.add(
-                        LatLng(point.latitude, point.longitude)
-                    )
-                }
-            }
-        }
-
-        if (state.isHistoryRadarLayerEnabled) {
-            state.historyRadarPolygons.forEach { polygon ->
-                polygon.outer.forEach { point ->
-                    locations.add(
-                        LatLng(point.latitude, point.longitude)
-                    )
-                }
-            }
-        }
-
-        if (locations.isEmpty()) {
-            return@LaunchedEffect
-        }
-
-        val boundsBuilder = LatLngBounds.Builder()
-
-        locations.forEach { location ->
-            boundsBuilder.include(location)
-        }
-
-        cameraPositionState.animate(
-            CameraUpdateFactory.newLatLngBounds(
-                boundsBuilder.build(),
-                36
+        if (
+            !shouldAutoFitHistoricalCamera(
+                state = state,
+                isMapLoaded = isMapLoaded,
+                hasFittedHistoryBounds = hasFittedHistoryBounds,
+                hasUserInteractedWithMap = hasUserInteractedWithMap
             )
-        )
+        ) {
+            return@LaunchedEffect
+        }
 
+        val bounds = withContext(Dispatchers.Default) {
+            buildHistoricalBounds(state)
+        }
+
+        // Không tự di chuyển nếu người dùng đã thao tác
+        // trong lúc tính bounds.
+        if (
+            hasUserInteractedWithMap ||
+            hasFittedHistoryBounds
+        ) {
+            return@LaunchedEffect
+        }
+
+        // Đánh dấu hoàn tất cả khi cả ba API trả rỗng.
         hasFittedHistoryBounds = true
+
+        if (bounds != null) {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngBounds(
+                    bounds,
+                    36
+                )
+            )
+        }
     }
 
     val currentOnMapTouchChanged by rememberUpdatedState(onMapTouchChanged)
@@ -1538,6 +1588,7 @@ private fun FloodGoogleMap(
                                 pass = PointerEventPass.Initial
                             )
 
+                            hasUserInteractedWithMap = true
                             currentOnMapTouchChanged(true)
 
                             try {
@@ -1556,6 +1607,26 @@ private fun FloodGoogleMap(
                 onMapLoaded = {
                     isMapLoaded = true
                 },
+                onMyLocationButtonClick = {
+                    hasUserInteractedWithMap = true
+
+                    val location = userLocation
+
+                    if (location != null) {
+                        cameraScope.launch {
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngZoom(
+                                    location,
+                                    16f
+                                )
+                            )
+                        }
+
+                        true
+                    } else {
+                        false
+                    }
+                },
                 properties = MapProperties(
                     isMyLocationEnabled =
                         hasLocationPermission &&
@@ -1564,331 +1635,336 @@ private fun FloodGoogleMap(
                 )
             ) {
 
-                if (state.isFloodLayerEnabled) {
-
-                    state.floodAreas
-                        .filter {
-                            it.geometry.type.equals(
-                                "polygon",
-                                ignoreCase = true
-                            ) &&
-                                    it.status.equals(
-                                        "active",
-                                        ignoreCase = true
-                                    )
-                        }
-                        .forEach { floodArea ->
+                state.floodAreas
+                    .filter {
+                        it.geometry.type.equals(
+                            "polygon",
+                            ignoreCase = true
+                        ) &&
+                                it.status.equals(
+                                    "active",
+                                    ignoreCase = true
+                                )
+                    }
+                    .forEach { floodArea ->
 
 
-                            val rawPoints = floodArea.geometry.points
+                        val rawPoints = floodArea.geometry.points
 
-                            val hasValidCoordinates =
-                                rawPoints.all { point ->
-                                    point.latitude.isFinite() &&
-                                            point.longitude.isFinite() &&
-                                            point.latitude in -90.0..90.0 &&
-                                            point.longitude in -180.0..180.0
+                        val hasValidCoordinates =
+                            rawPoints.all { point ->
+                                point.latitude.isFinite() &&
+                                        point.longitude.isFinite() &&
+                                        point.latitude in -90.0..90.0 &&
+                                        point.longitude in -180.0..180.0
+                            }
+
+                        val hasEnoughDistinctPoints =
+                            rawPoints
+                                .map { point ->
+                                    point.latitude to point.longitude
                                 }
+                                .distinct()
+                                .size >= 3
 
-                            val hasEnoughDistinctPoints =
-                                rawPoints
-                                    .map { point ->
-                                        point.latitude to point.longitude
-                                    }
-                                    .distinct()
-                                    .size >= 3
+                        if (hasValidCoordinates && hasEnoughDistinctPoints) {
 
-                            if (hasValidCoordinates && hasEnoughDistinctPoints) {
-
-                                val polygonPoints = rawPoints.map { point ->
-                                    LatLng(
-                                        point.latitude,
-                                        point.longitude
-                                    )
-                                }
-
-
-                                val fillColor =
-                                    when (
-                                        floodArea.severity.lowercase()
-                                    ) {
-
-                                        "critical" ->
-                                            Color(0x66B71C1C)
-
-                                        "high" ->
-                                            Color(0x66F44336)
-
-                                        "medium" ->
-                                            Color(0x66FFA000)
-
-                                        "low" ->
-                                            Color(0x664CAF50)
-
-                                        else ->
-                                            Color(0x665F6368)
-                                    }
-
-                                val strokeColor =
-                                    when (
-                                        floodArea.severity.lowercase()
-                                    ) {
-
-                                        "critical" ->
-                                            Color(0xFFB71C1C)
-
-                                        "high" ->
-                                            Color(0xFFF44336)
-
-                                        "medium" ->
-                                            Color(0xFFFFA000)
-
-                                        "low" ->
-                                            Color(0xFF4CAF50)
-
-                                        else ->
-                                            Color(0xFF5F6368)
-                                    }
-
-                                val matchingAlert =
-                                    state.floodAlerts
-                                        .filter { alert ->
-                                            alert.areaId == floodArea.id
-                                        }
-                                        .maxByOrNull { alert ->
-                                            when (alert.severity.lowercase()) {
-                                                "critical" -> 4
-                                                "high" -> 3
-                                                "medium" -> 2
-                                                "low" -> 1
-                                                else -> 0
-                                            }
-                                        }
-
-                                Polygon(
-                                    points = polygonPoints,
-                                    fillColor = fillColor,
-                                    strokeColor = strokeColor,
-                                    strokeWidth = 4f,
-                                    zIndex = 1f,
-                                    clickable = true,
-                                    onClick = {
-                                        onSelectFloodAlert(
-                                            matchingAlert?.id
-                                        )
-                                    }
+                            val polygonPoints = rawPoints.map { point ->
+                                LatLng(
+                                    point.latitude,
+                                    point.longitude
                                 )
                             }
+
+
+                            val fillColor =
+                                when (
+                                    floodArea.severity.lowercase()
+                                ) {
+
+                                    "critical" ->
+                                        Color(0x66B71C1C)
+
+                                    "high" ->
+                                        Color(0x66F44336)
+
+                                    "medium" ->
+                                        Color(0x66FFA000)
+
+                                    "low" ->
+                                        Color(0x664CAF50)
+
+                                    else ->
+                                        Color(0x665F6368)
+                                }
+
+                            val strokeColor =
+                                when (
+                                    floodArea.severity.lowercase()
+                                ) {
+
+                                    "critical" ->
+                                        Color(0xFFB71C1C)
+
+                                    "high" ->
+                                        Color(0xFFF44336)
+
+                                    "medium" ->
+                                        Color(0xFFFFA000)
+
+                                    "low" ->
+                                        Color(0xFF4CAF50)
+
+                                    else ->
+                                        Color(0xFF5F6368)
+                                }
+
+                            val matchingAlert =
+                                state.floodAlerts
+                                    .filter { alert ->
+                                        alert.areaId == floodArea.id
+                                    }
+                                    .maxByOrNull { alert ->
+                                        when (alert.severity.lowercase()) {
+                                            "critical" -> 4
+                                            "high" -> 3
+                                            "medium" -> 2
+                                            "low" -> 1
+                                            else -> 0
+                                        }
+                                    }
+
+                            Polygon(
+                                points = polygonPoints,
+                                fillColor = fillColor,
+                                strokeColor = strokeColor,
+                                strokeWidth = 4f,
+                                zIndex = 10f,
+                                clickable = state.isFloodLayerEnabled,
+                                visible = state.isFloodLayerEnabled,
+                                onClick = {
+                                    onSelectFloodAlert(
+                                        matchingAlert?.id
+                                    )
+                                }
+                            )
                         }
+                    }
+
+                val historyPointIcon = remember(context) {
+                    createHistoryPointIcon(context)
                 }
 
 
 // Điểm ngập lịch sử - dữ liệu tham khảo
 // Không phải cảnh báo ngập thời gian thực.
-                if (state.isHistoryPointsLayerEnabled) {
-                    state.historyPoints.forEachIndexed { index, point ->
-                        Marker(
-                            state = rememberUpdatedMarkerState(
-                                position = LatLng(
-                                    point.latitude,
-                                    point.longitude
-                                )
-                            ),
-                            title = "Điểm ngập lịch sử #${index + 1}",
-                            snippet = "Dữ liệu tham khảo, " +
-                                    "không phải cảnh báo hiện tại",
-                            icon = BitmapDescriptorFactory.defaultMarker(
-                                BitmapDescriptorFactory.HUE_RED
+                state.historyPoints.forEachIndexed { index, point ->
+                    Marker(
+                        state = rememberUpdatedMarkerState(
+                            position = LatLng(
+                                point.latitude,
+                                point.longitude
                             )
-                        )
-                    }
+                        ),
+                        title = "Điểm ngập lịch sử #${index + 1}",
+                        snippet = "Dữ liệu tham khảo, không phải cảnh báo hiện tại",
+                        icon = historyPointIcon,
+                        anchor = Offset(0.5f, 0.5f),
+                        zIndex = 0f,
+                        visible = state.isHistoryPointsLayerEnabled
+                    )
                 }
-
 
                 // =========================================
                 // HISTORICAL FLOOD BUFFERS
                 // Reference data - NOT active flood alerts
                 // =========================================
 
-                if (state.isHistoryBuffersLayerEnabled) {
-
-                    state.historyBufferPolygons.forEach { polygon ->
-
-                        Polygon(
-                            points = polygon.outer.map { point ->
-                                LatLng(
-                                    point.latitude,
-                                    point.longitude
-                                )
-                            },
-
-                            holes = polygon.holes.map { hole ->
-                                hole.map { point ->
-                                    LatLng(
-                                        point.latitude,
-                                        point.longitude
-                                    )
-                                }
-                            },
-
-
-                            fillColor = Color(0x33E53935),
-                            strokeColor = Color(0xFFE53935),
-                            strokeWidth = 2f,
-                            zIndex = 2f,
-                            clickable = false
-
-                        )
-                    }
+                state.historyBufferMapPolygons.forEach { polygon ->
+                    Polygon(
+                        points = polygon.outer,
+                        holes = polygon.holes,
+                        fillColor = Color(0x33E53935),
+                        strokeColor = Color(0xFFE53935),
+                        strokeWidth = 2f,
+                        zIndex = 1f,
+                        clickable = false,
+                        visible = state.isHistoryBuffersLayerEnabled
+                    )
                 }
-
 
                 // =========================================
                 // HISTORICAL FLOOD RADAR
                 // Research data - NOT active flood alerts
                 // =========================================
 
-                if (state.isHistoryRadarLayerEnabled) {
-
-                    state.historyRadarPolygons.forEach { polygon ->
-
-                        Polygon(
-                            points = polygon.outer.map { point ->
-                                LatLng(
-                                    point.latitude,
-                                    point.longitude
-                                )
-                            },
-
-                            holes = polygon.holes.map { hole ->
-                                hole.map { point ->
-                                    LatLng(
-                                        point.latitude,
-                                        point.longitude
-                                    )
-                                }
-                            },
-
-
-                            fillColor = Color(0x66D32F2F),
-                            strokeColor = Color(0xFFD32F2F),
-                            strokeWidth = 1.5f,
-                            zIndex = 3f,
-                            clickable = false
-
-                        )
-                    }
+                state.historyRadarMapPolygons.forEach { polygon ->
+                    Polygon(
+                        points = polygon.outer,
+                        holes = polygon.holes,
+                        fillColor = Color(0x66D32F2F),
+                        strokeColor = Color(0xFFD32F2F),
+                        strokeWidth = 1.5f,
+                        zIndex = 2f,
+                        clickable = false,
+                        visible = state.isHistoryRadarLayerEnabled
+                    )
                 }
 
                 // CCF-60 TC05: Warning Marker từ Backend
-                if (state.isFloodLayerEnabled) {
-                    state.floodAlerts
-                        .filter { alert ->
-                            alert.status.equals(
-                                "active",
-                                ignoreCase = true
-                            )
-                        }
-                        .forEach { alert ->
-
-                            val floodArea = state.floodAreas.find { area ->
-                                area.id == alert.areaId &&
-                                        area.status.equals(
-                                            "active",
-                                            ignoreCase = true
-                                        ) &&
-                                        area.geometry.type.equals(
-                                            "polygon",
-                                            ignoreCase = true
-                                        )
-                            }
-
-                            if (floodArea != null) {
-                                val points = floodArea.geometry.points
-
-                                val validPoints = points.filter { point ->
-                                    point.latitude.isFinite() &&
-                                            point.longitude.isFinite() &&
-                                            point.latitude in -90.0..90.0 &&
-                                            point.longitude in -180.0..180.0
-                                }
-
-                                if (validPoints.size >= 3) {
-
-                                    // Tọa độ đại diện, không phải vị trí GPS của cảnh báo
-                                    val latitude =
-                                        validPoints.map { it.latitude }.average()
-
-                                    val longitude =
-                                        validPoints.map { it.longitude }.average()
-
-                                    val markerState = rememberUpdatedMarkerState(
-                                        position = LatLng(latitude, longitude)
-                                    )
-
-                                    Marker(
-                                        state = markerState,
-                                        title = "[Cảnh báo] ${alert.title}",
-                                        snippet = "Mức độ: ${alert.severity}",
-                                        onClick = {
-                                            onSelectFloodAlert(alert.id)
-                                            true
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                }
-
-
-                if (state.isUserLayerEnabled) {
-                    userLocation?.let { location ->
-                        val markerState = rememberUpdatedMarkerState(
-                            position = location
-                        )
-
-                        Marker(
-                            state = markerState,
-                            title = "Vị trí của bạn"
+                state.floodAlerts
+                    .filter { alert ->
+                        alert.status.equals(
+                            "active",
+                            ignoreCase = true
                         )
                     }
+                    .forEach { alert ->
+
+                        val floodArea = state.floodAreas.find { area ->
+                            area.id == alert.areaId &&
+                                    area.status.equals(
+                                        "active",
+                                        ignoreCase = true
+                                    ) &&
+                                    area.geometry.type.equals(
+                                        "polygon",
+                                        ignoreCase = true
+                                    )
+                        }
+
+                        if (floodArea != null) {
+                            val points = floodArea.geometry.points
+
+                            val validPoints = points.filter { point ->
+                                point.latitude.isFinite() &&
+                                        point.longitude.isFinite() &&
+                                        point.latitude in -90.0..90.0 &&
+                                        point.longitude in -180.0..180.0
+                            }
+
+                            if (validPoints.size >= 3) {
+
+                                // Tọa độ đại diện, không phải vị trí GPS của cảnh báo
+                                val latitude =
+                                    validPoints.map { it.latitude }.average()
+
+                                val longitude =
+                                    validPoints.map { it.longitude }.average()
+
+                                val markerState = rememberUpdatedMarkerState(
+                                    position = LatLng(latitude, longitude)
+                                )
+                                Marker(
+                                    state = markerState,
+                                    title = "[Cảnh báo] ${alert.title}",
+                                    snippet = "Mức độ: ${alert.severity}",
+                                    zIndex = 10f,
+                                    visible = state.isFloodLayerEnabled,
+                                    onClick = {
+                                        onSelectFloodAlert(alert.id)
+                                        true
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                userLocation?.let { location ->
+                    val markerState = rememberUpdatedMarkerState(
+                        position = location
+                    )
+
+                    Marker(
+                        state = markerState,
+                        title = "Vị trí của bạn",
+                        visible = state.isUserLayerEnabled
+                    )
                 }
 
                 // CCF-71: Hiển thị Safe Locations từ Backend.
                 // Marker chỉ là dữ liệu thử nghiệm/chưa xác minh.
                 // Không dùng để quyết định sơ tán.
-                if (state.isShelterLayerEnabled) {
-                    state.safeLocations
-                        .filter { safeLocation ->
-                            safeLocation.status.equals(
-                                "active",
-                                ignoreCase = true
-                            ) &&
-                                    safeLocation.location.latitude.isFinite() &&
-                                    safeLocation.location.longitude.isFinite() &&
-                                    safeLocation.location.latitude in -90.0..90.0 &&
-                                    safeLocation.location.longitude in -180.0..180.0
+                state.safeLocations
+                    .filter { safeLocation ->
+                        safeLocation.status.equals(
+                            "active",
+                            ignoreCase = true
+                        ) &&
+                                safeLocation.location.latitude.isFinite() &&
+                                safeLocation.location.longitude.isFinite() &&
+                                safeLocation.location.latitude in -90.0..90.0 &&
+                                safeLocation.location.longitude in -180.0..180.0
+                    }
+                    .forEach { safeLocation ->
+
+                        val markerPosition = LatLng(
+                            safeLocation.location.latitude,
+                            safeLocation.location.longitude
+                        )
+
+                        val markerState = rememberUpdatedMarkerState(
+                            position = markerPosition
+                        )
+
+                        Marker(
+                            state = markerState,
+                            title = safeLocation.name,
+                            snippet = "DỮ LIỆU THỬ NGHIỆM — " +
+                                    "Chưa xác minh điểm tránh trú",
+                            visible = state.isShelterLayerEnabled
+                        )
+                    }
+
+            }
+
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+
+                val hasHistoricalGeometry =
+                    (state.isHistoryPointsLayerEnabled &&
+                            state.historyPoints.isNotEmpty()) ||
+                            (state.isHistoryBuffersLayerEnabled &&
+                                    state.historyBufferPolygons.isNotEmpty()) ||
+                            (state.isHistoryRadarLayerEnabled &&
+                                    state.historyRadarPolygons.isNotEmpty())
+
+                OutlinedButton(
+                    enabled = isMapLoaded && hasHistoricalGeometry,
+                    onClick = {
+                        hasUserInteractedWithMap = true
+
+                        cameraScope.launch {
+                            val bounds = withContext(Dispatchers.Default) {
+                                buildHistoricalBounds(state)
+                            }
+
+                            if (bounds != null) {
+                                cameraPositionState.animate(
+                                    CameraUpdateFactory.newLatLngBounds(
+                                        bounds,
+                                        36
+                                    )
+                                )
+                            }
                         }
-                        .forEach { safeLocation ->
-
-                            val markerPosition = LatLng(
-                                safeLocation.location.latitude,
-                                safeLocation.location.longitude
-                            )
-
-                            val markerState = rememberUpdatedMarkerState(
-                                position = markerPosition
-                            )
-
-                            Marker(
-                                state = markerState,
-                                title = safeLocation.name,
-                                snippet = "DỮ LIỆU THỬ NGHIỆM — " +
-                                        "Chưa xác minh điểm tránh trú"
-                            )
-                        }
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color(0xD9000000),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        text = "Xem toàn bộ lịch sử",
+                        fontSize = 11.sp
+                    )
                 }
-
             }
 
             if (
@@ -2248,6 +2324,35 @@ private fun FloodShelterCard(
 // =====================================================
 // FLOOD SEVERITY LEGEND
 // =====================================================
+
+
+
+@Composable
+private fun FloodHistoryPointLegend() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFE53935))
+                .border(
+                    width = 1.dp,
+                    color = Color.White,
+                    shape = CircleShape
+                )
+        )
+
+        Spacer(modifier = Modifier.width(5.dp))
+
+        Text(
+            text = "Điểm lịch sử",
+            color = MapSecondary,
+            fontSize = 10.sp
+        )
+    }
+}
 
 @Composable
 private fun FloodSeverityLegend(

@@ -51,6 +51,135 @@ internal fun parseHistoricalFloodPoints(
 }
 
 
+internal data class HistoricalPointsParseResult(
+    val points: List<HistoricalFloodPoint>,
+    val invalidFeatureCount: Int
+)
+
+internal fun parseHistoricalFloodPointsValidated(
+    geojson: JsonObject
+): Result<HistoricalPointsParseResult> = runCatching {
+
+    val type = geojson.get("type")
+
+    require(
+        type != null &&
+                type.isJsonPrimitive &&
+                type.asString == "FeatureCollection"
+    ) {
+        "GeoJSON không phải FeatureCollection"
+    }
+
+    val featuresElement = geojson.get("features")
+
+    require(
+        featuresElement != null &&
+                featuresElement.isJsonArray
+    ) {
+        "GeoJSON thiếu mảng features hợp lệ"
+    }
+
+    val features = featuresElement.asJsonArray
+
+    val validPoints = mutableListOf<HistoricalFloodPoint>()
+    var invalidCount = 0
+
+    for (feature in features) {
+
+        val point = runCatching {
+
+            if (!feature.isJsonObject) {
+                return@runCatching null
+            }
+
+            val geometryElement =
+                feature.asJsonObject.get("geometry")
+
+            if (
+                geometryElement == null ||
+                !geometryElement.isJsonObject
+            ) {
+                return@runCatching null
+            }
+
+            val geometry = geometryElement.asJsonObject
+
+            if (geometry.get("type")?.asString != "Point") {
+                return@runCatching null
+            }
+
+            val coordinatesElement =
+                geometry.get("coordinates")
+
+            if (
+                coordinatesElement == null ||
+                !coordinatesElement.isJsonArray
+            ) {
+                return@runCatching null
+            }
+
+            val coordinates =
+                coordinatesElement.asJsonArray
+
+            if (coordinates.size() < 2) {
+                return@runCatching null
+            }
+
+            val longitudeElement = coordinates[0]
+            val latitudeElement = coordinates[1]
+
+            if (
+                !longitudeElement.isJsonPrimitive ||
+                !latitudeElement.isJsonPrimitive ||
+                !longitudeElement.asJsonPrimitive.isNumber ||
+                !latitudeElement.asJsonPrimitive.isNumber
+            ) {
+                return@runCatching null
+            }
+
+            // GeoJSON: [longitude, latitude]
+            val longitude = longitudeElement.asDouble
+            val latitude = latitudeElement.asDouble
+
+            if (
+                !latitude.isFinite() ||
+                !longitude.isFinite() ||
+                latitude !in -90.0..90.0 ||
+                longitude !in -180.0..180.0
+            ) {
+                return@runCatching null
+            }
+
+            HistoricalFloodPoint(
+                latitude = latitude,
+                longitude = longitude
+            )
+
+        }.getOrNull()
+
+        if (point == null) {
+            invalidCount++
+        } else {
+            validPoints.add(point)
+        }
+    }
+
+    if (
+        features.size() > 0 &&
+        validPoints.isEmpty()
+    ) {
+        error(
+            "Tất cả ${features.size()} feature điểm " +
+                    "đều không hợp lệ"
+        )
+    }
+
+    HistoricalPointsParseResult(
+        points = validPoints,
+        invalidFeatureCount = invalidCount
+    )
+}
+
 internal fun parseHistoricalFloodPolygonFeatures(
     geojson: JsonObject
 ): Result<List<List<HistoricalFloodPolygon>>> = runCatching {

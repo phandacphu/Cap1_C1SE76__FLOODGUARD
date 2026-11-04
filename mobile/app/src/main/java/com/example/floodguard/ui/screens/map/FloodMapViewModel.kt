@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 
 
 class FloodMapViewModel(
@@ -27,15 +30,6 @@ class FloodMapViewModel(
 
     val uiState: StateFlow<FloodMapUiState> =
         _uiState.asStateFlow()
-
-    private var historyPointsLoaded = false
-
-    private var historyBuffersLoaded = false
-
-    private var historyRadarLoaded = false
-
-
-
 
     init {
         loadFloodAreas()
@@ -216,6 +210,7 @@ class FloodMapViewModel(
             )
     }
 
+
     fun toggleHistoryPointsLayer() {
         val enabled =
             !_uiState.value.isHistoryPointsLayerEnabled
@@ -224,43 +219,77 @@ class FloodMapViewModel(
             isHistoryPointsLayerEnabled = enabled
         )
 
-        if (enabled && !historyPointsLoaded) {
+        val loadStatus =
+            _uiState.value.historyPointsLoadStatus
+
+        if (
+            enabled &&
+            loadStatus != HistoricalLoadStatus.SUCCESS &&
+            loadStatus != HistoricalLoadStatus.LOADING
+        ) {
             loadHistoryPoints()
         }
     }
 
+
     fun loadHistoryPoints() {
-        if (_uiState.value.isLoadingHistoryPoints) return
+
+        if (
+            _uiState.value.historyPointsLoadStatus ==
+            HistoricalLoadStatus.LOADING
+        ) {
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            historyPointsLoadStatus =
+                HistoricalLoadStatus.LOADING,
+            isLoadingHistoryPoints = true,
+            historyPointsError = null,
+            historyPointsInvalidFeatureCount = 0
+        )
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoadingHistoryPoints = true,
-                historyPointsError = null
-            )
 
-            floodHistoryRepository.getPoints()
-                .onSuccess { geojson ->
-                    val points =
-                        parseHistoricalFloodPoints(geojson)
+            try {
+                val geojson =
+                    floodHistoryRepository.getPoints()
+                        .getOrThrow()
 
-                    historyPointsLoaded = true
-
-                    _uiState.value = _uiState.value.copy(
-                        historyPoints = points,
-                        isLoadingHistoryPoints = false,
-                        historyPointsError = null
-                    )
+                val parsed = withContext(Dispatchers.Default) {
+                    parseHistoricalFloodPointsValidated(geojson)
+                        .getOrThrow()
                 }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoadingHistoryPoints = false,
-                        historyPointsError =
-                            error.message
-                                ?: "Không thể tải điểm ngập lịch sử"
-                    )
-                }
+
+                _uiState.value = _uiState.value.copy(
+                    historyPoints = parsed.points,
+                    historyPointsInvalidFeatureCount =
+                        parsed.invalidFeatureCount,
+                    historyPointsLoadStatus =
+                        HistoricalLoadStatus.SUCCESS,
+                    isLoadingHistoryPoints = false,
+                    historyPointsError = null
+                )
+
+            } catch (error: CancellationException) {
+                throw error
+
+            } catch (error: Exception) {
+
+                _uiState.value = _uiState.value.copy(
+                    historyPoints = emptyList(),
+                    historyPointsInvalidFeatureCount = 0,
+                    historyPointsLoadStatus =
+                        HistoricalLoadStatus.FAILED,
+                    isLoadingHistoryPoints = false,
+                    historyPointsError =
+                        error.message
+                            ?: "Không thể tải điểm ngập lịch sử."
+                )
+            }
         }
     }
+
 
     fun toggleHistoryBuffersLayer() {
         val enabled =
@@ -270,62 +299,90 @@ class FloodMapViewModel(
             isHistoryBuffersLayerEnabled = enabled
         )
 
-        if (enabled && !historyBuffersLoaded) {
+        val loadStatus =
+            _uiState.value.historyBuffersLoadStatus
+
+        if (
+            enabled &&
+            loadStatus != HistoricalLoadStatus.SUCCESS &&
+            loadStatus != HistoricalLoadStatus.LOADING
+        ) {
             loadHistoryBuffers()
         }
     }
 
+
     fun loadHistoryBuffers() {
 
-        if (_uiState.value.isLoadingHistoryBuffers) return
+        if (
+            _uiState.value.historyBuffersLoadStatus ==
+            HistoricalLoadStatus.LOADING
+        ) {
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            historyBuffersLoadStatus =
+                HistoricalLoadStatus.LOADING,
+            isLoadingHistoryBuffers = true,
+            historyBuffersError = null
+        )
 
         viewModelScope.launch {
 
-            _uiState.value = _uiState.value.copy(
-                isLoadingHistoryBuffers = true,
-                historyBuffersError = null
-            )
+            try {
+                val geojson =
+                    floodHistoryRepository.getBuffers()
+                        .getOrThrow()
 
-            floodHistoryRepository.getBuffers()
-                .onSuccess { geojson ->
 
-                    parseHistoricalFloodPolygonFeatures(geojson)
-                        .onSuccess { featureGroups ->
+                val (featureCount, polygons, mapPolygons) =
+                    withContext(Dispatchers.Default) {
 
-                            historyBuffersLoaded = true
+                        val featureGroups =
+                            parseHistoricalFloodPolygonFeatures(
+                                geojson
+                            ).getOrThrow()
 
-                            _uiState.value = _uiState.value.copy(
-                                historyBufferFeatureCount =
-                                    featureGroups.size,
+                        val polygons = featureGroups.flatten()
 
-                                historyBufferPolygons =
-                                    featureGroups.flatten(),
+                        Triple(
+                            featureGroups.size,
+                            polygons,
+                            prepareHistoricalMapPolygons(polygons)
+                        )
+                    }
 
-                                isLoadingHistoryBuffers = false,
-                                historyBuffersError = null
-                            )
-                        }
-                        .onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    historyBufferFeatureCount = featureCount,
+                    historyBufferPolygons = polygons,
+                    historyBufferMapPolygons = mapPolygons,
+                    historyBuffersLoadStatus =
+                        HistoricalLoadStatus.SUCCESS,
+                    isLoadingHistoryBuffers = false,
+                    historyBuffersError = null
+                )
 
-                            _uiState.value = _uiState.value.copy(
-                                isLoadingHistoryBuffers = false,
-                                historyBuffersError =
-                                    "Dữ liệu vùng đệm không hợp lệ: " +
-                                            (error.message ?: "Lỗi GeoJSON")
-                            )
-                        }
-                }
-                .onFailure { error ->
+            } catch (error: CancellationException) {
+                throw error
 
-                    _uiState.value = _uiState.value.copy(
-                        isLoadingHistoryBuffers = false,
-                        historyBuffersError =
-                            error.message
-                                ?: "Không thể tải vùng đệm lịch sử."
-                    )
-                }
+            } catch (error: Exception) {
+
+                _uiState.value = _uiState.value.copy(
+                    historyBufferFeatureCount = 0,
+                    historyBufferPolygons = emptyList(),
+                    historyBufferMapPolygons = emptyList(),
+                    historyBuffersLoadStatus =
+                        HistoricalLoadStatus.FAILED,
+                    isLoadingHistoryBuffers = false,
+                    historyBuffersError =
+                        error.message
+                            ?: "Không thể tải vùng đệm lịch sử."
+                )
+            }
         }
     }
+
 
     fun toggleHistoryRadarLayer() {
 
@@ -336,60 +393,111 @@ class FloodMapViewModel(
             isHistoryRadarLayerEnabled = enabled
         )
 
-        if (enabled && !historyRadarLoaded) {
+        val loadStatus =
+            _uiState.value.historyRadarLoadStatus
+
+        if (
+            enabled &&
+            loadStatus != HistoricalLoadStatus.SUCCESS &&
+            loadStatus != HistoricalLoadStatus.LOADING
+        ) {
             loadHistoryRadar()
         }
     }
 
+
     fun loadHistoryRadar() {
 
-        if (_uiState.value.isLoadingHistoryRadar) return
+        if (
+            _uiState.value.historyRadarLoadStatus ==
+            HistoricalLoadStatus.LOADING
+        ) {
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            historyRadarLoadStatus =
+                HistoricalLoadStatus.LOADING,
+            isLoadingHistoryRadar = true,
+            historyRadarError = null
+        )
 
         viewModelScope.launch {
 
-            _uiState.value = _uiState.value.copy(
-                isLoadingHistoryRadar = true,
-                historyRadarError = null
-            )
+            try {
+                val geojson =
+                    floodHistoryRepository.getRadar()
+                        .getOrThrow()
 
-            floodHistoryRepository.getRadar()
-                .onSuccess { geojson ->
 
-                    parseHistoricalFloodPolygonFeatures(geojson)
-                        .onSuccess { featureGroups ->
+                val (featureCount, polygons, mapPolygons) =
+                    withContext(Dispatchers.Default) {
 
-                            historyRadarLoaded = true
+                        val featureGroups =
+                            parseHistoricalFloodPolygonFeatures(
+                                geojson
+                            ).getOrThrow()
 
-                            _uiState.value = _uiState.value.copy(
-                                historyRadarFeatureCount =
-                                    featureGroups.size,
+                        val polygons = featureGroups.flatten()
 
-                                historyRadarPolygons =
-                                    featureGroups.flatten(),
+                        Triple(
+                            featureGroups.size,
+                            polygons,
+                            prepareHistoricalMapPolygons(polygons)
+                        )
+                    }
 
-                                isLoadingHistoryRadar = false,
-                                historyRadarError = null
-                            )
-                        }
-                        .onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    historyRadarFeatureCount = featureCount,
+                    historyRadarPolygons = polygons,
+                    historyRadarMapPolygons = mapPolygons,
+                    historyRadarLoadStatus =
+                        HistoricalLoadStatus.SUCCESS,
+                    isLoadingHistoryRadar = false,
+                    historyRadarError = null
+                )
 
-                            _uiState.value = _uiState.value.copy(
-                                isLoadingHistoryRadar = false,
-                                historyRadarError =
-                                    "Dữ liệu Radar không hợp lệ: " +
-                                            (error.message ?: "Lỗi GeoJSON")
-                            )
-                        }
-                }
-                .onFailure { error ->
+            } catch (error: CancellationException) {
+                throw error
 
-                    _uiState.value = _uiState.value.copy(
-                        isLoadingHistoryRadar = false,
-                        historyRadarError =
-                            error.message
-                                ?: "Không thể tải dữ liệu Radar."
+            } catch (error: Exception) {
+
+                _uiState.value = _uiState.value.copy(
+                    historyRadarFeatureCount = 0,
+                    historyRadarPolygons = emptyList(),
+                    historyRadarMapPolygons = emptyList(),
+                    historyRadarLoadStatus =
+                        HistoricalLoadStatus.FAILED,
+                    isLoadingHistoryRadar = false,
+                    historyRadarError =
+                        error.message
+                            ?: "Không thể tải dữ liệu Radar."
+                )
+            }
+        }
+    }
+
+    private fun prepareHistoricalMapPolygons(
+        polygons: List<HistoricalFloodPolygon>
+    ): List<HistoricalMapPolygon> {
+
+        return polygons.map { polygon ->
+            HistoricalMapPolygon(
+                outer = polygon.outer.map { point ->
+                    com.google.android.gms.maps.model.LatLng(
+                        point.latitude,
+                        point.longitude
                     )
+                },
+                holes = polygon.holes.map { hole ->
+                    hole.map { point ->
+                        com.google.android.gms.maps.model.LatLng(
+                            point.latitude,
+                            point.longitude
+                        )
+                    }
                 }
+            )
         }
     }
 }
