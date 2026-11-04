@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,12 +39,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
 import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.rememberUpdatedMarkerState
 import kotlinx.coroutines.delay
+import kotlin.math.ceil
 
 private val MapBackground = Color(0xFF051424)
 private val MapSurface = Color(0xFF122131)
@@ -56,13 +63,17 @@ private val MapFont = FontFamily(
 )
 
 @Composable
-fun RescueMapScreen(onBack: () -> Unit) {
+internal fun RescueMapScreen(
+    onBack: () -> Unit,
+    location: RescueMapLocationController
+) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     var attempt by remember { mutableStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
     var timedOut by remember { mutableStateOf(false) }
     var showInformation by rememberSaveable { mutableStateOf(true) }
+    var handledCenterRequest by rememberSaveable { mutableLongStateOf(0L) }
 
     // Maps Compose saves this state through configuration/process recreation.
     // Do not put it inside the information-card or retry branches.
@@ -99,6 +110,20 @@ fun RescueMapScreen(onBack: () -> Unit) {
         attempt += 1
     }
 
+    LaunchedEffect(mapLoaded, location.state.centerRequestId) {
+        val fix = location.state.fix
+        if (mapLoaded && fix != null &&
+            location.state.centerRequestId != handledCenterRequest
+        ) {
+            // Center once for each acquired fix, including the automatic login request.
+            handledCenterRequest = location.state.centerRequestId
+            camera.animate(CameraUpdateFactory.newLatLngZoom(
+                LatLng(fix.latitude, fix.longitude),
+                if (fix.isApproximate) 13f else 16f
+            ))
+        }
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = MapBackground) {
         Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
             Row(
@@ -123,6 +148,34 @@ fun RescueMapScreen(onBack: () -> Unit) {
                     MapLabel("Bản đồ nền khu vực Đà Nẵng", MapText)
                     MapLabel("Kéo để di chuyển, chụm hai ngón để thu/phóng. Không cần cấp quyền vị trí để xem.")
                     MapLabel("SOS, điểm an toàn và các lớp ngập sẽ được bổ sung sau.")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val fix = location.state.fix
+                Column(modifier = Modifier.weight(1f)) {
+                    if (fix == null) {
+                        MapLabel(location.state.message)
+                    } else {
+                        MapLabel(if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí lần lấy gần nhất", MapCyan)
+                        MapLabel(fix.accuracyMeters?.let {
+                            "Độ chính xác khoảng ${ceil(it.toDouble()).toLong()} m"
+                        } ?: "Thiết bị chưa cung cấp độ chính xác")
+                    }
+                }
+                Button(
+                    onClick = location.locate,
+                    enabled = !location.state.isLoading && hasMapConfiguration,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MapCyan,
+                        contentColor = MapBackground
+                    )
+                ) {
+                    Text(if (location.state.isLoading) "Đang lấy…" else "Vị trí của tôi", fontFamily = MapFont)
                 }
             }
 
@@ -156,7 +209,26 @@ fun RescueMapScreen(onBack: () -> Unit) {
                                 mapToolbarEnabled = false
                             ),
                             onMapLoaded = { mapLoaded = true }
-                        )
+                        ) {
+                            location.state.fix?.let { fix ->
+                                val point = LatLng(fix.latitude, fix.longitude)
+                                fix.accuracyMeters?.takeIf { it > 0f }?.let { accuracy ->
+                                    Circle(
+                                        center = point,
+                                        radius = accuracy.toDouble(),
+                                        fillColor = MapCyan.copy(alpha = 0.15f),
+                                        strokeColor = MapCyan,
+                                        strokeWidth = 2f
+                                    )
+                                }
+                                Marker(
+                                    state = rememberUpdatedMarkerState(position = point),
+                                    title = "Vị trí cứu hộ (lần lấy gần nhất)",
+                                    snippet = if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí từ thiết bị",
+                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN)
+                                )
+                            }
+                        }
                     }
 
                     if (!mapLoaded) {
