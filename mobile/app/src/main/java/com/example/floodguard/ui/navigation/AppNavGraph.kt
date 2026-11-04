@@ -53,6 +53,7 @@ import com.example.floodguard.ui.screens.rescue.RescueEntryScreen
 import com.example.floodguard.ui.screens.rescue.RescueOverviewScreen
 import com.example.floodguard.ui.screens.rescue.RescueOverviewDestination
 import com.example.floodguard.ui.screens.rescue.RescueMapScreen
+import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 
@@ -150,6 +151,16 @@ fun AppNavGraph(
         }
         return
     }
+    // One GPS controller for the authenticated Rescue area, shared by its tabs.
+    // Public routes and Resident sessions never start this request.
+    val rescueLocation = if (session.isLoggedIn && session.role == "rescue" &&
+        isRescueRoute(currentRoute)
+    ) {
+        rememberRescueMapLocation(autoLocate = true)
+    } else {
+        null
+    }
+
     val safeLocationViewModel: SafeLocationViewModel = viewModel {
         SafeLocationViewModel(
             repository = SafeLocationRepository(
@@ -188,21 +199,24 @@ fun AppNavGraph(
         }
 
         composable(route = AppRoutes.RESCUE_MAP) {
-            RescueMapScreen(
-                onBack = {
-                    val returnedHome = navController.popBackStack(
-                        route = AppRoutes.RESCUE_HOME,
-                        inclusive = false,
-                        saveState = true
-                    )
-                    if (!returnedHome) {
-                        navController.navigate(AppRoutes.RESCUE_HOME) {
-                            popUpTo(navController.graph.id) { inclusive = true }
-                            launchSingleTop = true
+            rescueLocation?.let { location ->
+                RescueMapScreen(
+                    location = location,
+                    onBack = {
+                        val returnedHome = navController.popBackStack(
+                            route = AppRoutes.RESCUE_HOME,
+                            inclusive = false,
+                            saveState = true
+                        )
+                        if (!returnedHome) {
+                            navController.navigate(AppRoutes.RESCUE_HOME) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                                launchSingleTop = true
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         }
 
         composable(route = AppRoutes.ACCESS_DENIED) {
