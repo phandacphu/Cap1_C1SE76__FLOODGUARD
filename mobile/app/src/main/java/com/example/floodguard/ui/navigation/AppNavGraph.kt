@@ -50,6 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.floodguard.ui.screens.rescue.RescueEntryScreen
+import com.example.floodguard.ui.screens.rescue.RescueOverviewScreen
+import com.example.floodguard.ui.screens.rescue.RescueOverviewDestination
+import com.example.floodguard.ui.screens.rescue.RescueMapScreen
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 
@@ -121,14 +124,14 @@ fun AppNavGraph(
         }
 
         session.role == "rescue" -> {
-            if (currentRoute != AppRoutes.RESCUE_HOME) {
+            if (!isRescueRoute(currentRoute)) {
                 AppRoutes.RESCUE_HOME
             } else {
                 null
             }
         }
 
-        currentRoute == AppRoutes.RESCUE_HOME ||
+        isRescueRoute(currentRoute) ||
                 currentRoute == AppRoutes.ACCESS_DENIED -> {
             AppRoutes.HOME
         }
@@ -160,7 +163,16 @@ fun AppNavGraph(
         startDestination = startDestination
     ) {
         composable(route = AppRoutes.RESCUE_HOME) {
-            RescueEntryScreen(
+            RescueOverviewScreen(
+                availableDestinations = setOf(RescueOverviewDestination.MAP),
+                onOpenDestination = { destination ->
+                    if (destination == RescueOverviewDestination.MAP) {
+                        navController.navigate(AppRoutes.RESCUE_MAP) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
                 onLogout = {
                     authRepository.logout()
                 },
@@ -170,6 +182,24 @@ fun AppNavGraph(
                             inclusive = true
                         }
                         launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(route = AppRoutes.RESCUE_MAP) {
+            RescueMapScreen(
+                onBack = {
+                    val returnedHome = navController.popBackStack(
+                        route = AppRoutes.RESCUE_HOME,
+                        inclusive = false,
+                        saveState = true
+                    )
+                    if (!returnedHome) {
+                        navController.navigate(AppRoutes.RESCUE_HOME) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 }
             )
