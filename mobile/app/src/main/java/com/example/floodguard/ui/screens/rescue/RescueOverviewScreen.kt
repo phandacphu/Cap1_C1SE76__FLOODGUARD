@@ -19,11 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Menu
-import androidx.compose.material.icons.outlined.Sos
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -33,9 +30,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -223,49 +217,22 @@ fun RescueOverviewScreen(
                     }
                 },
                 bottomBar = {
-                    NavigationBar(
-                        containerColor = Color(0xFF0D1C2D),
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0, 0, 0, 0)
-                    ) {
-                        val items = listOf(
-                            Triple("Tổng quan", Icons.Outlined.Dashboard, null),
-                            Triple("Bản đồ", Icons.Outlined.Map, RescueOverviewDestination.MAP),
-                            Triple("SOS", Icons.Outlined.Sos, RescueOverviewDestination.SOS_LIST),
-                            Triple("Nhiệm vụ", Icons.Outlined.History, RescueOverviewDestination.MY_TASKS)
-                        )
-                        items.forEach { (label, icon, destination) ->
-                            val enabled = !isLoggingOut && (destination == null || canOpen(destination))
-                            NavigationBarItem(
-                                selected = destination == null,
-                                enabled = enabled,
-                                onClick = {
-                                    if (destination == null) scope.launch { listState.animateScrollToItem(0) }
-                                    else openDestination(destination)
-                                },
-                                icon = {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                },
-                                label = {
-                                    OverviewLabel(
-                                        if (destination != null && !canOpen(destination)) "$label\nSắp có" else label,
-                                        10.sp,
-                                        if (destination == null) OverviewCyan else OverviewMuted
-                                    )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = OverviewCyan,
-                                    indicatorColor = OverviewAlternate,
-                                    unselectedIconColor = OverviewMuted,
-                                    disabledIconColor = OverviewMuted.copy(alpha = 0.5f)
-                                )
-                            )
-                        }
-                    }
+                    RescueBottomBar(
+                        selectedTab = RescueMainTab.OVERVIEW,
+                        isBusy = isLoggingOut,
+                        onOverview = {
+                            scope.launch { listState.animateScrollToItem(0) }
+                        },
+                        onMap = if (canOpen(RescueOverviewDestination.MAP)) {
+                            { openDestination(RescueOverviewDestination.MAP) }
+                        } else null,
+                        onSos = if (canOpen(RescueOverviewDestination.SOS_LIST)) {
+                            { openDestination(RescueOverviewDestination.SOS_LIST) }
+                        } else null,
+                        onTasks = if (canOpen(RescueOverviewDestination.MY_TASKS)) {
+                            { openDestination(RescueOverviewDestination.MY_TASKS) }
+                        } else null
+                    )
                 }
             ) { padding ->
                 LazyColumn(
@@ -334,7 +301,11 @@ fun RescueOverviewScreen(
                                     )
                                     SectionStatus(
                                         state = uiState.map,
-                                        pendingMessage = "Bản đồ cứu hộ chưa sẵn sàng.",
+                                        pendingMessage = if (canOpen(RescueOverviewDestination.MAP)) {
+                                            "Mở bản đồ nền để xem khu vực và di chuyển trên bản đồ."
+                                        } else {
+                                            "Bản đồ cứu hộ chưa sẵn sàng."
+                                        },
                                         onRetry = onRetry?.let { retry ->
                                             { retry(RescueOverviewSection.MAP) }
                                         }
