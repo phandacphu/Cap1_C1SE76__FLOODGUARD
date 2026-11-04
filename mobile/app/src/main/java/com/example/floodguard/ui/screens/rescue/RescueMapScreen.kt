@@ -165,6 +165,11 @@ internal fun RescueMapScreen(
                         MapLabel(fix.accuracyMeters?.let {
                             "Độ chính xác khoảng ${ceil(it.toDouble()).toLong()} m"
                         } ?: "Thiết bị chưa cung cấp độ chính xác")
+                        if (fix.isApproximate) {
+                            TextButton(onClick = location.openAppSettings) {
+                                MapLabel("Đổi quyền vị trí", MapCyan)
+                            }
+                        }
                     }
                 }
                 Button(
@@ -175,7 +180,7 @@ internal fun RescueMapScreen(
                         contentColor = MapBackground
                     )
                 ) {
-                    Text(if (location.state.isLoading) "Đang lấy…" else "Vị trí của tôi", fontFamily = MapFont)
+                    Text(location.state.actionLabel, fontFamily = MapFont)
                 }
             }
 
