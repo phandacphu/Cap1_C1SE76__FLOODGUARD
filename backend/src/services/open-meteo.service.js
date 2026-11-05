@@ -1,9 +1,10 @@
+const { createOpenMeteoClient, fetchJson } = require("./open-meteo-client");
+const forecastClient = createOpenMeteoClient();
+
 const WEATHER_API_URL =
   "https://api.open-meteo.com/v1/forecast";
 const FLOOD_API_URL =
   "https://flood-api.open-meteo.com/v1/flood";
-
-const REQUEST_TIMEOUT_MS = 10000;
 
 const DATA_DISCLAIMER =
   "Forecast data is provided for informational purposes and is not an official emergency warning.";
@@ -13,6 +14,8 @@ function validateCoordinates(latitude, longitude) {
   const normalizedLongitude = Number(longitude);
 
   if (
+    (typeof latitude !== "number" && typeof latitude !== "string") ||
+    String(latitude).trim() === "" ||
     !Number.isFinite(normalizedLatitude) ||
     normalizedLatitude < -90 ||
     normalizedLatitude > 90
@@ -23,6 +26,8 @@ function validateCoordinates(latitude, longitude) {
   }
 
   if (
+    (typeof longitude !== "number" && typeof longitude !== "string") ||
+    String(longitude).trim() === "" ||
     !Number.isFinite(normalizedLongitude) ||
     normalizedLongitude < -180 ||
     normalizedLongitude > 180
@@ -38,42 +43,48 @@ function validateCoordinates(latitude, longitude) {
   };
 }
 
-async function fetchJson(
-  url,
-  fetchImplementation = fetch,
-  timeoutMs = REQUEST_TIMEOUT_MS,
-) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    timeoutMs,
-  );
+function validLocation(data) {
+  return data && typeof data === "object" && !Array.isArray(data) &&
+    typeof data.latitude === "number" && Number.isFinite(data.latitude) &&
+    Math.abs(data.latitude) <= 90 &&
+    typeof data.longitude === "number" && Number.isFinite(data.longitude) &&
+    Math.abs(data.longitude) <= 180;
+}
 
-  try {
-    const response = await fetchImplementation(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-      signal: controller.signal,
+function validSeries(series, fields) {
+  return series && Array.isArray(series.time) && series.time.length > 0 &&
+    series.time.every((time) => typeof time === "string" && time.length > 0) &&
+    fields.every((field) => Array.isArray(series[field]) &&
+      series[field].length === series.time.length &&
+      series[field].every((value) => value === null ||
+        (typeof value === "number" && Number.isFinite(value))));
+}
+
+function validWeather(data) {
+  return validLocation(data) && data.current &&
+    typeof data.current.time === "string" && data.current.time.length > 0 &&
+    ["precipitation", "rain", "weather_code"].every((field) =>
+      data.current[field] === null ||
+      (typeof data.current[field] === "number" && Number.isFinite(data.current[field]))) &&
+    validSeries(data.hourly, ["precipitation_probability", "precipitation", "rain"]);
+}
+
+function validFlood(data) {
+  return validLocation(data) && validSeries(data.daily, ["river_discharge", "river_discharge_max"]);
+}
+
+function clientFor(options) {
+  if (options.client) return options.client;
+  // Preserve the existing injectable fetch/timeout interface without sharing mocks
+  // with the production singleton or with other tests.
+  if (options.fetchImplementation || options.timeoutMs !== undefined) {
+    return createOpenMeteoClient({
+      fetchImplementation: options.fetchImplementation,
+      timeoutMs: options.timeoutMs,
+      logger: options.logger ?? console,
     });
-
-    if (!response.ok) {
-      throw new Error(
-        `External API returned status ${response.status}`,
-      );
-    }
-
-    return await response.json();
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("External API request timed out");
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
+  return forecastClient;
 }
 
 function normalizeWeatherData(data, coordinates) {
@@ -172,10 +183,10 @@ async function getWeatherForecast(
     timezone: "auto",
   });
 
-  const data = await fetchJson(
+  const data = await clientFor(options).getJson(
     `${WEATHER_API_URL}?${query.toString()}`,
-    options.fetchImplementation,
-    options.timeoutMs,
+    "weather",
+    validWeather,
   );
 
   return normalizeWeatherData(data, coordinates);
@@ -198,10 +209,10 @@ async function getFloodForecast(
     forecast_days: "7",
   });
 
-  const data = await fetchJson(
+  const data = await clientFor(options).getJson(
     `${FLOOD_API_URL}?${query.toString()}`,
-    options.fetchImplementation,
-    options.timeoutMs,
+    "flood",
+    validFlood,
   );
 
   return normalizeFloodData(data, coordinates);
@@ -212,15 +223,30 @@ async function getWeatherAndFloodForecast(
   longitude,
   options = {},
 ) {
-  const [weather, flood] = await Promise.all([
-    getWeatherForecast(latitude, longitude, options),
-    getFloodForecast(latitude, longitude, options),
+  // Validate once before starting either external request.
+  validateCoordinates(latitude, longitude);
+  const sharedOptions = { ...options, client: clientFor(options) };
+  const results = await Promise.allSettled([
+    getWeatherForecast(latitude, longitude, sharedOptions),
+    getFloodForecast(latitude, longitude, sharedOptions),
   ]);
-
-  return {
-    weather,
-    flood,
-  };
+  const failures = results.filter((result) => result.status === "rejected");
+  if (failures.length) {
+    const error = failures[0].reason;
+    error.sources = results.map((result, index) => ({
+      source: index === 0 ? "weather" : "flood",
+      status: result.status === "fulfilled" ? "available" : "error",
+      ...(result.status === "rejected" ? {
+        code: result.reason.code,
+        upstreamStatus: result.reason.upstreamStatus ?? null,
+        causeCode: result.reason.causeCode ?? null,
+      } : {}),
+    }));
+    const retryAfter = Math.max(...failures.map((result) => result.reason.retryAfterSeconds ?? 0));
+    if (retryAfter > 0) error.retryAfterSeconds = retryAfter;
+    throw error;
+  }
+  return { weather: results[0].value, flood: results[1].value };
 }
 
 module.exports = {

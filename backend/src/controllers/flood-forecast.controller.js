@@ -3,6 +3,8 @@ const {
 } = require("../services/open-meteo.service");
 
 function getErrorStatus(error) {
+  if (error.code === "FORECAST_UPSTREAM_TIMEOUT") return 504;
+  if (error.code?.startsWith("FORECAST_")) return 502;
   if (
     error.message.startsWith("Latitude") ||
     error.message.startsWith("Longitude")
@@ -72,7 +74,17 @@ async function getFloodForecast(req, res) {
   } catch (error) {
     const statusCode = getErrorStatus(error);
 
-    console.error("Get flood forecast error:", error);
+    console.error("Get flood forecast error:", {
+      code: error.code ?? null,
+      source: error.source ?? null,
+      upstreamStatus: error.upstreamStatus ?? null,
+      causeCode: error.causeCode ?? null,
+      sources: error.sources ?? null,
+      retryAfterSeconds: error.retryAfterSeconds ?? null,
+    });
+    if (error.retryAfterSeconds > 0) {
+      res.setHeader("Retry-After", String(error.retryAfterSeconds));
+    }
 
     return res.status(statusCode).json({
       success: false,
