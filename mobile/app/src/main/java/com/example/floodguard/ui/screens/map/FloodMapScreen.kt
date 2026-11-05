@@ -1266,6 +1266,7 @@ private fun FloodGoogleMap(
         isLocationServiceEnabled,
         gpsRetryKey
     ) {
+        userLocation = null
 
         if (!hasLocationPermission) {
 
@@ -1867,18 +1868,6 @@ private fun FloodGoogleMap(
                             }
                         }
                     }
-
-                userLocation?.let { location ->
-                    val markerState = rememberUpdatedMarkerState(
-                        position = location
-                    )
-
-                    Marker(
-                        state = markerState,
-                        title = "Vị trí của bạn",
-                        visible = state.isUserLayerEnabled
-                    )
-                }
 
                 // CCF-71: Hiển thị Safe Locations từ Backend.
                 // Marker chỉ là dữ liệu thử nghiệm/chưa xác minh.
