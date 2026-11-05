@@ -2,6 +2,7 @@ package com.example.floodguard.ui.screens.rescue
 
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +12,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,12 +36,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntSize
 import com.example.floodguard.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -47,14 +54,17 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.maps.android.compose.rememberUpdatedMarkerState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlin.math.ceil
 
 private val MapBackground = Color(0xFF051424)
@@ -83,10 +93,33 @@ internal fun RescueMapScreen(
         )
     }
     val dataState by dataViewModel.uiState.collectAsStateWithLifecycle()
+    val historyViewModel: RescueHistoryViewModel = viewModel()
+    val historyLayers by historyViewModel.layers.collectAsStateWithLifecycle()
+    // Coordinates are prepared once by the ViewModel, not during UI recomposition.
+    val historyPoints = historyLayers["points"]?.points.orEmpty()
+    val layers = remember(dataState.floodAreas) {
+        val items = when (val state = dataState.floodAreas) {
+            is RescueMapLoadState.Data -> state.items
+            else -> emptyList()
+        }
+        buildRescueFloodMapLayers(items)
+    }
+    val polygonPoints = remember(layers) {
+        layers.areas.associate { area ->
+            area.id to area.vertices.map { LatLng(it.latitude, it.longitude) }
+        }
+    }
+    var showAreas by rememberSaveable { mutableStateOf(false) }
+    var selectedAreaId by rememberSaveable { mutableStateOf<String?>(null) }
+    var focusAreaId by remember { mutableStateOf<String?>(null) }
+    var selectedHistoryPoint by remember { mutableStateOf<LatLng?>(null) }
+    var focusHistoryPoint by remember { mutableStateOf<LatLng?>(null) }
+    var focusMessage by remember { mutableStateOf<String?>(null) }
+    var showFloodLayers by rememberSaveable { mutableStateOf(false) }
+    var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var attempt by remember { mutableStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
     var timedOut by remember { mutableStateOf(false) }
-    var showInformation by rememberSaveable { mutableStateOf(true) }
     var handledCenterRequest by rememberSaveable { mutableLongStateOf(0L) }
 
     // Maps Compose saves this state through configuration/process recreation.
@@ -124,6 +157,42 @@ internal fun RescueMapScreen(
         attempt += 1
     }
 
+    LaunchedEffect(focusAreaId, mapLoaded, mapSize) {
+        val id = focusAreaId ?: return@LaunchedEffect
+        if (!mapLoaded || mapSize.width <= 0 || mapSize.height <= 0) return@LaunchedEffect
+        val points = polygonPoints[id] ?: run {
+            focusAreaId = null
+            return@LaunchedEffect
+        }
+        try {
+            val bounds = LatLngBounds.builder().apply { points.forEach { include(it) } }.build()
+            val padding = minOf(48, minOf(mapSize.width, mapSize.height) / 6)
+            camera.animate(CameraUpdateFactory.newLatLngBounds(bounds, mapSize.width, mapSize.height, padding))
+            focusMessage = null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            focusMessage = "Chưa di chuyển được đến vùng. Hãy chọn lại trong danh sách."
+        } finally {
+            focusAreaId = null
+        }
+    }
+
+    LaunchedEffect(focusHistoryPoint, mapLoaded) {
+        val point = focusHistoryPoint ?: return@LaunchedEffect
+        if (!mapLoaded) return@LaunchedEffect
+        try {
+            camera.animate(CameraUpdateFactory.newLatLngZoom(point, 16f))
+            focusMessage = null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            focusMessage = "Chưa di chuyển được đến điểm. Vui lòng thử lại."
+        } finally {
+            focusHistoryPoint = null
+        }
+    }
+
     LaunchedEffect(mapLoaded, location.state.centerRequestId) {
         val fix = location.state.fix
         if (mapLoaded && fix != null &&
@@ -151,18 +220,6 @@ internal fun RescueMapScreen(
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = MapText
-                )
-                TextButton(onClick = { showInformation = !showInformation }) {
-                    MapLabel(if (showInformation) "Ẩn" else "Thông tin", MapCyan)
-                }
-            }
-
-            if (showInformation) {
-                RescueMapDataPanel(
-                    state = dataState,
-                    onRefresh = dataViewModel::refresh,
-                    onRetryAreas = dataViewModel::retryFloodAreas,
-                    onRetryWarnings = dataViewModel::retryActiveWarnings
                 )
             }
 
@@ -218,7 +275,7 @@ internal fun RescueMapScreen(
                 } else {
                     key(attempt) {
                         GoogleMap(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().onSizeChanged { mapSize = it },
                             cameraPositionState = camera,
                             properties = MapProperties(isMyLocationEnabled = false),
                             uiSettings = MapUiSettings(
@@ -230,6 +287,62 @@ internal fun RescueMapScreen(
                             ),
                             onMapLoaded = { mapLoaded = true }
                         ) {
+                            // Keep map nodes alive when hiding the flood layers.
+                            // Changing visible updates the existing SDK objects.
+                            val historyMarkerIcon = remember {
+                                BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                            }
+                            listOf("radar", "buffers").forEach { name ->
+                                historyLayers[name]?.polygons.orEmpty().forEachIndexed { index, polygon ->
+                                    key("history-polygon", name, index) {
+                                        Polygon(
+                                            points = polygon.outer,
+                                            holes = polygon.holes,
+                                            visible = showFloodLayers,
+                                            fillColor = Color(0xFFE53935).copy(alpha = if (name == "radar") 0.32f else 0.16f),
+                                            strokeColor = Color(0xFFE53935).copy(alpha = 0.7f),
+                                            strokeWidth = if (name == "radar") 1f else 2f,
+                                            zIndex = if (name == "radar") 2f else 3f
+                                        )
+                                    }
+                                }
+                            }
+                            historyPoints.forEachIndexed { index, point ->
+                                key("history-point", index) {
+                                    Marker(
+                                        state = rememberUpdatedMarkerState(position = point),
+                                        visible = showFloodLayers,
+                                        title = "Vùng ngập lịch sử",
+                                        snippet = "Dữ liệu tham khảo lịch sử, không phải cảnh báo hiện tại",
+                                        icon = historyMarkerIcon,
+                                        onClick = {
+                                            showAreas = false
+                                            selectedAreaId = null
+                                            selectedHistoryPoint = point
+                                            true
+                                        }
+                                    )
+                                }
+                            }
+                            layers.areas.forEach { area ->
+                                key("system-area", area.id) {
+                                    val color = rescueAreaColor(area)
+                                    Polygon(
+                                        points = polygonPoints.getValue(area.id),
+                                        visible = showFloodLayers,
+                                        clickable = true,
+                                        fillColor = color.copy(alpha = if (area.isActive) 0.24f else 0.08f),
+                                        strokeColor = color,
+                                        strokeWidth = if (selectedAreaId == area.id) 7f else 3f,
+                                        zIndex = if (area.isActive) 10f + area.severity.priority else 1f,
+                                        onClick = {
+                                            selectedHistoryPoint = null
+                                            selectedAreaId = area.id
+                                            showAreas = true
+                                        }
+                                    )
+                                }
+                            }
                             location.state.fix?.let { fix ->
                                 val point = LatLng(fix.latitude, fix.longitude)
                                 fix.accuracyMeters?.takeIf { it > 0f }?.let { accuracy ->
@@ -238,7 +351,8 @@ internal fun RescueMapScreen(
                                         radius = accuracy.toDouble(),
                                         fillColor = MapCyan.copy(alpha = 0.15f),
                                         strokeColor = MapCyan,
-                                        strokeWidth = 2f
+                                        strokeWidth = 2f,
+                                        zIndex = 30f
                                     )
                                 }
                                 Marker(
@@ -248,6 +362,80 @@ internal fun RescueMapScreen(
                                     icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN)
                                 )
                             }
+                        }
+                    }
+
+                    if (mapLoaded) {
+                        Column(modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
+                            Button(
+                                onClick = {
+                                    showFloodLayers = !showFloodLayers
+                                    if (!showFloodLayers) {
+                                        showAreas = false
+                                        selectedAreaId = null
+                                        selectedHistoryPoint = null
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (showFloodLayers) MapSurface else Color(0xFF263B49),
+                                    contentColor = MapCyan
+                                )
+                            ) { Text("Vùng ngập", fontFamily = MapFont) }
+                            if (showFloodLayers) {
+                                Surface(color = MapSurface, shape = MaterialTheme.shapes.small) {
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier.size(14.dp)
+                                                    .background(Color(0xFFFDD835))
+                                            )
+                                            MapLabel("  Vùng ngập", MapText)
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Place,
+                                                contentDescription = null,
+                                                tint = Color(0xFFF44336),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            MapLabel(" Ngập lịch sử", Color(0xFFFF7777))
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier.size(14.dp)
+                                                    .background(Color(0xFFE53935).copy(alpha = 0.40f))
+                                            )
+                                            MapLabel("  Vùng trũng", MapText)
+                                        }
+                                        if (dataState.floodAreas is RescueMapLoadState.Error ||
+                                            dataState.activeWarnings is RescueMapLoadState.Error) {
+                                            MapLabel("Một phần dữ liệu hệ thống chưa tải được.")
+                                            TextButton(onClick = dataViewModel::refresh) {
+                                                MapLabel("Thử tải lại dữ liệu hệ thống", MapCyan)
+                                            }
+                                        }
+                                        when {
+                                            historyLayers.values.any { it.loading } -> MapLabel("Đang tải dữ liệu lịch sử…")
+                                            historyLayers.values.any { it.error } -> {
+                                                MapLabel("Một phần dữ liệu lịch sử chưa tải được.")
+                                                if (historyLayers.values.any { it.error &&
+                                                        (it.points.isNotEmpty() || it.polygons.isNotEmpty()) }) {
+                                                    MapLabel("Đang giữ dữ liệu lần tải trước.")
+                                                }
+                                                TextButton(onClick = historyViewModel::refresh) {
+                                                    MapLabel("Thử tải lại", MapCyan)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        focusMessage?.let { message ->
+                            Surface(
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                                color = MapSurface
+                            ) { MapLabel(message) }
                         }
                     }
 
@@ -286,6 +474,35 @@ internal fun RescueMapScreen(
                 onOverview = onBack
             )
         }
+    }
+
+    selectedHistoryPoint?.let { point ->
+        RescueHistoryPointSheet(
+            point = point,
+            onFocus = {
+                selectedHistoryPoint = null
+                focusHistoryPoint = point
+            },
+            onDismiss = { selectedHistoryPoint = null }
+        )
+    }
+
+    if (showAreas) {
+        RescueFloodAreaSheet(
+            layers = layers,
+            state = dataState,
+            selectedAreaId = selectedAreaId,
+            canFocus = mapLoaded && mapSize.width > 0 && mapSize.height > 0,
+            onSelect = { selectedAreaId = it },
+            onFocus = { area ->
+                selectedAreaId = area.id
+                focusAreaId = area.id
+                showAreas = false
+            },
+            onRetryAreas = dataViewModel::retryFloodAreas,
+            onRetryWarnings = dataViewModel::retryActiveWarnings,
+            onDismiss = { showAreas = false }
+        )
     }
 }
 
