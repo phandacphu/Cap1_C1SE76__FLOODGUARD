@@ -13,19 +13,14 @@ import { type FloodAreaInput, type FloodAreaItem } from "./floodAreaTypes";
 import { useFloodAreas } from "./useFloodAreas";
 
 interface HistoricalPointFeature {
-  geometry?: { coordinates?: [number, number] };
+  geometry?: { coordinates?: [number, number] } | null;
   properties?: {
     id?: string;
     name?: string;
     data_period?: string;
     coordinate_status?: string;
     source_url?: string;
-  };
-}
-
-interface HistoricalPointsResponse {
-  success?: boolean;
-  data?: { geojson?: { features?: HistoricalPointFeature[] } };
+  } | null;
 }
 
 const SELECT =
@@ -37,6 +32,8 @@ const BANNER_WARN =
 const BTN_SMALL = "rounded border border-border px-2.5 py-1 text-xs hover:border-water/50";
 
 const BTN_DANGER = "rounded border border-sos/50 px-2.5 py-1 text-xs text-sos hover:bg-sos/10";
+
+const BTN_RETRY = "shrink-0 rounded border border-warn/50 px-3 py-1 text-xs";
 
 type Dialog =
   | { kind: "form"; area: FloodAreaItem | null }
@@ -51,6 +48,7 @@ export default function FloodAreaManagementScreen() {
   const [historicalPoints, setHistoricalPoints] = useState<HistoricalPointFeature[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyRound, setHistoryRound] = useState(0);
 
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -59,37 +57,35 @@ export default function FloodAreaManagementScreen() {
   const [offerInactive, setOfferInactive] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Service đã kiểm tra success / FeatureCollection / features là mảng,
+  // dữ liệu sai cấu trúc sẽ vào nhánh catch và hiện lỗi có kiểm soát.
   useEffect(() => {
     let isMounted = true;
-    const loadHistory = async () => {
-      try {
-        setHistoryLoading(true);
-        setHistoryError(null);
-        const res = (await fetchHistoricalPoints()) as unknown as
-          | HistoricalPointsResponse
-          | undefined;
-        const features = res?.success ? res.data?.geojson?.features : undefined;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    fetchHistoricalPoints()
+      .then((collection) => {
         if (!isMounted) return;
-        if (features) {
-          setHistoricalPoints(features);
-        } else {
-          setHistoricalPoints([]);
-          setHistoryError("Phản hồi từ API điểm ngập lịch sử không đúng định dạng.");
-        }
-      } catch (err) {
-        console.error("Lỗi tải điểm ngập lịch sử:", err);
-        if (isMounted) {
-          setHistoryError("Không tải được điểm ngập lịch sử. Vui lòng thử lại.");
-        }
-      } finally {
+        setHistoricalPoints(
+          Array.isArray(collection.features)
+            ? (collection.features as unknown as HistoricalPointFeature[])
+            : [],
+        );
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        setHistoricalPoints([]);
+        setHistoryError(
+          err instanceof Error ? err.message : "Không tải được điểm ngập lịch sử.",
+        );
+      })
+      .finally(() => {
         if (isMounted) setHistoryLoading(false);
-      }
-    };
-    loadHistory();
+      });
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [historyRound]);
 
   const list = useMemo(() => areas ?? [], [areas]);
 
@@ -248,6 +244,7 @@ export default function FloodAreaManagementScreen() {
           <button
             type="button"
             disabled={areas === null}
+            title={areas === null ? "Cần tải được danh sách vùng ngập trước khi thêm mới." : undefined}
             onClick={openCreate}
             className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg hover:brightness-110 disabled:opacity-50"
           >
@@ -255,16 +252,24 @@ export default function FloodAreaManagementScreen() {
           </button>
         </div>
 
-        {error && areas !== null && (
+        {/* Hiện lỗi cả khi chưa tải được lần nào (areas === null) lẫn khi đã có dữ liệu cũ */}
+        {error && (
           <div role="alert" className={BANNER_WARN}>
             <span>
-              Không cập nhật được dữ liệu mới: {error} Đang hiển thị dữ liệu đã tải trước đó.
+              {areas === null
+                ? `Không tải được danh sách vùng ngập: ${error} Nếu là lỗi 401/403, hãy đăng xuất và đăng nhập lại bằng tài khoản quản trị rồi thử lại.`
+                : `Không cập nhật được dữ liệu mới: ${error} Đang hiển thị dữ liệu đã tải trước đó.`}
             </span>
-            <button
-              type="button"
-              onClick={refresh}
-              className="rounded border border-warn/50 px-3 py-1 text-xs"
-            >
+            <button type="button" onClick={refresh} className={BTN_RETRY}>
+              Thử lại
+            </button>
+          </div>
+        )}
+
+        {historyError && (
+          <div role="alert" className={BANNER_WARN}>
+            <span>{historyError}</span>
+            <button type="button" onClick={() => setHistoryRound((r) => r + 1)} className={BTN_RETRY}>
               Thử lại
             </button>
           </div>
@@ -285,13 +290,8 @@ export default function FloodAreaManagementScreen() {
               Đang tải dữ liệu điểm ngập lịch sử...
             </p>
           )}
-          {historyError && (
-            <p role="alert" className="py-4 text-center text-sm text-warn">
-              {historyError}
-            </p>
-          )}
 
-          {!loading && !historyLoading && totalRows === 0 && (
+          {!loading && !historyLoading && areas !== null && totalRows === 0 && (
             <p className="py-8 text-center text-sm text-muted">
               Không có vùng ngập hoặc điểm ngập nào phù hợp.
             </p>
