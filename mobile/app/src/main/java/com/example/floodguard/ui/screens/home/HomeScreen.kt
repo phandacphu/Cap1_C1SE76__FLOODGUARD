@@ -99,36 +99,31 @@ private val DarkRed = Color(0xFF271416)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
-
     onWarningClick: () -> Unit = {},
-
     onNotificationClick: () -> Unit = {},
-
     onProfileClick: () -> Unit = {},
-
     onSosClick: () -> Unit = {},
-
     onMapClick: () -> Unit = {},
-
     onSafeLocationClick: () -> Unit = {},
-
     onBottomNavigate: (String) -> Unit = {}
 ) {
-
     val state by viewModel.uiState
 
+    val homeActionColors = ButtonDefaults.outlinedButtonColors(
+        containerColor = CardBackground,
+        contentColor = WhiteText,
+        disabledContainerColor = CardBackground,
+        disabledContentColor = GrayText
+    )
+
     Scaffold(
-
         containerColor = HomeBackground,
-
         bottomBar = {
-
             FloodGuardBottomBar(
                 currentRoute = AppRoutes.HOME,
                 onNavigate = onBottomNavigate
             )
         }
-
     ) { innerPadding ->
 
         Column(
@@ -137,8 +132,6 @@ fun HomeScreen(
                 .padding(innerPadding)
                 .background(HomeBackground)
         ) {
-
-            // HEADER
             HomeHeader(
                 onNotificationClick = onNotificationClick,
                 onProfileClick = onProfileClick
@@ -146,197 +139,163 @@ fun HomeScreen(
 
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(
-                        rememberScrollState()
-                    )
-                    .padding(horizontal = 16.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-
-                Spacer(
-                    modifier = Modifier.height(16.dp)
-                )
-
-
-                // =========================================
-                // LOCATION
-                // =========================================
-
-                CurrentLocationCard(
-                    state = state
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(16.dp)
-                )
-
-
-                // =========================================
-                // SOS
-                // =========================================
-
-                EmergencySosCard(
-                    onSosClick = onSosClick
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(20.dp)
-                )
-
-
-                // =========================================
-                // WARNING
-                // =========================================
-
-                FloodWarningCard(
-                    state = state,
-                    onClick = onWarningClick
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(24.dp)
-                )
-
-
-                // =========================================
-                // MONITORING
-                // =========================================
-
                 SectionTitle(
-                    title = "QUAN TRẮC THỦY VĂN",
-                    subtitle = "Dữ liệu cập nhật gần thời gian thực"
+                    title = "CẢNH BÁO TRÊN HỆ THỐNG",
+                    subtitle =
+                        "Thông tin chưa được đối chiếu với vị trí của bạn"
                 )
 
+                when {
+                    state.isLoadingWarnings -> {
+                        Text(
+                            text = "Đang tải cảnh báo...",
+                            color = GrayText
+                        )
+                    }
 
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
+                    state.warningError != null -> {
+                        Text(
+                            text = state.warningError.orEmpty(),
+                            color = RedColor
+                        )
+                    }
 
+                    state.hasActiveWarning -> {
+                        FloodWarningCard(
+                            state = state,
+                            onClick = onWarningClick
+                        )
+                    }
+
+                    else -> {
+                        Column(
+                            verticalArrangement =
+                                Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = state.warningTitle,
+                                color = WhiteText,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            Text(
+                                text = state.warningDescription,
+                                color = GrayText,
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp
+                            )
+
+                            if (state.warningTime.isNotBlank()) {
+                                Text(
+                                    text = state.warningTime,
+                                    color = GrayText,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    OutlinedButton(
+                        onClick = onWarningClick,
+                        colors = homeActionColors,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Danh sách cảnh báo")
+                    }
 
-                    HydroCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.WaterDrop,
-                        metric = state.rainfall,
-                        iconColor = CyanColor
-                    )
-
-                    HydroCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Waves,
-                        metric = state.riverLevel,
-                        iconColor = CyanColor
-                    )
+                    OutlinedButton(
+                        onClick = viewModel::loadWarnings,
+                        enabled = !state.isLoadingWarnings,
+                        colors = homeActionColors,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            when {
+                                state.isLoadingWarnings -> "Đang tải..."
+                                state.warningError != null -> "Thử lại"
+                                else -> "Tải lại"
+                            }
+                        )
+                    }
                 }
-
-
-                Spacer(
-                    modifier = Modifier.height(10.dp)
-                )
-
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(10.dp)
-                ) {
-
-                    HydroCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Air,
-                        metric = state.wind,
-                        iconColor = CyanColor
-                    )
-
-                    HydroCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.Warning,
-                        metric = state.floodPoint,
-                        iconColor = OrangeColor
-                    )
-                }
-
-
-                Spacer(
-                    modifier = Modifier.height(26.dp)
-                )
-
-
-                // =========================================
-                // SAFE LOCATION
-                // =========================================
 
                 SectionTitle(
-                    title = "ĐIỂM TRÁNH TRÚ GẦN NHẤT",
+                    title = "BẢN ĐỒ & VỊ TRÍ",
                     subtitle =
-                        "Ưu tiên điểm còn khả năng tiếp nhận"
+                        "Xem vị trí thiết bị và các lớp dữ liệu bản đồ"
                 )
 
+                OutlinedButton(
+                    onClick = onMapClick,
+                    colors = homeActionColors,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Map,
+                        contentDescription = null
+                    )
 
-                Spacer(
-                    modifier = Modifier.height(12.dp)
+                    Spacer(Modifier.size(8.dp))
+
+                    Text("Mở bản đồ")
+                }
+
+                SectionTitle(
+                    title = "ĐIỂM TRÁNH TRÚ",
+                    subtitle =
+                        "Khả năng tiếp nhận hiện tại cần được xác nhận"
                 )
 
+                Text(
+                    text =
+                        "Xem danh sách các điểm tránh trú do hệ thống cung cấp.",
+                    color = GrayText,
+                    fontSize = 13.sp
+                )
 
-                SafeShelterCard(
+                OutlinedButton(
+                    onClick = onSafeLocationClick,
+                    colors = homeActionColors,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Xem danh sách điểm tránh trú")
+                }
+
+                HomeForecastSection(
                     state = state,
-                    onMapClick = onMapClick,
-                    onSafeLocationClick =
-                        onSafeLocationClick
+                    onLoadForecast = viewModel::loadForecast,
+                    buttonColors = homeActionColors
                 )
 
+                if (state.regionalFloodInfo.isNotEmpty()) {
+                    SectionTitle(
+                        title = "TỔNG HỢP KHU VỰC",
+                        subtitle = "Thông tin cảnh báo theo khu vực"
+                    )
 
-                Spacer(
-                    modifier = Modifier.height(26.dp)
-                )
-
-
-                // =========================================
-                // REGIONAL SUMMARY
-                // =========================================
-
-                SectionTitle(
-                    title = "TỔNG HỢP KHU VỰC",
-                    subtitle =
-                        "Mức cảnh báo ngập lụt hiện tại"
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
-
-
-                RegionalSummaryCard(
-                    data = state.regionalFloodInfo
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(28.dp)
-                )
-
+                    RegionalSummaryCard(
+                        data = state.regionalFloodInfo
+                    )
+                }
 
                 Text(
                     text =
                         "FloodGuard • Hệ thống cảnh báo lũ & hỗ trợ cứu hộ",
-                    color = Color(0xFF516779),
+                    color = GrayText,
                     fontSize = 10.sp,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(20.dp)
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
@@ -381,43 +340,11 @@ private fun HomeHeader(
                 modifier = Modifier.height(3.dp)
             )
 
-            Row(
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                Text(
-                    text = "Miền Trung",
-                    color = GrayText,
-                    fontSize = 11.sp
-                )
-
-                Text(
-                    text = "  •  ",
-                    color = GrayText,
-                    fontSize = 11.sp
-                )
-
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(
-                            GreenColor,
-                            CircleShape
-                        )
-                )
-
-                Spacer(
-                    modifier = Modifier.size(5.dp)
-                )
-
-                Text(
-                    text = "TRỰC TUYẾN",
-                    color = GreenColor,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                text = "Nguồn cảnh báo: FloodGuard API",
+                color = GrayText,
+                fontSize = 11.sp
+            )
         }
 
 
@@ -977,7 +904,7 @@ private fun FloodWarningCard(
 
                     Text(
                         text =
-                            "BẢN TIN KHẨN",
+                            "CẢNH BÁO TRÊN HỆ THỐNG",
 
                         color =
                             OrangeColor,
@@ -1052,7 +979,7 @@ private fun FloodWarningCard(
 
                 Text(
                     text =
-                        "XEM CHI TIẾT →",
+                        "XEM DANH SÁCH →",
 
                     color =
                         OrangeColor,
