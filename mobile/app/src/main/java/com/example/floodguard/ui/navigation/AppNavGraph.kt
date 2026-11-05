@@ -798,12 +798,13 @@ fun AppNavGraph(
                         Toast.LENGTH_SHORT
                     ).show()
                 },
-                onShelterDetailClick = {
-                    Toast.makeText(
-                        context,
-                        "Chi tiết trạm trú chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onShelterDetailClick = { locationId ->
+                    navController.navigate(
+                        "${AppRoutes.SAFE_LOCATION_DETAIL}/" +
+                                android.net.Uri.encode(locationId)
+                    ) {
+                        launchSingleTop = true
+                    }
                 },
                 onSosClick = {
                     navController.navigate(AppRoutes.SEND_SOS) {

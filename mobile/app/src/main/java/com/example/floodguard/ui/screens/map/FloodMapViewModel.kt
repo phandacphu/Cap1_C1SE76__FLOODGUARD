@@ -31,6 +31,12 @@ class FloodMapViewModel(
     val uiState: StateFlow<FloodMapUiState> =
         _uiState.asStateFlow()
 
+    private val excludedDemoFloodAreaIds = setOf(
+        "ccf44-sample-flood-area-01",
+        "TLpdPrxHD6D1pVECasus",
+        "KzyV6q9mj5QkpxShKn3A"
+    )
+
     init {
         loadFloodAreas()
         loadFloodAlerts()
@@ -65,20 +71,21 @@ class FloodMapViewModel(
 
                     floodAreas.forEach { area ->
                         Log.d(
-                            "FloodMapTC04",
+                            "FloodMapSource",
                             "id=${area.id}, " +
+                                    "name=${area.name}, " +
+                                    "source=${area.source}, " +
                                     "status=${area.status}, " +
                                     "severity=${area.severity}, " +
-                                    "type=${area.geometry.type}, " +
-                                    "points=${area.geometry.points.joinToString { point ->
-                                        "(${point.latitude}, ${point.longitude})"
-                                    }}"
+                                    "points=${area.geometry.points.size}"
                         )
                     }
 
                     _uiState.value =
                         _uiState.value.copy(
-                            floodAreas = floodAreas,
+                            floodAreas = floodAreas.filterNot { area ->
+                                area.id in excludedDemoFloodAreaIds
+                            },
                             isLoadingFloodAreas = false,
                             floodAreasError = null
                         )
@@ -115,7 +122,9 @@ class FloodMapViewModel(
 
                     _uiState.value =
                         _uiState.value.copy(
-                            floodAlerts = floodAlerts,
+                            floodAlerts = floodAlerts.filterNot { alert ->
+                                alert.areaId in excludedDemoFloodAreaIds
+                            },
                             isLoadingFloodAlerts = false,
                             floodAlertsError = null
                         )
@@ -145,6 +154,16 @@ class FloodMapViewModel(
 
             safeLocationRepository.getSafeLocations()
                 .onSuccess { locations ->
+                    locations.forEach { location ->
+                        Log.d(
+                            "SafeLocationSource",
+                            "id=${location.id}, " +
+                                    "name=${location.name}, " +
+                                    "status=${location.status}, " +
+                                    "lat=${location.location.latitude}, " +
+                                    "lng=${location.location.longitude}"
+                        )
+                    }
                     val validLocations = locations.filter { location ->
                         location.location.latitude.isFinite() &&
                                 location.location.longitude.isFinite() &&
@@ -170,14 +189,6 @@ class FloodMapViewModel(
     }
 
 
-    fun toggleFloodLayer() {
-        _uiState.value =
-            _uiState.value.copy(
-                isFloodLayerEnabled =
-                    !_uiState.value.isFloodLayerEnabled
-            )
-    }
-
     fun toggleUserLayer() {
         _uiState.value =
             _uiState.value.copy(
@@ -185,13 +196,59 @@ class FloodMapViewModel(
                     !_uiState.value.isUserLayerEnabled
             )
     }
+    fun toggleFloodLayer() {
+        val currentState = _uiState.value
+        val enabled = !currentState.isFloodLayerEnabled
+
+        _uiState.value = currentState.copy(
+            isFloodLayerEnabled = enabled,
+            isHistoryPointsLayerEnabled = enabled,
+            isHistoryBuffersLayerEnabled = enabled,
+            isHistoryRadarLayerEnabled = enabled
+        )
+
+        if (!enabled) {
+            return
+        }
+
+        if (
+            currentState.historyPointsLoadStatus !=
+            HistoricalLoadStatus.SUCCESS &&
+            currentState.historyPointsLoadStatus !=
+            HistoricalLoadStatus.LOADING
+        ) {
+            loadHistoryPoints()
+        }
+
+        if (
+            currentState.historyBuffersLoadStatus !=
+            HistoricalLoadStatus.SUCCESS &&
+            currentState.historyBuffersLoadStatus !=
+            HistoricalLoadStatus.LOADING
+        ) {
+            loadHistoryBuffers()
+        }
+
+        if (
+            currentState.historyRadarLoadStatus !=
+            HistoricalLoadStatus.SUCCESS &&
+            currentState.historyRadarLoadStatus !=
+            HistoricalLoadStatus.LOADING
+        ) {
+            loadHistoryRadar()
+        }
+    }
 
     fun toggleShelterLayer() {
-        _uiState.value =
-            _uiState.value.copy(
-                isShelterLayerEnabled =
-                    !_uiState.value.isShelterLayerEnabled
-            )
+        val currentState = _uiState.value
+        val enabled = !currentState.isShelterLayerEnabled
+
+        _uiState.value = currentState.copy(
+            isShelterLayerEnabled = enabled,
+            selectedSafeLocationId =
+                if (enabled) currentState.selectedSafeLocationId
+                else null
+        )
     }
 
     fun toggleSafeRouteLayer() {
@@ -210,6 +267,27 @@ class FloodMapViewModel(
             )
     }
 
+    fun selectSafeLocation(locationId: String?) {
+        val currentState = _uiState.value
+
+        val selectedId = locationId?.takeIf { id ->
+            currentState.isShelterLayerEnabled &&
+                    currentState.safeLocations.any { location ->
+                        location.id == id &&
+                                location.status.equals(
+                                    "active",
+                                    ignoreCase = true
+                                )
+                    }
+        }
+
+        _uiState.value = currentState.copy(
+            selectedSafeLocationId = selectedId,
+            selectedFloodAlertId =
+                if (selectedId != null) null
+                else currentState.selectedFloodAlertId
+        )
+    }
 
     fun toggleHistoryPointsLayer() {
         val enabled =

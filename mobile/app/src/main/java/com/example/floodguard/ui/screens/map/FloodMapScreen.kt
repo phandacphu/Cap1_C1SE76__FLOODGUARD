@@ -30,9 +30,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -51,6 +53,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -215,7 +219,7 @@ fun FloodMapRoute(
     onNotificationClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onSafeRouteClick: () -> Unit = {},
-    onShelterDetailClick: () -> Unit = {},
+    onShelterDetailClick: (String) -> Unit = { _ -> },
     onSosClick: () -> Unit = {},
     onBottomNavigate: (String) -> Unit = {}
 ) {
@@ -237,6 +241,7 @@ fun FloodMapRoute(
         onBottomNavigate = onBottomNavigate,
         onRetryFloodAreas = viewModel::loadFloodAreas,
         onSelectFloodAlert = viewModel::selectFloodAlert,
+        onSelectSafeLocation = viewModel::selectSafeLocation,
         onRetryFloodAlerts = viewModel::loadFloodAlerts,
         onToggleHistoryPointsLayer = viewModel::toggleHistoryPointsLayer,
         onRetryHistoryPoints = viewModel::loadHistoryPoints,
@@ -263,7 +268,8 @@ fun FloodMapScreen(
     onToggleShelterLayer: () -> Unit,
     onToggleSafeRouteLayer: () -> Unit,
     onSafeRouteClick: () -> Unit,
-    onShelterDetailClick: () -> Unit,
+    onShelterDetailClick: (String) -> Unit,
+    onSelectSafeLocation: (String?) -> Unit,
     onSosClick: () -> Unit,
     onBottomNavigate: (String) -> Unit,
     onRetryFloodAreas: () -> Unit,
@@ -312,7 +318,29 @@ fun FloodMapScreen(
                 onProfileClick = onProfileClick
             )
 
-            FloodGpsInfo()
+            FloodGoogleMap(
+                state = state,
+                onSelectFloodAlert = onSelectFloodAlert,
+                onSelectSafeLocation = onSelectSafeLocation,
+                onMapTouchChanged = { isTouchingMap = it }
+            )
+
+            if (
+                state.isHistoryPointsLayerEnabled ||
+                state.isHistoryBuffersLayerEnabled ||
+                state.isHistoryRadarLayerEnabled
+            ) {
+                Text(
+                    text = "Đang hiển thị dữ liệu lịch sử tham khảo. " +
+                            "Không phải cảnh báo ngập hiện tại.",
+                    color = MapSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = 8.dp
+                    )
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(10.dp)
@@ -325,30 +353,39 @@ fun FloodMapScreen(
                 onToggleShelterLayer = onToggleShelterLayer
             )
 
+            if (state.isShelterLayerEnabled) {
+                val shelterMessage = when {
+                    state.isLoadingSafeLocations ->
+                        "Đang tải điểm tránh trú..."
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-            ) {
-                FloodLayerItem(
-                    text = "Điểm ngập lịch sử (${state.historyPoints.size})",
-                    selected = state.isHistoryPointsLayerEnabled,
-                    onClick = onToggleHistoryPointsLayer
-                )
+                    state.safeLocationsError != null ->
+                        state.safeLocationsError
+
+                    state.safeLocations.none { location ->
+                        location.status.equals(
+                            "active",
+                            ignoreCase = true
+                        )
+                    } ->
+                        "Chưa có điểm tránh trú để hiển thị."
+
+                    else -> null
+                }
+
+                shelterMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = MapSecondary,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(
+                            horizontal = 18.dp,
+                            vertical = 8.dp
+                        )
+                    )
+                }
             }
 
             if (state.isHistoryPointsLayerEnabled) {
-                Text(
-                    text = "Dữ liệu ngập lịch sử tham khảo. " +
-                            "Không phải cảnh báo ngập hiện tại.",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = 6.dp
-                    )
-                )
 
                 if (state.isLoadingHistoryPoints) {
                     Text(
@@ -406,30 +443,7 @@ fun FloodMapScreen(
             // HISTORICAL FLOOD BUFFERS
             // ============================================
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-            ) {
-                FloodLayerItem(
-                    text = "Vùng đệm tham khảo (${state.historyBufferFeatureCount})",
-                    selected = state.isHistoryBuffersLayerEnabled,
-                    onClick = onToggleHistoryBuffersLayer
-                )
-            }
-
             if (state.isHistoryBuffersLayerEnabled) {
-
-                Text(
-                    text = "Vùng đệm nghiên cứu 220 m và 450 m. " +
-                            "Không phải ranh giới ngập thực tế đã xác minh.",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = 6.dp
-                    )
-                )
 
                 if (state.isLoadingHistoryBuffers) {
 
@@ -483,31 +497,7 @@ fun FloodMapScreen(
                 modifier = Modifier.height(12.dp)
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-            ) {
-                FloodLayerItem(
-                    text = "Vùng phân tích Radar (${state.historyRadarFeatureCount})",
-                    selected = state.isHistoryRadarLayerEnabled,
-                    onClick = onToggleHistoryRadarLayer
-                )
-            }
-
             if (state.isHistoryRadarLayerEnabled) {
-
-                Text(
-                    text = "Vùng phân tích Radar phục vụ nghiên cứu " +
-                            "ngập lịch sử. Chưa được xác minh là " +
-                            "khu vực ngập thực tế.",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = 6.dp
-                    )
-                )
 
                 if (state.isLoadingHistoryRadar) {
 
@@ -556,57 +546,57 @@ fun FloodMapScreen(
                 modifier = Modifier.height(12.dp)
             )
 
-
-            FloodGoogleMap(
-                state = state,
-                onSelectFloodAlert = onSelectFloodAlert,
-                onMapTouchChanged = { isTouchingMap = it }
-            )
-
-
-            Text(
-                text = "CHÚ GIẢI NGẬP LỊCH SỬ",
-                color = MapSecondary,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(
-                    horizontal = 18.dp,
-                    vertical = 8.dp
-                )
-            )
-
-            Row(
-                modifier = Modifier.padding(horizontal = 18.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            if (
+                state.isHistoryPointsLayerEnabled ||
+                state.isHistoryBuffersLayerEnabled ||
+                state.isHistoryRadarLayerEnabled
             ) {
-                FloodHistoryPointLegend()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = 18.dp,
+                            vertical = 12.dp
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "CHÚ GIẢI DỮ LIỆU LỊCH SỬ",
+                        color = MapSecondary,
+                        fontSize = 12.sp
+                    )
 
-                FloodSeverityLegend(
-                    color = Color(0x33E53935),
-                    text = "Vùng đệm"
-                )
+                    if (state.isHistoryPointsLayerEnabled) {
+                        FloodHistoryPointLegend(
+                            text = "Điểm ngập lịch sử (${state.historyPoints.size})"
+                        )
+                    }
+
+                    if (state.isHistoryBuffersLayerEnabled) {
+                        FloodSeverityLegend(
+                            color = Color(0x33E53935),
+                            text = "Vùng đệm tham khảo (${state.historyBufferFeatureCount})"
+                        )
+                    }
+
+                    if (state.isHistoryRadarLayerEnabled) {
+                        FloodSeverityLegend(
+                            color = Color(0x66D32F2F),
+                            text = "Vùng phân tích Radar (${state.historyRadarFeatureCount})"
+                        )
+                    }
+
+                    Text(
+                        text = "Dữ liệu lịch sử phục vụ tham khảo. " +
+                                "Vùng đệm và kết quả Radar chưa được xác minh " +
+                                "là phạm vi ngập thực tế. " +
+                                "Không phải cảnh báo ngập hiện tại.",
+                        color = MapSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.padding(horizontal = 18.dp)
-            ) {
-                FloodSeverityLegend(
-                    color = Color(0x66D32F2F),
-                    text = "Radar nghi ngập"
-                )
-            }
-
-            Text(
-                text = "Dữ liệu ngập lịch sử tham khảo — " +
-                        "không phải cảnh báo ngập hiện tại.",
-                color = MapSecondary,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(
-                    horizontal = 18.dp,
-                    vertical = 6.dp
-                )
-            )
 
             Text(
                 text = "CHÚ GIẢI CẢNH BÁO HIỆN TẠI",
@@ -640,13 +630,13 @@ fun FloodMapScreen(
                 )
 
                 FloodSeverityLegend(
-                    color = Color(0xFFB71C1C),
-                    text = "Critical"
+                    color = Color(0xFFF44336),
+                    text = "Cao"
                 )
 
                 FloodSeverityLegend(
-                    color = Color(0xFFF44336),
-                    text = "Cao"
+                    color = Color(0xFFB71C1C),
+                    text = "Nghiêm trọng"
                 )
             }
 
@@ -778,10 +768,6 @@ fun FloodMapScreen(
                 modifier = Modifier.height(20.dp)
             )
 
-            FloodAreaSummary(
-                state = state
-            )
-
             Spacer(
                 modifier = Modifier.height(18.dp)
             )
@@ -836,66 +822,47 @@ fun FloodMapScreen(
             */
 
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
-
-                horizontalArrangement =
-                    Arrangement.spacedBy(12.dp)
-            ) {
-
-                OutlinedButton(
-                    onClick = onShelterDetailClick,
-
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-
-                    shape = RoundedCornerShape(12.dp),
-
-                    border = BorderStroke(
-                        1.dp,
-                        MapBorder
-                    )
-                ) {
-
-                    Text(
-                        text = "Chi tiết trạm trú",
-                        color = MapText
-                    )
+            val selectedSafeLocation =
+                state.safeLocations.firstOrNull { location ->
+                    state.isShelterLayerEnabled &&
+                            location.id == state.selectedSafeLocationId &&
+                            location.status.equals(
+                                "active",
+                                ignoreCase = true
+                            )
                 }
 
-                Button(
-                    onClick = onSosClick,
-
+            selectedSafeLocation?.let { location ->
+                Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-
-                    shape = RoundedCornerShape(12.dp),
-
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE53935)
-                    )
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
-                    Icon(
-                        imageVector = Icons.Default.Sos,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
-
-                    Spacer(
-                        modifier = Modifier.width(6.dp)
-                    )
-
                     Text(
-                        text = "PHÁT SOS",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        text = location.name,
+                        color = MapText,
+                        fontWeight = FontWeight.SemiBold
                     )
+
+                    OutlinedButton(
+                        onClick = {
+                            onShelterDetailClick(location.id)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            MapBorder
+                        )
+                    ) {
+                        Text(
+                            text = "Chi tiết điểm tránh trú",
+                            color = MapText
+                        )
+                    }
                 }
             }
 
@@ -954,7 +921,7 @@ private fun FloodMapHeader(
             )
 
             Text(
-                text = "Dữ liệu minh họa • Chưa kết nối dữ liệu thời gian thực",
+                text = "Nguồn dữ liệu: FloodGuard API",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -1060,7 +1027,8 @@ private fun FloodLayerRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         FloodLayerItem(
             text = "Vùng ngập",
@@ -1069,19 +1037,18 @@ private fun FloodLayerRow(
         )
 
         FloodLayerItem(
-            text = "Vị trí bạn",
+            text = "Vị trí của tôi",
             selected = state.isUserLayerEnabled,
             onClick = onToggleUserLayer
         )
 
         FloodLayerItem(
-            text = "Điểm trú",
+            text = "Điểm tránh trú",
             selected = state.isShelterLayerEnabled,
             onClick = onToggleShelterLayer
         )
     }
 }
-
 
 @Composable
 private fun FloodLayerItem(
@@ -1089,23 +1056,16 @@ private fun FloodLayerItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-
     Text(
         text = text,
-
-        color = if (selected) {
-            MapGreen
-        } else {
-            MapSecondary
-        },
-
-        fontSize = 11.sp,
-
+        color = if (selected) MapGreen else MapSecondary,
+        fontSize = 13.sp,
         modifier = Modifier
-            .clickable {
-                onClick()
-            }
-            .padding(6.dp)
+            .clickable(onClick = onClick)
+            .padding(
+                horizontal = 6.dp,
+                vertical = 10.dp
+            )
     )
 }
 // =====================================================
@@ -1117,6 +1077,7 @@ private fun FloodLayerItem(
 private fun FloodGoogleMap(
     state: FloodMapUiState,
     onSelectFloodAlert: (String?) -> Unit,
+    onSelectSafeLocation: (String?) -> Unit,
     onMapTouchChanged: (Boolean) -> Unit
 ) {
 
@@ -1174,6 +1135,10 @@ private fun FloodGoogleMap(
     }
 
     var hasFittedHistoryBounds by remember {
+        mutableStateOf(false)
+    }
+
+    var hasAutoCenteredOnUser by remember {
         mutableStateOf(false)
     }
 
@@ -1498,6 +1463,39 @@ private fun FloodGoogleMap(
         }
     }
 
+    LaunchedEffect(
+        isMapLoaded,
+        isScreenActive,
+        hasLocationPermission,
+        isLocationServiceEnabled,
+        state.isUserLayerEnabled,
+        userLocation
+    ) {
+        val location = userLocation ?: return@LaunchedEffect
+
+        if (
+            !isMapLoaded ||
+            !isScreenActive ||
+            !hasLocationPermission ||
+            !isLocationServiceEnabled ||
+            !state.isUserLayerEnabled ||
+            hasAutoCenteredOnUser ||
+            hasUserInteractedWithMap
+        ) {
+            return@LaunchedEffect
+        }
+
+        hasFittedHistoryBounds = true
+
+        cameraPositionState.move(
+            CameraUpdateFactory.newLatLngZoom(
+                location,
+                16f
+            )
+        )
+
+        hasAutoCenteredOnUser = true
+    }
 
     LaunchedEffect(
         isMapLoaded,
@@ -1858,7 +1856,7 @@ private fun FloodGoogleMap(
                                 Marker(
                                     state = markerState,
                                     title = "[Cảnh báo] ${alert.title}",
-                                    snippet = "Mức độ: ${alert.severity}",
+                                    snippet = "Mức độ: ${floodSeverityLabel(alert.severity)}",
                                     zIndex = 10f,
                                     visible = state.isFloodLayerEnabled,
                                     onClick = {
@@ -1910,62 +1908,19 @@ private fun FloodGoogleMap(
                         Marker(
                             state = markerState,
                             title = safeLocation.name,
-                            snippet = "DỮ LIỆU THỬ NGHIỆM — " +
-                                    "Chưa xác minh điểm tránh trú",
-                            visible = state.isShelterLayerEnabled
+                            snippet = "Chưa xác minh mức độ an toàn " +
+                                    "và khả năng tiếp nhận hiện tại",
+                            visible = state.isShelterLayerEnabled,
+                            onClick = {
+                                onSelectSafeLocation(safeLocation.id)
+                                false
+                            }
                         )
                     }
 
             }
 
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.End
-            ) {
-
-                val hasHistoricalGeometry =
-                    (state.isHistoryPointsLayerEnabled &&
-                            state.historyPoints.isNotEmpty()) ||
-                            (state.isHistoryBuffersLayerEnabled &&
-                                    state.historyBufferPolygons.isNotEmpty()) ||
-                            (state.isHistoryRadarLayerEnabled &&
-                                    state.historyRadarPolygons.isNotEmpty())
-
-                OutlinedButton(
-                    enabled = isMapLoaded && hasHistoricalGeometry,
-                    onClick = {
-                        hasUserInteractedWithMap = true
-
-                        cameraScope.launch {
-                            val bounds = withContext(Dispatchers.Default) {
-                                buildHistoricalBounds(state)
-                            }
-
-                            if (bounds != null) {
-                                cameraPositionState.animate(
-                                    CameraUpdateFactory.newLatLngBounds(
-                                        bounds,
-                                        36
-                                    )
-                                )
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color(0xD9000000),
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text(
-                        text = "Xem toàn bộ lịch sử",
-                        fontSize = 11.sp
-                    )
-                }
-            }
 
             if (
                 !hasLocationPermission ||
@@ -2039,9 +1994,7 @@ private fun FloodGoogleMap(
                                 fontSize = 10.sp
                             )
                         }
-                    }
-
-                    else if (
+                    } else if (
                         hasLocationPermission &&
                         isLocationServiceEnabled &&
                         isGpsTimedOut
@@ -2066,6 +2019,54 @@ private fun FloodGoogleMap(
                     }
                 }
             }
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        val hasHistoricalGeometry =
+            (state.isHistoryPointsLayerEnabled &&
+                    state.historyPoints.isNotEmpty()) ||
+                    (state.isHistoryBuffersLayerEnabled &&
+                            state.historyBufferPolygons.isNotEmpty()) ||
+                    (state.isHistoryRadarLayerEnabled &&
+                            state.historyRadarPolygons.isNotEmpty())
+
+        OutlinedButton(
+            enabled = isMapLoaded && hasHistoricalGeometry,
+            onClick = {
+                hasUserInteractedWithMap = true
+
+                cameraScope.launch {
+                    val bounds = withContext(Dispatchers.Default) {
+                        buildHistoricalBounds(state)
+                    }
+
+                    if (bounds != null) {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newLatLngBounds(
+                                bounds,
+                                36
+                            )
+                        )
+                    }
+                }
+            },
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color(0xD9000000),
+                contentColor = Color.White
+            )
+        ) {
+            Text(
+                text = "Xem toàn vùng dữ liệu",
+                fontSize = 11.sp
+            )
         }
     }
 }
@@ -2326,9 +2327,10 @@ private fun FloodShelterCard(
 // =====================================================
 
 
-
 @Composable
-private fun FloodHistoryPointLegend() {
+private fun FloodHistoryPointLegend(
+    text: String = "Điểm lịch sử"
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -2347,7 +2349,7 @@ private fun FloodHistoryPointLegend() {
         Spacer(modifier = Modifier.width(5.dp))
 
         Text(
-            text = "Điểm lịch sử",
+            text = text,
             color = MapSecondary,
             fontSize = 10.sp
         )
@@ -2381,6 +2383,16 @@ private fun FloodSeverityLegend(
     }
 }
 
+private fun floodSeverityLabel(severity: String): String {
+    return when (severity.trim().lowercase()) {
+        "low" -> "Thấp"
+        "medium" -> "Trung bình"
+        "high" -> "Cao"
+        "critical" -> "Nghiêm trọng"
+        else -> "Chưa xác định"
+    }
+}
+
 @Composable
 private fun FloodWarningInfoCard(
     title: String,
@@ -2389,10 +2401,11 @@ private fun FloodWarningInfoCard(
 ) {
 
     val severityColor =
-        when (severity.lowercase()) {
-            "high" -> Color(0xFFF44336)
-            "medium" -> Color(0xFFFFA000)
+        when (severity.trim().lowercase()) {
             "low" -> Color(0xFF4CAF50)
+            "medium" -> Color(0xFFFFA000)
+            "high" -> Color(0xFFF44336)
+            "critical" -> Color(0xFFB71C1C)
             else -> MapSecondary
         }
 
@@ -2440,7 +2453,7 @@ private fun FloodWarningInfoCard(
             )
 
             Text(
-                text = "Mức độ: ${severity.uppercase()}",
+                text = "Mức độ: ${floodSeverityLabel(severity)}",
                 color = severityColor,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold

@@ -71,6 +71,7 @@ data class FloodMapUiState(
     val isShelterLayerEnabled: Boolean = true,
     val isSafeRouteLayerEnabled: Boolean = true,
     val safeLocations: List<SafeLocationDto> = emptyList(),
+    val selectedSafeLocationId: String? = null,
     val isLoadingSafeLocations: Boolean = false,
     val safeLocationsError: String? = null,
 
