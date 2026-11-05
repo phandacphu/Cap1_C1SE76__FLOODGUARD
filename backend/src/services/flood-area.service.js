@@ -2,13 +2,12 @@ const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
 
 const FLOOD_AREAS_COLLECTION = "flood_areas";
-const ALLOWED_SEVERITIES = [
-  "low",
-  "medium",
-  "high",
-  "critical",
-];
-const ALLOWED_STATUSES = ["active", "inactive"];
+const ALLOWED_AREA_TYPES = Object.freeze(["flood", "low_lying"]);
+
+// Missing/unknown legacy types stay unclassified until an Admin selects a type.
+function readFloodAreaType(value) {
+  return ALLOWED_AREA_TYPES.includes(value) ? value : null;
+}
 
 function validatePoint(point, index) {
   if (
@@ -73,12 +72,12 @@ function normalizeFloodAreaData(areaData) {
     );
   }
 
-  if (!ALLOWED_SEVERITIES.includes(areaData.severity)) {
-    throw new Error("Invalid flood area severity");
+  if (Object.hasOwn(areaData, "status") || Object.hasOwn(areaData, "severity")) {
+    throw new Error("Flood area status and severity are no longer supported; use areaType");
   }
 
-  if (!ALLOWED_STATUSES.includes(areaData.status)) {
-    throw new Error("Invalid flood area status");
+  if (!ALLOWED_AREA_TYPES.includes(areaData.areaType)) {
+    throw new Error("Flood area areaType must be flood or low_lying");
   }
 
   if (
@@ -100,8 +99,7 @@ function normalizeFloodAreaData(areaData) {
         (point, index) => validatePoint(point, index),
       ),
     },
-    severity: areaData.severity,
-    status: areaData.status,
+    areaType: areaData.areaType,
     source: areaData.source.trim(),
   };
 }
@@ -178,6 +176,8 @@ async function getFloodAreas() {
 
 module.exports = {
   FLOOD_AREAS_COLLECTION,
+  ALLOWED_AREA_TYPES,
+  readFloodAreaType,
   createFloodArea,
   setFloodAreaById,
   getFloodAreaById,

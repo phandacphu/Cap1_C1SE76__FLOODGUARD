@@ -13,6 +13,7 @@ const ALLOWED_CHANGED_FIELDS = [
   "description",
   "location",
   "geometry",
+  "areaType",
   "source",
   "severity",
   "urgency",

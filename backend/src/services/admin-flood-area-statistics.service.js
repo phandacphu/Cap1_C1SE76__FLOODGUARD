@@ -1,7 +1,6 @@
 const { listFloodAreasForAdmin } = require("./admin-flood-area.service");
 
-const STATUSES = ["active", "inactive"];
-const SEVERITIES = ["low", "medium", "high", "critical"];
+const AREA_TYPES = ["flood", "low_lying", "unclassified"];
 
 function invalidQuery(message) {
   const error = new Error(message);
@@ -91,8 +90,8 @@ function normalizeStatisticsQuery(query = {}) {
 
   const keys = Object.keys(query);
 
-  if (keys.some((key) => !["from", "to", "status", "severity"].includes(key))) {
-    throw invalidQuery("Only from, to, status and severity are supported");
+  if (keys.some((key) => !["from", "to", "areaType"].includes(key))) {
+    throw invalidQuery("Only from, to and areaType are supported");
   }
 
   const from = parseDateParameter(query.from, "from");
@@ -102,54 +101,33 @@ function normalizeStatisticsQuery(query = {}) {
     throw invalidQuery("from must not be later than to");
   }
 
-  const { status, severity } = query;
-
-  if (
-    status !== undefined &&
-    (typeof status !== "string" || !STATUSES.includes(status))
-  ) {
-    throw invalidQuery("Invalid status filter");
+  const { areaType } = query;
+  if (areaType !== undefined &&
+      (typeof areaType !== "string" || !AREA_TYPES.includes(areaType))) {
+    throw invalidQuery("Invalid areaType filter");
   }
-
-  if (
-    severity !== undefined &&
-    (typeof severity !== "string" || !SEVERITIES.includes(severity))
-  ) {
-    throw invalidQuery("Invalid severity filter");
-  }
-
-  return { from, to, status, severity };
+  return { from, to, areaType };
 }
 
 // CCF-160 + CCF-161: Admin Flood Area statistics with filtering.
 async function getFloodAreaSummaryStatisticsForAdmin(actorId, query = {}) {
-  const { from, to, status, severity } = normalizeStatisticsQuery(query);
+  const { from, to, areaType } = normalizeStatisticsQuery(query);
 
   // Reuse existing Admin authorization and Firestore read logic.
   const floodAreas = await listFloodAreasForAdmin(actorId);
 
   const summary = {
     total: 0,
-    byStatus: {
-      active: 0,
-      inactive: 0,
-    },
-    bySeverity: {
-      low: 0,
-      medium: 0,
-      high: 0,
-      critical: 0,
+    byAreaType: {
+      flood: 0,
+      low_lying: 0,
+      unclassified: 0,
     },
   };
 
   for (const area of floodAreas) {
-    if (status !== undefined && area.status !== status) {
-      continue;
-    }
-
-    if (severity !== undefined && area.severity !== severity) {
-      continue;
-    }
+    const type = area.areaType === null ? "unclassified" : area.areaType;
+    if (areaType !== undefined && type !== areaType) continue;
 
     if (from !== null || to !== null) {
       const createdAt = area.createdAt ? Date.parse(area.createdAt) : NaN;
@@ -169,13 +147,7 @@ async function getFloodAreaSummaryStatisticsForAdmin(actorId, query = {}) {
 
     summary.total++;
 
-    if (STATUSES.includes(area.status)) {
-      summary.byStatus[area.status]++;
-    }
-
-    if (SEVERITIES.includes(area.severity)) {
-      summary.bySeverity[area.severity]++;
-    }
+    summary.byAreaType[type]++;
   }
 
   return summary;
