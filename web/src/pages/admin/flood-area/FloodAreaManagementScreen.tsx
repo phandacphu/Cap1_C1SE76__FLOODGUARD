@@ -13,7 +13,7 @@ import { AREA_TYPES, AREA_TYPE_LABEL, type AreaType, type FloodAreaInput, type F
 import { useFloodAreas } from "./useFloodAreas";
 
 interface HistoricalPointFeature {
-  geometry?: { coordinates?: [number, number] } | null;
+  geometry: { coordinates: [number, number] };
   properties?: {
     id?: string;
     name?: string;
@@ -55,6 +55,8 @@ export default function FloodAreaManagementScreen() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [timeoutUncertain, setTimeoutUncertain] = useState(false);
+  const [uncertainName, setUncertainName] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Service đã kiểm tra success / FeatureCollection / features là mảng,
@@ -64,11 +66,7 @@ export default function FloodAreaManagementScreen() {
     fetchHistoricalPoints()
       .then((collection) => {
         if (!isMounted) return;
-        setHistoricalPoints(
-          Array.isArray(collection.features)
-            ? (collection.features as unknown as HistoricalPointFeature[])
-            : [],
-        );
+        setHistoricalPoints(collection.features as unknown as HistoricalPointFeature[]);
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
@@ -88,14 +86,10 @@ export default function FloodAreaManagementScreen() {
   const list = useMemo(() => areas ?? [], [areas]);
 
   const referencePoints = useMemo(
-    () =>
-      historicalPoints.flatMap((pt) => {
-        const lng = pt.geometry?.coordinates?.[0];
-        const lat = pt.geometry?.coordinates?.[1];
-        return typeof lat === "number" && typeof lng === "number"
-          ? [{ latitude: lat, longitude: lng }]
-          : [];
-      }),
+    () => historicalPoints.map((pt) => ({
+      latitude: pt.geometry.coordinates[1],
+      longitude: pt.geometry.coordinates[0],
+    })),
     [historicalPoints],
   );
 
@@ -125,10 +119,12 @@ export default function FloodAreaManagementScreen() {
     if (busy) return;
     setDialog(null);
     setDialogError(null);
+    setTimeoutUncertain(false);
+    setUncertainName(null);
   };
 
   const submitForm = async (input: FloodAreaInput) => {
-    if (dialog?.kind !== "form") return;
+    if (busy || timeoutUncertain || dialog?.kind !== "form") return;
     setBusy(true);
     setDialogError(null);
     const target = dialog.area;
@@ -136,6 +132,8 @@ export default function FloodAreaManagementScreen() {
     setBusy(false);
     if (!result.ok) {
       setDialogError(result.error ?? "Lưu thất bại.");
+      setTimeoutUncertain(result.status === 504);
+      setUncertainName(input.name);
       return;
     }
     setDialog(null);
@@ -143,7 +141,7 @@ export default function FloodAreaManagementScreen() {
   };
 
   const confirmDelete = async () => {
-    if (dialog?.kind !== "delete") return;
+    if (busy || dialog?.kind !== "delete") return;
     setBusy(true);
     setDialogError(null);
     const result = await remove(dialog.area.id);
@@ -157,18 +155,32 @@ export default function FloodAreaManagementScreen() {
   };
 
   const openCreate = () => {
+    setTimeoutUncertain(false);
     setDialogError(null);
     setDialog({ kind: "form", area: null });
   };
 
   const openEdit = (area: FloodAreaItem) => {
+    setTimeoutUncertain(false);
     setDialogError(null);
     setDialog({ kind: "form", area });
   };
 
   const openDelete = (area: FloodAreaItem) => {
+    setTimeoutUncertain(false);
     setDialogError(null);
     setDialog({ kind: "delete", area });
+  };
+
+  // A timed-out POST/PATCH may have succeeded. Only GET again; never submit a second mutation.
+  const verifyAfterTimeout = () => {
+    setDialog(null);
+    setDialogError(null);
+    setTimeoutUncertain(false);
+    setSearch("");
+    setTypeFilter("all");
+    setNotice(`Đang đọc lại dữ liệu để kiểm tra vùng “${uncertainName ?? "đã lưu"}”. Hãy đối chiếu danh sách và nguồn; không tự gửi lại yêu cầu lưu.`);
+    refresh();
   };
 
   return (
@@ -290,12 +302,13 @@ export default function FloodAreaManagementScreen() {
 
           {totalRows > 0 && (
             <div className="max-h-[32rem] overflow-auto">
-              <table className="w-full min-w-[640px] text-left text-sm">
+              <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="sticky top-0 bg-card font-mono text-[11px] uppercase tracking-wider text-muted">
                   <tr>
                     <th className="pb-2 pr-3">ID</th>
                     <th className="pb-2 pr-3">Tên vùng</th>
                     <th className="pb-2 pr-3">Loại vùng</th>
+                    <th className="pb-2 pr-3">Nguồn dữ liệu</th>
                     <th className="pb-2 pr-3">Điểm / Tọa độ</th>
                     <th className="pb-2" />
                   </tr>
@@ -311,6 +324,7 @@ export default function FloodAreaManagementScreen() {
                       </td>
                       <td className="py-2.5 pr-3 font-medium">{a.name}</td>
                       <td className="py-2.5 pr-3">{a.areaType === null ? "Chưa phân loại" : AREA_TYPE_LABEL[a.areaType]}</td>
+                      <td className="max-w-56 break-words py-2.5 pr-3 text-xs text-muted">{a.source}</td>
                       <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs">
                         {a.geometry.points.length} điểm
                       </td>
@@ -341,6 +355,7 @@ export default function FloodAreaManagementScreen() {
                           {props.name ?? "Điểm ngập lịch sử"}
                         </td>
                         <td className="py-2.5 pr-3">Vùng ngập lịch sử</td>
+                        <td className="py-2.5 pr-3 text-xs text-muted">Dữ liệu tham khảo</td>
                         <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-muted">
                           {hasCoords ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "—"}
                         </td>
@@ -363,14 +378,16 @@ export default function FloodAreaManagementScreen() {
           serverError={dialogError}
           onSubmit={submitForm}
           onClose={closeDialog}
+          onVerifyTimeout={verifyAfterTimeout}
+          timeoutUncertain={timeoutUncertain}
           referencePoints={referencePoints}
         />
       )}
 
       {dialog?.kind === "delete" && (
         <ConfirmDialog
-          title="Xóa vùng ngập?"
-          confirmLabel="Xóa vùng ngập"
+          title="Xóa vùng?"
+          confirmLabel="Xóa vùng"
           tone="danger"
           busy={busy}
           error={dialogError}

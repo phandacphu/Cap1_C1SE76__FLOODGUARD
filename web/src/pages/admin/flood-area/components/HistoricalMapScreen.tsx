@@ -8,6 +8,7 @@ import {
     fetchHistoricalBuffers,
     fetchHistoricalRadar,
     type HistoricalFeatureCollection,
+    type HistoricalLayerKey,
 } from '../historicalMapService';
 import { listAreas } from '../floodAreaService';
 import { AREA_TYPE_LABEL, AREA_TYPE_COLOR, type FloodAreaItem } from '../floodAreaTypes';
@@ -19,6 +20,10 @@ import { AdminHeader } from '../../../../components/layout/AdminHeader';
 
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+})[char] ?? char);
+
 const DefaultIcon = L.icon({
     iconUrl: icon,
     shadowUrl: iconShadow,
@@ -26,12 +31,13 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-type LayerKey = 'points' | 'buffers' | 'radar';
+type LayerKey = HistoricalLayerKey;
 
 interface LayerState {
     status: 'loading' | 'ok' | 'error';
     data: HistoricalFeatureCollection | null;
     error: string | null;
+    version: number;
 }
 
 const ALL_LAYERS: LayerKey[] = ['points', 'buffers', 'radar'];
@@ -48,7 +54,7 @@ const LAYER_LABEL: Record<LayerKey, string> = {
     radar: 'Vùng trũng',
 };
 
-const LOADING: LayerState = { status: 'loading', data: null, error: null };
+const LOADING: LayerState = { status: 'loading', data: null, error: null, version: 0 };
 
 // Đang tải / lỗi / đã tải (kể cả 0) — không dùng số mặc định
 const countLabel = (s: LayerState) =>
@@ -63,46 +69,73 @@ export default function HistoricalMapScreen() {
 
     const [areas, setAreas] = useState<FloodAreaItem[] | null>(null);
     const [areasError, setAreasError] = useState<string | null>(null);
+    const [areasLoading, setAreasLoading] = useState(true);
 
-    const mountedRef = useRef(true);
+    const mountedRef = useRef(false);
+    const layerRequestsRef = useRef<Record<LayerKey, number>>({ points: 0, buffers: 0, radar: 0 });
+    const areaRequestRef = useRef(0);
+    const mountRunRef = useRef(0);
 
-    // Tải từng lớp độc lập: lớp nào lỗi không ảnh hưởng lớp đã tải thành công
-    const loadLayers = useCallback(async (keys: LayerKey[]) => {
-        const results = await Promise.allSettled(keys.map((k) => FETCHERS[k]()));
-        if (!mountedRef.current) return;
-        setLayers((prev) => {
-            const next = { ...prev };
-            results.forEach((r, i) => {
-                next[keys[i]] =
-                    r.status === 'fulfilled'
-                        ? { status: 'ok', data: r.value, error: null }
-                        : {
-                              status: 'error',
-                              data: null,
-                              error: r.reason instanceof Error ? r.reason.message : `${LAYER_LABEL[keys[i]]}: lỗi không xác định.`,
-                          };
-            });
-            return next;
+    // Update each layer as soon as its own request finishes, not after the slowest layer.
+    const loadLayer = useCallback((key: LayerKey) => {
+        const request = ++layerRequestsRef.current[key];
+        setLayers((prev) => ({ ...prev, [key]: { ...prev[key], status: 'loading', data: null, error: null } }));
+        void FETCHERS[key]().then((data) => {
+            if (!mountedRef.current || layerRequestsRef.current[key] !== request) return;
+            setLayers((prev) => ({
+                ...prev,
+                [key]: { status: 'ok', data, error: null, version: prev[key].version + 1 },
+            }));
+        }).catch((err: unknown) => {
+            if (!mountedRef.current || layerRequestsRef.current[key] !== request) return;
+            setLayers((prev) => ({
+                ...prev,
+                [key]: {
+                    status: 'error', data: null, version: prev[key].version,
+                    error: err instanceof Error ? err.message : `${LAYER_LABEL[key]}: lỗi không xác định.`,
+                },
+            }));
         });
     }, []);
 
-    const loadAreas = useCallback(() => listAreas()
-        .then((data) => { if (mountedRef.current) setAreas(data); })
-        .catch((err: unknown) => {
-            if (mountedRef.current) setAreasError(err instanceof Error ? err.message : 'Không tải được vùng Admin.');
-        }), []);
+    const loadAreas = useCallback(() => {
+        const request = ++areaRequestRef.current;
+        setAreasLoading(true);
+        setAreasError(null);
+        void listAreas().then((data) => {
+            if (mountedRef.current && areaRequestRef.current === request) setAreas(data);
+        }).catch((err: unknown) => {
+            if (mountedRef.current && areaRequestRef.current === request) {
+                setAreasError(err instanceof Error ? err.message : 'Không tải được vùng Admin.');
+            }
+        }).finally(() => {
+            if (mountedRef.current && areaRequestRef.current === request) setAreasLoading(false);
+        });
+    }, []);
 
     useEffect(() => {
         mountedRef.current = true;
-        void loadLayers(ALL_LAYERS);
-        void loadAreas();
-        return () => { mountedRef.current = false; };
-    }, [loadLayers, loadAreas]);
+        const mountRun = ++mountRunRef.current;
+        const requests = layerRequestsRef.current;
+        // Schedule async so no synchronous state update runs inside the effect.
+        void Promise.resolve().then(() => {
+            if (!mountedRef.current || mountRunRef.current !== mountRun) return;
+            ALL_LAYERS.forEach(loadLayer);
+            loadAreas();
+        });
+        return () => {
+            mountedRef.current = false;
+            mountRunRef.current += 1;
+            ALL_LAYERS.forEach((key) => { requests[key] += 1; });
+            areaRequestRef.current += 1;
+        };
+    }, [loadLayer, loadAreas]);
 
     const anyLoading = ALL_LAYERS.some((k) => layers[k].status === 'loading');
     const failedKeys = ALL_LAYERS.filter((k) => layers[k].status === 'error');
-
-    const areasCount = areasError ? 'lỗi tải' : areas === null ? 'đang tải…' : String(areas.length);
+    const areasCount = areasLoading && areas === null ? 'đang tải…'
+        : areasError && areas === null ? 'lỗi tải'
+        : String(areas?.length ?? 0);
 
     const bufferStyle = {
         color: '#dc2626',
@@ -147,45 +180,32 @@ export default function HistoricalMapScreen() {
                     </p>
                 </div>
 
-                {/* Lỗi tải các lớp lịch sử: nêu rõ lớp nào lỗi, các lớp còn lại vẫn hiển thị */}
+                {/* Each invalid/unavailable historical layer has its own error and retry action. */}
                 {failedKeys.length > 0 && (
-                    <div role="alert" className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <p className="font-semibold mb-1">
-                                    Không tải được {failedKeys.length}/{ALL_LAYERS.length} lớp dữ liệu lịch sử. Các lớp còn lại vẫn được hiển thị.
-                                </p>
-                                <ul className="list-disc pl-5 text-xs space-y-0.5">
-                                    {failedKeys.map((k) => (
-                                        <li key={k}>{layers[k].error}</li>
-                                    ))}
-                                </ul>
+                    <div role="alert" className="space-y-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                        <p className="font-semibold">Lỗi {failedKeys.length} lớp lịch sử; các lớp đã tải được vẫn hiển thị.</p>
+                        {failedKeys.map((key) => (
+                            <div key={key} className="flex items-center justify-between gap-3">
+                                <span>{layers[key].error}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => loadLayer(key)}
+                                    className="shrink-0 rounded border border-red-400/50 px-3 py-1 text-xs hover:bg-red-500/20"
+                                >
+                                    Thử lại {LAYER_LABEL[key]}
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setLayers((prev) => {
-                                        const next = { ...prev };
-                                        failedKeys.forEach((key) => { next[key] = LOADING; });
-                                        return next;
-                                    });
-                                    void loadLayers(failedKeys);
-                                }}
-                                className="shrink-0 rounded border border-red-400/50 px-3 py-1 text-xs hover:bg-red-500/20"
-                            >
-                                Thử lại
-                            </button>
-                        </div>
+                        ))}
                     </div>
                 )}
 
                 {/* Lỗi tải vùng ngập quản lý */}
                 {areasError && (
                     <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-yellow-600/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-400">
-                        <span>Không tải được vùng ngập đã tạo: {areasError}</span>
+                        <span>Không cập nhật được vùng Admin: {areasError}{areas !== null && " (đang giữ danh sách đã tải trước đó)"}</span>
                         <button
                             type="button"
-                            onClick={() => { setAreasError(null); void loadAreas(); }}
+                            onClick={loadAreas}
                             className="shrink-0 rounded border border-yellow-500/50 px-3 py-1 text-xs hover:bg-yellow-500/20"
                         >
                             Thử lại
@@ -193,16 +213,22 @@ export default function HistoricalMapScreen() {
                     </div>
                 )}
 
-                <div className="w-full h-[550px] rounded-xl overflow-hidden relative z-0 border border-gray-800 shadow-md bg-[#1e293b]">
-                    {anyLoading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-[#0f172a]/60 z-[1000] backdrop-blur-sm pointer-events-none">
-                            <div className="flex flex-col items-center">
-                                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                                <span className="text-gray-300 font-medium">Đang tải dữ liệu bản đồ...</span>
-                            </div>
-                        </div>
-                    )}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-[#1e293b] px-4 py-3">
+                    <span role="status" className="text-xs text-gray-300">
+                        Vùng Admin: {areasLoading ? 'đang cập nhật…' : areasError ? 'lỗi làm mới' : `${areas?.length ?? 0} vùng`}
+                        {anyLoading && ' · Đang tải các lớp lịch sử (bản đồ vẫn sử dụng được)'}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={loadAreas}
+                        disabled={areasLoading}
+                        className="rounded border border-blue-400/50 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
+                    >
+                        {areasLoading ? 'Đang làm mới vùng…' : 'Làm mới vùng Admin'}
+                    </button>
+                </div>
 
+                <div className="w-full h-[550px] rounded-xl overflow-hidden relative z-0 border border-gray-800 shadow-md bg-[#1e293b]">
                     <MapContainer
                         center={[16.0544, 108.2022]}
                         zoom={13}
@@ -214,11 +240,11 @@ export default function HistoricalMapScreen() {
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
 
-                        {radarData && <GeoJSONLayer key={`radar-${radarData.features.length}`} data={radarData as any} style={radarStyle} />}
-                        {buffersData && <GeoJSONLayer key={`buffers-${buffersData.features.length}`} data={buffersData as any} style={bufferStyle} />}
+                        {radarData && <GeoJSONLayer key={`radar-${layers.radar.version}`} data={radarData as any} style={radarStyle} />}
+                        {buffersData && <GeoJSONLayer key={`buffers-${layers.buffers.version}`} data={buffersData as any} style={bufferStyle} />}
                         {pointsData && (
                             <GeoJSONLayer
-                                key={`points-${pointsData.features.length}`}
+                                key={`points-${layers.points.version}`}
                                 data={pointsData as any}
                                 pointToLayer={(_feature: any, latlng: any) => {
                                     const redIcon = L.divIcon({
@@ -233,13 +259,13 @@ export default function HistoricalMapScreen() {
                                     if (feature.properties && feature.properties.name) {
                                         layer.bindPopup(
                                             `<div style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont; min-width: 180px; padding: 4px;">
-                                                <strong style="color: #0f172a; font-size: 14px; display: block; margin-bottom: 6px; line-height: 1.4;">${feature.properties.name}</strong>
+                                                <strong style="color: #0f172a; font-size: 14px; display: block; margin-bottom: 6px; line-height: 1.4;">${escapeHtml(feature.properties.name)}</strong>
                                                 <div style="display: flex; flex-direction: column; gap: 4px;">
                                                     <span style="color: #64748b; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
-                                                        <span>ID:</span> <span style="font-family: monospace; font-weight: 500; color: #334155;">${feature.properties.id || 'N/A'}</span>
+                                                        <span>ID:</span> <span style="font-family: monospace; font-weight: 500; color: #334155;">${escapeHtml(feature.properties.id || 'N/A')}</span>
                                                     </span>
                                                     <span style="color: #64748b; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
-                                                        <span>Giai đoạn:</span> <span style="font-weight: 500; color: #334155;">${feature.properties.data_period || 'N/A'}</span>
+                                                        <span>Giai đoạn:</span> <span style="font-weight: 500; color: #334155;">${escapeHtml(feature.properties.data_period || 'N/A')}</span>
                                                     </span>
                                                 </div>
                                             </div>`
@@ -264,6 +290,7 @@ export default function HistoricalMapScreen() {
                                     <strong>{a.name}</strong>
                                     <div style={{ fontSize: 12 }}>ID: {formatAreaId(a.id)}</div>
                                     <div style={{ fontSize: 12 }}>Loại vùng: {AREA_TYPE_LABEL[a.areaType]}</div>
+                                    <div style={{ fontSize: 12 }}>Nguồn: {a.source}</div>
                                     {a.description && <div style={{ fontSize: 12 }}>{a.description}</div>}
                                 </Popup>
                             </Polygon>

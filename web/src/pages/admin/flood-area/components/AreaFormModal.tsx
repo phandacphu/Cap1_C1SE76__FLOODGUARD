@@ -18,6 +18,8 @@ interface Props {
   serverError: string | null;
   onSubmit: (input: FloodAreaInput) => void;
   onClose: () => void;
+  onVerifyTimeout: () => void;
+  timeoutUncertain: boolean;
   /** Điểm ngập lịch sử hiển thị tham khảo trên bản đồ vẽ. */
   referencePoints?: GeoPoint[];
 }
@@ -34,6 +36,8 @@ export function AreaFormModal({
   serverError,
   onSubmit,
   onClose,
+  onVerifyTimeout,
+  timeoutUncertain,
   referencePoints,
 }: Props) {
   const [name, setName] = useState(area?.name ?? "");
@@ -46,6 +50,7 @@ export function AreaFormModal({
   const [errors, setErrors] = useState<string[]>([]);
 
   const submit = () => {
+    if (busy || timeoutUncertain) return;
     if (!isAreaType(areaType)) {
       setErrors(["Vui lòng chọn Vùng ngập hoặc Vùng trũng trước khi lưu."]);
       return;
@@ -136,6 +141,7 @@ export function AreaFormModal({
               points={points}
               onChange={setPoints}
               referencePoints={referencePoints}
+              disabled={busy}
             />
           </div>
         </fieldset>
@@ -159,6 +165,14 @@ export function AreaFormModal({
           </p>
         )}
 
+        {timeoutUncertain && !busy && (
+          <div role="status" className="mt-3 space-y-2 rounded-lg border border-warn/50 p-3 text-xs text-warn">
+            <p>Yêu cầu lưu đã quá hạn: máy chủ có thể đã xử lý. Đọc lại danh sách để kiểm tra trước khi quyết định làm gì tiếp theo; không tự gửi lại POST/PATCH.</p>
+            <button type="button" onClick={onVerifyTimeout} className="rounded border border-warn/50 px-3 py-1.5 font-semibold hover:bg-warn/10">
+              Đọc lại danh sách vùng (không gửi lại)
+            </button>
+          </div>
+        )}
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
@@ -170,11 +184,11 @@ export function AreaFormModal({
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || timeoutUncertain}
             onClick={submit}
             className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
           >
-            {busy ? "Đang lưu..." : area ? "Lưu thay đổi" : "Tạo vùng"}
+            {busy ? "Đang lưu..." : timeoutUncertain ? "Hãy kiểm tra trước khi lưu lại" : area ? "Lưu thay đổi" : "Tạo vùng"}
           </button>
         </div>
       </div>

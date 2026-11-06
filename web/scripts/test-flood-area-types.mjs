@@ -155,3 +155,20 @@ test("dashboard uses linked active warnings, never obsolete area status or sever
   ]);
   assert.deepEqual(stats.rankRiskAreas(areas, []), []);
 });
+
+test("timed-out POST is not retried; operator can issue a separate GET to verify", async () => {
+  const methods = [];
+  await withHttp(async (_url, options) => {
+    methods.push(options.method);
+    if (options.method === "POST") throw new DOMException("Request timed out", "AbortError");
+    return response({ floodAreas: [item("flood")] });
+  }, async () => {
+    await assert.rejects(service.createArea(input), (e) =>
+      e.status === 504 && e.message.includes("refresh"),
+    );
+    assert.deepEqual(methods, ["POST"]);
+    const areas = await service.listAreas();
+    assert.equal(areas.length, 1);
+    assert.deepEqual(methods, ["POST", "GET"]);
+  });
+});

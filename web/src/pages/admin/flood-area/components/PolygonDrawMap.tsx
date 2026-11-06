@@ -18,6 +18,7 @@ interface Props {
   onChange: (points: GeoPoint[]) => void;
   /** Điểm tham khảo (27 điểm ngập lịch sử), chỉ để xem. */
   referencePoints?: GeoPoint[];
+  disabled?: boolean;
 }
 
 const CENTER: L.LatLngTuple = [16.0544, 108.2022];
@@ -48,10 +49,10 @@ function numberIcon(n: number) {
   });
 }
 
-function ClickToAdd({ onAdd }: { onAdd: (p: GeoPoint) => void }) {
+function ClickToAdd({ onAdd, disabled }: { onAdd: (p: GeoPoint) => void; disabled: boolean }) {
   useMapEvents({
     click: (e) => {
-      onAdd({ latitude: round(e.latlng.lat), longitude: round(e.latlng.lng) });
+      if (!disabled) onAdd({ latitude: round(e.latlng.lat), longitude: round(e.latlng.lng) });
     },
   });
   return null;
@@ -70,18 +71,21 @@ function FitToPoints({ points }: { points: GeoPoint[] }) {
   return null;
 }
 
-export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Props) {
+export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY, disabled = false }: Props) {
   const latlngs = points.map((p): L.LatLngTuple => [p.latitude, p.longitude]);
   const shape = { color: COLOR, weight: 2, fillColor: COLOR, fillOpacity: 0.2 };
 
-  const addPoint = (p: GeoPoint) => onChange([...points, p]);
-  const removeAt = (index: number) => onChange(points.filter((_, i) => i !== index));
-  const undoLast = () => onChange(points.slice(0, -1));
-  const clearAll = () => onChange([]);
+  const disabledRef = useRef(disabled);
+  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+  const addPoint = (p: GeoPoint) => { if (!disabledRef.current) onChange([...points, p]); };
+  const removeAt = (index: number) => { if (!disabledRef.current) onChange(points.filter((_, i) => i !== index)); };
+  const undoLast = () => { if (!disabledRef.current) onChange(points.slice(0, -1)); };
+  const clearAll = () => { if (!disabledRef.current) onChange([]); };
 
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted">
+        {disabled && <strong role="status">Đang lưu vùng — không thể chỉnh sửa điểm. </strong>}
         Bấm lên bản đồ để thêm điểm theo thứ tự đi quanh vùng ngập. Kéo số để chỉnh vị trí.
         Chấm đỏ là các điểm ngập lịch sử để đối chiếu.
       </p>
@@ -96,7 +100,7 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Pr
             attribution="&copy; OpenStreetMap"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <ClickToAdd onAdd={addPoint} />
+          <ClickToAdd onAdd={addPoint} disabled={disabled} />
           <FitToPoints points={points} />
 
           {referencePoints.map((p, i) => (
@@ -126,9 +130,10 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Pr
               key={`pt-${i}`}
               position={[p.latitude, p.longitude]}
               icon={numberIcon(i + 1)}
-              draggable
+              draggable={!disabled}
               eventHandlers={{
                 dragend: (e) => {
+                  if (disabledRef.current) return;
                   const ll = (e.target as L.Marker).getLatLng();
                   onChange(
                     points.map((q, j) =>
@@ -146,7 +151,7 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Pr
         <button
           type="button"
           onClick={undoLast}
-          disabled={points.length === 0}
+          disabled={disabled || points.length === 0}
           className="rounded border border-border px-2.5 py-1 text-xs hover:border-water/50 disabled:opacity-50"
         >
           Hoàn tác điểm cuối
@@ -154,7 +159,7 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Pr
         <button
           type="button"
           onClick={clearAll}
-          disabled={points.length === 0}
+          disabled={disabled || points.length === 0}
           className="rounded border border-border px-2.5 py-1 text-xs hover:border-water/50 disabled:opacity-50"
         >
           Xóa hết
@@ -174,6 +179,7 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY }: Pr
                 type="button"
                 onClick={() => removeAt(i)}
                 aria-label={`Xóa điểm ${i + 1}`}
+                disabled={disabled}
                 className="ml-auto rounded px-1.5 text-muted hover:text-sos"
               >
                 ×
