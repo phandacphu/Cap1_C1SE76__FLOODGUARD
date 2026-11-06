@@ -1,4 +1,3 @@
-
 package com.example.floodguard.data.remote.dto.rescue
 
 data class CreateSosLocation(
@@ -8,7 +7,8 @@ data class CreateSosLocation(
 
 data class CreateSosRequest(
     val location: CreateSosLocation,
-    val urgency: String,
+    val situations: List<String>,
     val numberOfPeople: Int,
+    val waterLevel: String,
     val note: String?
 )

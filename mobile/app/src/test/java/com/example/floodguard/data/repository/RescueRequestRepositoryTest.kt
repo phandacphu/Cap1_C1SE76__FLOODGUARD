@@ -49,8 +49,9 @@ class RescueRequestRepositoryTest {
             latitude = 16.0544,
             longitude = 108.2022
         ),
-        urgency = "high",
+        situations = listOf("trapped"),
         numberOfPeople = 3,
+        waterLevel = "waist",
         note = "Cần hỗ trợ sơ tán"
     )
 
@@ -98,7 +99,9 @@ class RescueRequestRepositoryTest {
         )
 
         val body = recorded!!.body.readUtf8()
-        assertTrue(body.contains("\"urgency\":\"high\""))
+        assertFalse(body.contains("\"urgency\""))
+        assertTrue(body.contains("\"situations\":[\"trapped\"]"))
+        assertTrue(body.contains("\"waterLevel\":\"waist\""))
         assertTrue(body.contains("\"numberOfPeople\":3"))
         assertTrue(body.contains("\"latitude\":16.0544"))
         assertTrue(body.contains("\"longitude\":108.2022"))
