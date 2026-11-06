@@ -14,9 +14,8 @@ export interface FloodAlert {
 export interface FloodArea {
   id: string;
   name: string;
-  description?: string;
-  severity: Severity;
-  status: string;
+  description?: string | null;
+  areaType: "flood" | "low_lying" | null;
 }
 
 export interface SafeLocation {

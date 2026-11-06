@@ -23,6 +23,19 @@ internal enum class RescueFloodSeverity(val label: String, val priority: Int) {
     }
 }
 
+internal enum class RescueAreaType(val label: String, val colorArgb: Long, val fillAlpha: Float) {
+    FLOOD("Vùng ngập", 0xFFFDD835, 0.24f),
+    LOW_LYING("Vùng trũng", 0xFFE53935, 0.32f);
+
+    companion object {
+        fun from(value: String?): RescueAreaType? = when (value) {
+            "flood" -> FLOOD
+            "low_lying" -> LOW_LYING
+            else -> null
+        }
+    }
+}
+
 internal data class RescueFloodVertex(val latitude: Double, val longitude: Double)
 
 internal data class RescueFloodMapArea(
@@ -30,21 +43,15 @@ internal data class RescueFloodMapArea(
     val name: String,
     val description: String,
     val source: String,
-    val severity: RescueFloodSeverity,
-    val status: String,
+    val areaType: RescueAreaType,
     val vertices: List<RescueFloodVertex>
-) {
-    val isActive: Boolean get() = status == "active"
-    val statusLabel: String get() = when (status) {
-        "active" -> "Đang hoạt động"
-        "inactive" -> "Đã ngừng hoạt động"
-        else -> "Chưa xác định trạng thái"
-    }
-}
+)
 
 internal data class RescueFloodMapLayers(
     val areas: List<RescueFloodMapArea>,
-    val skippedCount: Int
+    val skippedCount: Int,
+    val unclassifiedCount: Int = 0,
+    val legacyFormatCount: Int = 0
 )
 
 /** Validate before LatLng construction: the SDK normalizes out-of-range values.
@@ -52,10 +59,23 @@ internal data class RescueFloodMapLayers(
  */
 internal fun buildRescueFloodMapLayers(items: List<FloodAreaDto?>): RescueFloodMapLayers {
     val ids = mutableSetOf<String>()
+    var unclassifiedCount = 0
+    var legacyFormatCount = 0
     val areas = items.mapNotNull { area ->
         area ?: return@mapNotNull null
         val id = area.id?.trim().orEmpty()
         if (id.isEmpty() || id in ids) return@mapNotNull null
+        val areaType = RescueAreaType.from(area.areaType)
+        if (areaType == null) {
+            unclassifiedCount++
+            // Inspect obsolete fields only to explain a server contract mismatch.
+            // Never use them to choose an area category or its color.
+            if (area.areaType == null &&
+                (!area.status.isNullOrBlank() || !area.severity.isNullOrBlank())) {
+                legacyFormatCount++
+            }
+            return@mapNotNull null
+        }
         val geometry = area.geometry ?: return@mapNotNull null
         if (!geometry.type.equals("polygon", ignoreCase = true)) return@mapNotNull null
         val points = geometry.points ?: return@mapNotNull null
@@ -83,13 +103,13 @@ internal fun buildRescueFloodMapLayers(items: List<FloodAreaDto?>): RescueFloodM
             name = area.name?.trim().orEmpty().ifEmpty { "Vùng chưa có tên" },
             description = area.description?.trim().orEmpty().ifEmpty { "Chưa có mô tả." },
             source = area.source?.trim().orEmpty().ifEmpty { "Chưa có thông tin nguồn." },
-            severity = RescueFloodSeverity.from(area.severity),
-            status = area.status?.trim()?.lowercase(Locale.ROOT).orEmpty(),
+            areaType = areaType,
             vertices = vertices.toList()
         )
-    }.sortedWith(compareByDescending<RescueFloodMapArea> { it.isActive }
-        .thenByDescending { it.severity.priority }.thenBy { it.name })
-    return RescueFloodMapLayers(areas, items.size - areas.size)
+    }.sortedWith(compareBy<RescueFloodMapArea> { it.areaType.ordinal }.thenBy { it.name }.thenBy { it.id })
+    return RescueFloodMapLayers(
+        areas, items.size - areas.size - unclassifiedCount, unclassifiedCount, legacyFormatCount
+    )
 }
 
 /** Only associate an alert with its referenced area; never infer from proximity. */

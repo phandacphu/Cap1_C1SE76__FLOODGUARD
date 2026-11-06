@@ -1,5 +1,6 @@
 const {
   getFloodAreas,
+  readFloodAreaType,
 } = require("../services/flood-area.service");
 
 async function listFloodAreas(req, res) {
@@ -11,8 +12,7 @@ async function listFloodAreas(req, res) {
       name: area.name,
       description: area.description,
       geometry: area.geometry,
-      severity: area.severity,
-      status: area.status,
+      areaType: readFloodAreaType(area.areaType),
       source: area.source,
     }));
 

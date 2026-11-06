@@ -5,6 +5,7 @@ const { isDeepStrictEqual } = require("node:util");
 const {
   FLOOD_AREAS_COLLECTION,
   normalizeFloodAreaData,
+  readFloodAreaType,
 } = require("./flood-area.service");
 
 const {
@@ -15,8 +16,7 @@ const ALLOWED_AREA_FIELDS = [
   "name",
   "description",
   "geometry",
-  "severity",
-  "status",
+  "areaType",
   "source",
 ];
 
@@ -111,7 +111,7 @@ function ensureAllowedBody(body) {
   ) {
     throw areaError(
       "INVALID_ADMIN_AREA_DATA",
-      "Provide only name, description, geometry, severity, status or source",
+      "Provide only name, description, geometry, areaType or source",
       400,
     );
   }
@@ -182,8 +182,7 @@ function toClientArea(areaDoc) {
     name: area.name ?? null,
     description: area.description ?? null,
     geometry: area.geometry ?? null,
-    severity: area.severity ?? null,
-    status: area.status ?? null,
+    areaType: readFloodAreaType(area.areaType),
     source: area.source ?? null,
     createdAt: toIsoString(area.createdAt),
     updatedAt: toIsoString(area.updatedAt),
@@ -348,17 +347,24 @@ async function updateFloodAreaForAdmin(
         }
       }
 
-      const fields = Object.keys(changes);
+      // Remove obsolete fields only after the complete record has a valid,
+      // explicitly chosen areaType. Preserve unrelated data and creation time.
+      const legacyFields = ["status", "severity"].filter((field) => Object.hasOwn(existing, field));
+      const fields = [...Object.keys(changes), ...legacyFields];
 
       if (fields.length === 0) {
         return [];
       }
 
-      // Preserve createdAt and any unrelated stored fields.
-      transaction.update(areaRef, {
+      const next = {
+        ...existing,
         ...changes,
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      for (const field of legacyFields) delete next[field];
+      // A full set inside the transaction removes only the obsolete fields;
+      // concurrent edits retry against the latest record.
+      transaction.set(areaRef, next);
 
       return fields;
     },
@@ -409,7 +415,7 @@ async function deleteFloodAreaForAdmin(actorId, areaId) {
     if (!linkedAlerts.empty) {
       throw areaError(
         "ADMIN_AREA_HAS_ALERTS",
-        "Flood area is referenced by flood alerts; set status to inactive instead",
+        "Flood area is referenced by flood alerts; resolve linked alerts before deletion",
         409,
       );
     }

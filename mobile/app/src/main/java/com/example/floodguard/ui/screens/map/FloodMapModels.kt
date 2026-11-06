@@ -3,6 +3,42 @@ package com.example.floodguard.ui.screens.map
 import com.example.floodguard.data.model.FloodAreaDto
 import com.example.floodguard.data.model.FloodAlertDto
 import com.example.floodguard.data.model.SafeLocationDto
+import com.google.android.gms.maps.model.LatLng
+
+
+data class HistoricalFloodPoint(
+    val latitude: Double,
+    val longitude: Double,
+    val id: String? = null,
+    val name: String? = null,
+    val sourceUrl: String? = null,
+    val locationRefUrl: String? = null,
+    val dataPeriod: String? = null,
+    val coordinateStatus: String? = null,
+    val layerType: String? = null,
+    val displayOnly: Boolean? = null,
+    val verifiedFloodPolygon: Boolean? = null,
+    val currentFloodAlert: Boolean? = null
+)
+
+
+data class HistoricalFloodPolygon(
+    val outer: List<HistoricalFloodPoint>,
+    val holes: List<List<HistoricalFloodPoint>>
+)
+
+
+data class HistoricalMapPolygon(
+    val outer: List<LatLng>,
+    val holes: List<List<LatLng>>
+)
+
+enum class HistoricalLoadStatus {
+    NOT_STARTED,
+    LOADING,
+    SUCCESS,
+    FAILED
+}
 
 data class FloodMapUiState(
     val title: String = "Bản đồ ngập & vị trí",
@@ -45,6 +81,7 @@ data class FloodMapUiState(
     val isShelterLayerEnabled: Boolean = true,
     val isSafeRouteLayerEnabled: Boolean = true,
     val safeLocations: List<SafeLocationDto> = emptyList(),
+    val selectedSafeLocationId: String? = null,
     val isLoadingSafeLocations: Boolean = false,
     val safeLocationsError: String? = null,
 
@@ -54,5 +91,58 @@ data class FloodMapUiState(
     val floodAlerts: List<FloodAlertDto> = emptyList(),
     val isLoadingFloodAlerts: Boolean = false,
     val floodAlertsError: String? = null,
-    val selectedFloodAlertId: String? = null
+
+    val selectedFloodAlertId: String? = null,
+
+
+    val isHistoryPointsLayerEnabled: Boolean = true,
+    val historyPoints: List<HistoricalFloodPoint> = emptyList(),
+    val isLoadingHistoryPoints: Boolean = false,
+
+    val historyPointsLoadStatus: HistoricalLoadStatus =
+        HistoricalLoadStatus.NOT_STARTED,
+
+    val historyPointsInvalidFeatureCount: Int = 0,
+
+    val historyPointsError: String? = null,
+
+    val isHistoryBuffersLayerEnabled: Boolean = false,
+    val historyBufferFeatureCount: Int = 0,
+    val historyBufferPolygons: List<HistoricalFloodPolygon> = emptyList(),
+
+    val historyBufferMapPolygons: List<HistoricalMapPolygon> = emptyList(),
+
+    val isLoadingHistoryBuffers: Boolean = false,
+
+    val historyBuffersLoadStatus: HistoricalLoadStatus =
+        HistoricalLoadStatus.NOT_STARTED,
+
+    val historyBuffersError: String? = null,
+
+    val isHistoryRadarLayerEnabled: Boolean = true,
+    val historyRadarFeatureCount: Int = 0,
+    val historyRadarPolygons: List<HistoricalFloodPolygon> = emptyList(),
+
+    val historyRadarMapPolygons: List<HistoricalMapPolygon> = emptyList(),
+
+    val isLoadingHistoryRadar: Boolean = false,
+
+    val historyRadarLoadStatus: HistoricalLoadStatus =
+        HistoricalLoadStatus.NOT_STARTED,
+
+    val historyRadarError: String? = null,
+
+    val citizenAreas: List<CitizenMapArea> = emptyList(),
+    val selectedCitizenAreaId: String? = null,
+    val selectedHistoryPoint: HistoricalFloodPoint? = null,
+
+    val floodAreasUnsupportedTypeCount: Int = 0,
+    val floodAreasInvalidRecordCount: Int = 0,
+
+    val floodAreasLoadedAt: Long? = null,
+    val floodAlertsLoadedAt: Long? = null,
+    val safeLocationsLoadedAt: Long? = null,
+    val historyPointsLoadedAt: Long? = null,
+    val historyRadarLoadedAt: Long? = null,
+
 )

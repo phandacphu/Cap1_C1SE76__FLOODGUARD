@@ -8,6 +8,7 @@ interface State {
   id: string | undefined;
   request: RescueRequest | null;
   history: StatusHistoryItem[];
+  isPartialHistory: boolean;
   error: string | null;
   /** Which request (id + refresh round) the data belongs to. */
   key: string;
@@ -25,6 +26,7 @@ export function useRescueDetail(id: string | undefined) {
     id: undefined,
     request: null,
     history: [],
+    isPartialHistory: false,
     error: null,
     key: "",
     updatedAt: null,
@@ -45,6 +47,7 @@ export function useRescueDetail(id: string | undefined) {
           id,
           request,
           history: history ?? request.statusHistory ?? [],
+          isPartialHistory: history === null, // Bật cờ nếu API history lỗi
           error: null,
           key,
           updatedAt: new Date(),
@@ -72,6 +75,7 @@ export function useRescueDetail(id: string | undefined) {
   return {
     request: sameId ? state.request : null,
     history: sameId ? state.history : [],
+    isPartialHistory: sameId ? state.isPartialHistory : false,
     error: state.error && sameId ? state.error : null,
     updatedAt: sameId ? state.updatedAt : null,
     loading: Boolean(id) && state.key !== key,

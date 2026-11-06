@@ -19,6 +19,7 @@ import com.example.floodguard.data.remote.api.RescueRequestApi
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.repository.FloodHistoryRepository
 import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.data.repository.RescueRequestRepository
 import com.example.floodguard.ui.screens.auth.login.LoginScreen
@@ -806,9 +807,14 @@ fun AppNavGraph(
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
                     ),
+
                     safeLocationRepository = SafeLocationRepository(
                         safeLocationApi = ApiClient.safeLocationApi
+                    ),
+                    floodHistoryRepository = FloodHistoryRepository(
+                        api = ApiClient.floodHistoryApi
                     )
+
                 )
             }
 
@@ -836,12 +842,13 @@ fun AppNavGraph(
                         Toast.LENGTH_SHORT
                     ).show()
                 },
-                onShelterDetailClick = {
-                    Toast.makeText(
-                        context,
-                        "Chi tiết trạm trú chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onShelterDetailClick = { locationId ->
+                    navController.navigate(
+                        "${AppRoutes.SAFE_LOCATION_DETAIL}/" +
+                                android.net.Uri.encode(locationId)
+                    ) {
+                        launchSingleTop = true
+                    }
                 },
                 onSosClick = {
                     navController.navigate(AppRoutes.SEND_SOS) {

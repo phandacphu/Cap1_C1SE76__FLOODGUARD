@@ -1,20 +1,19 @@
 // File: web/src/pages/admin/flood-area/floodAreaTypes.ts
 // CCF-119: Flood Area Management. Field names follow the Admin API (GET/POST /api/admin/flood-areas).
 
-export type Severity = "low" | "medium" | "high" | "critical";
-export type AreaStatus = "active" | "inactive";
-
-export const SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
-export const SEVERITY_LABEL: Record<Severity, string> = {
-  low: "Thấp",
-  medium: "Trung bình",
-  high: "Cao",
-  critical: "Khẩn cấp",
+export type AreaType = "flood" | "low_lying";
+export const AREA_TYPES: AreaType[] = ["flood", "low_lying"];
+export const AREA_TYPE_LABEL: Record<AreaType, string> = {
+  flood: "Vùng ngập",
+  low_lying: "Vùng trũng",
 };
-export const STATUS_LABEL: Record<AreaStatus, string> = {
-  active: "Đang hoạt động",
-  inactive: "Ngừng hoạt động",
+export const AREA_TYPE_COLOR: Record<AreaType, string> = {
+  flood: "#fdd835",
+  low_lying: "#e53935",
 };
+export function isAreaType(value: unknown): value is AreaType {
+  return value === "flood" || value === "low_lying";
+}
 
 export interface GeoPoint {
   latitude: number;
@@ -24,9 +23,8 @@ export interface GeoPoint {
 export interface FloodAreaItem {
   id: string;
   name: string;
-  description: string;
-  severity: Severity;
-  status: AreaStatus;
+  description: string | null;
+  areaType: AreaType | null;
   source: string;
   geometry: { type: "polygon"; points: GeoPoint[] };
   /** Mock only: how many flood alerts reference this area (a real API answers 409 on DELETE instead). */
@@ -34,7 +32,7 @@ export interface FloodAreaItem {
 }
 
 /** Body of POST / PATCH. Never includes id, createdAt or updatedAt. */
-export type FloodAreaInput = Pick<FloodAreaItem, "name" | "description" | "severity" | "status" | "source" | "geometry">;
+export type FloodAreaInput = Pick<FloodAreaItem, "name" | "description" | "source" | "geometry"> & { areaType: AreaType };
 
 export class FloodAreaError extends Error {
   status: number;
@@ -130,6 +128,7 @@ function validateGeometry(points: GeoPoint[]): string[] {
 /** Validates the form; returns Vietnamese error messages (empty array = valid). */
 export function validateArea(input: FloodAreaInput): string[] {
   const errors: string[] = [];
+  if (!isAreaType(input.areaType)) errors.push("Vui lòng chọn Vùng ngập hoặc Vùng trũng.");
   if (input.name.trim() === "") errors.push("Tên vùng ngập không được để trống.");
   if (input.source.trim() === "") errors.push("Nguồn dữ liệu không được để trống.");
   const points = input.geometry.points;

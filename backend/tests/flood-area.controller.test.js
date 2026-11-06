@@ -11,6 +11,7 @@ require.cache[servicePath] = {
   filename: servicePath,
   loaded: true,
   exports: {
+    readFloodAreaType: (value) => ["flood", "low_lying"].includes(value) ? value : null,
     getFloodAreas: (...args) =>
       getFloodAreasImplementation(...args),
   },
@@ -49,7 +50,8 @@ async function testListFloodAreasSuccess() {
           { latitude: 16.04, longitude: 108.22 },
         ],
       },
-      severity: "high",
+      areaType: "low_lying",
+      severity: "high", // Stored legacy fields must never leak through the API.
       status: "active",
       source: "test",
       createdAt: "must-not-be-returned",
@@ -68,6 +70,9 @@ async function testListFloodAreasSuccess() {
     res.body.data.floodAreas[0].id,
     "area-01",
   );
+  assert.strictEqual(res.body.data.floodAreas[0].areaType, "low_lying");
+  assert.strictEqual(Object.hasOwn(res.body.data.floodAreas[0], "severity"), false);
+  assert.strictEqual(Object.hasOwn(res.body.data.floodAreas[0], "status"), false);
   assert.strictEqual(
     res.body.data.floodAreas[0].createdAt,
     undefined,

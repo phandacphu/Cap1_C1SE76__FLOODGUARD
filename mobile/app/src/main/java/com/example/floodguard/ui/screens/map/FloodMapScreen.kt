@@ -2,15 +2,22 @@ package com.example.floodguard.ui.screens.map
 
 import android.Manifest
 import android.os.Looper
+import android.os.SystemClock
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.location.LocationManager
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.provider.Settings
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,9 +33,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -38,6 +47,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sos
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,9 +57,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+
+import androidx.compose.material3.Switch
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +72,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -70,6 +87,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,6 +96,9 @@ import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.navigation.AppRoutes
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.rememberCameraPositionState
 import com.google.android.gms.location.LocationServices
@@ -88,9 +109,17 @@ import com.google.maps.android.compose.Marker
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationAvailability
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.rememberUpdatedMarkerState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // =====================================================
 // COLORS
@@ -108,9 +137,88 @@ private val MapCyan = Color(0xFF00E5FF)
 private val MapGreen = Color(0xFF16C784)
 private val MapOrange = Color(0xFFFFA000)
 
+private val CitizenFloodColor = Color(0xFFFFC107)
+private val CitizenLowLyingColor = Color(0xFFEF9A9A)
+
 // =====================================================
 // ROUTE
 // =====================================================
+
+private fun buildCitizenMapBounds(
+    state: FloodMapUiState
+): LatLngBounds? {
+    if (!state.isFloodLayerEnabled) return null
+
+    val builder = LatLngBounds.Builder()
+    var hasCoordinates = false
+
+    state.citizenAreas.forEach { area ->
+        area.vertices.forEach { vertex ->
+            builder.include(
+                LatLng(vertex.latitude, vertex.longitude)
+            )
+            hasCoordinates = true
+        }
+    }
+
+    if (state.isHistoryPointsLayerEnabled) {
+        state.historyPoints.forEach { point ->
+            builder.include(
+                LatLng(point.latitude, point.longitude)
+            )
+            hasCoordinates = true
+        }
+    }
+
+    if (state.isHistoryRadarLayerEnabled) {
+        state.historyRadarMapPolygons.forEach { polygon ->
+            polygon.outer.forEach { coordinate ->
+                builder.include(coordinate)
+                hasCoordinates = true
+            }
+        }
+    }
+
+    return if (hasCoordinates) builder.build() else null
+}
+
+private fun createHistoryPointIcon(
+    context: Context
+): BitmapDescriptor {
+    val density = context.resources.displayMetrics.density
+    val size = (18f * density).roundToInt()
+
+    val bitmap = Bitmap.createBitmap(
+        size,
+        size,
+        Bitmap.Config.ARGB_8888
+    )
+
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    val center = size / 2f
+
+    // Viền trắng
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(
+        center,
+        center,
+        center - 1f,
+        paint
+    )
+
+    // Tâm đỏ
+    paint.color = android.graphics.Color.rgb(229, 57, 53)
+    canvas.drawCircle(
+        center,
+        center,
+        center - 2f * density,
+        paint
+    )
+
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
 
 @Composable
 fun FloodMapRoute(
@@ -119,7 +227,7 @@ fun FloodMapRoute(
     onNotificationClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     onSafeRouteClick: () -> Unit = {},
-    onShelterDetailClick: () -> Unit = {},
+    onShelterDetailClick: (String) -> Unit = { _ -> },
     onSosClick: () -> Unit = {},
     onBottomNavigate: (String) -> Unit = {}
 ) {
@@ -141,8 +249,20 @@ fun FloodMapRoute(
         onBottomNavigate = onBottomNavigate,
         onRetryFloodAreas = viewModel::loadFloodAreas,
         onSelectFloodAlert = viewModel::selectFloodAlert,
+        onSelectSafeLocation = viewModel::selectSafeLocation,
         onRetryFloodAlerts = viewModel::loadFloodAlerts,
-    )
+        onToggleHistoryPointsLayer = viewModel::toggleHistoryPointsLayer,
+        onRetryHistoryPoints = viewModel::loadHistoryPoints,
+        onToggleHistoryBuffersLayer = viewModel::toggleHistoryBuffersLayer,
+        onRetryHistoryBuffers = viewModel::loadHistoryBuffers,
+        onToggleHistoryRadarLayer = viewModel::toggleHistoryRadarLayer,
+        onRetryHistoryRadar = viewModel::loadHistoryRadar,
+        onRefreshMapData = viewModel::refreshMapData,
+        onRetrySafeLocations = viewModel::loadSafeLocations,
+        onSelectCitizenArea = viewModel::selectCitizenArea,
+        onSelectHistoryPoint = viewModel::selectHistoryPoint,
+        onClearMapSelection = viewModel::clearMapSelection,
+        )
 }
 
 // =====================================================
@@ -160,12 +280,24 @@ fun FloodMapScreen(
     onToggleShelterLayer: () -> Unit,
     onToggleSafeRouteLayer: () -> Unit,
     onSafeRouteClick: () -> Unit,
-    onShelterDetailClick: () -> Unit,
+    onShelterDetailClick: (String) -> Unit,
+    onSelectSafeLocation: (String?) -> Unit,
     onSosClick: () -> Unit,
     onBottomNavigate: (String) -> Unit,
     onRetryFloodAreas: () -> Unit,
     onSelectFloodAlert: (String?) -> Unit,
     onRetryFloodAlerts: () -> Unit,
+    onToggleHistoryPointsLayer: () -> Unit,
+    onRetryHistoryPoints: () -> Unit,
+    onToggleHistoryBuffersLayer: () -> Unit,
+    onRetryHistoryBuffers: () -> Unit,
+    onToggleHistoryRadarLayer: () -> Unit,
+    onRetryHistoryRadar: () -> Unit,
+    onRefreshMapData: () -> Unit,
+    onRetrySafeLocations: () -> Unit,
+    onSelectCitizenArea: (String?) -> Unit,
+    onSelectHistoryPoint: (HistoricalFloodPoint?) -> Unit,
+    onClearMapSelection: () -> Unit,
 ) {
 
     val scrollState = rememberScrollState()
@@ -203,10 +335,13 @@ fun FloodMapScreen(
                 onProfileClick = onProfileClick
             )
 
-            FloodGpsInfo()
-
-            Spacer(
-                modifier = Modifier.height(10.dp)
+            FloodGoogleMap(
+                state = state,
+                onSelectSafeLocation = onSelectSafeLocation,
+                onSelectCitizenArea = onSelectCitizenArea,
+                onSelectHistoryPoint = onSelectHistoryPoint,
+                onClearMapSelection = onClearMapSelection,
+                onMapTouchChanged = { isTouchingMap = it }
             )
 
             FloodLayerRow(
@@ -216,294 +351,57 @@ fun FloodMapScreen(
                 onToggleShelterLayer = onToggleShelterLayer
             )
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
-
-            FloodGoogleMap(
+            CitizenMapDataPanel(
                 state = state,
-                onSelectFloodAlert = onSelectFloodAlert,
-                onMapTouchChanged = { isTouchingMap = it }
+                onRefresh = onRefreshMapData,
+                onRetryAreas = onRetryFloodAreas,
+                onRetryAlerts = onRetryFloodAlerts,
+                onRetryShelters = onRetrySafeLocations,
+                onRetryHistory = onRetryHistoryPoints,
+                onRetryRadar = onRetryHistoryRadar
             )
 
-            Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                    .padding(
-                        horizontal = 18.dp,
-                        vertical = 8.dp
-                    ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            val selectedSafeLocation =
+                state.safeLocations.firstOrNull { location ->
+                    state.isShelterLayerEnabled &&
+                            location.id == state.selectedSafeLocationId &&
+                            location.status.equals(
+                                "active",
+                                ignoreCase = true
+                            )
+                }
 
-                FloodSeverityLegend(
-                    color = Color(0xFF4CAF50),
-                    text = "Thấp"
-                )
-
-                FloodSeverityLegend(
-                    color = Color(0xFFFFA000),
-                    text = "Trung bình"
-                )
-
-                FloodSeverityLegend(
-                    color = Color(0xFFB71C1C),
-                    text = "Critical"
-                )
-
-                FloodSeverityLegend(
-                    color = Color(0xFFF44336),
-                    text = "Cao"
-                )
-            }
-
-            if (state.isLoadingFloodAreas) {
-
-                Text(
-                    text = "Đang tải dữ liệu vùng ngập...",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 18.dp,
-                            vertical = 8.dp
-                        )
-                )
-
-            } else if (state.floodAreasError != null) {
-
+            selectedSafeLocation?.let { location ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(
-                            horizontal = 18.dp,
-                            vertical = 8.dp
-                        ),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .padding(horizontal = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-
                     Text(
-                        text = "Không thể tải vùng ngập: ${state.floodAreasError}",
-                        color = Color(0xFFE57373),
-                        fontSize = 11.sp
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
+                        text = location.name,
+                        color = MapText,
+                        fontWeight = FontWeight.SemiBold
                     )
 
                     OutlinedButton(
-                        onClick = onRetryFloodAreas
+                        onClick = {
+                            onShelterDetailClick(location.id)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            MapBorder
+                        )
                     ) {
-
                         Text(
-                            text = "Thử lại",
+                            text = "Chi tiết điểm tránh trú",
                             color = MapText
                         )
                     }
-                }
-
-            } else if (state.floodAreas.isEmpty()) {
-
-                Text(
-                    text = "Hiện chưa có dữ liệu vùng ngập.",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 18.dp,
-                            vertical = 8.dp
-                        )
-                )
-            }
-
-            if (state.isLoadingFloodAlerts) {
-
-                Text(
-                    text = "Đang tải cảnh báo đang hoạt động...",
-                    color = MapSecondary,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 18.dp,
-                            vertical = 8.dp
-                        )
-                )
-
-            } else if (state.floodAlertsError != null) {
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = 18.dp,
-                            vertical = 8.dp
-                        ),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-
-                    Text(
-                        text = "Không thể tải cảnh báo: ${state.floodAlertsError}",
-                        color = Color(0xFFE57373),
-                        fontSize = 11.sp
-                    )
-
-                    Spacer(
-                        modifier = Modifier.height(8.dp)
-                    )
-
-                    OutlinedButton(
-                        onClick = onRetryFloodAlerts
-                    ) {
-
-                        Text(
-                            text = "Thử lại",
-                            color = MapText
-                        )
-                    }
-                }
-            }
-
-            val selectedFloodAlert =
-                state.floodAlerts.firstOrNull { alert ->
-                    alert.id == state.selectedFloodAlertId
-                }
-
-            selectedFloodAlert?.let { alert ->
-
-                FloodWarningInfoCard(
-                    title = alert.title,
-                    content = alert.content,
-                    severity = alert.severity
-                )
-            }
-
-            Spacer(
-                modifier = Modifier.height(20.dp)
-            )
-
-            FloodAreaSummary(
-                state = state
-            )
-
-            Spacer(
-                modifier = Modifier.height(18.dp)
-            )
-
-            Text(
-                text = "Các điểm trú trên bản đồ hiện là dữ liệu thử nghiệm. " +
-                        "Chưa xác minh mức độ an toàn, sức chứa hoặc khả năng tiếp nhận.",
-                color = MapSecondary,
-                fontSize = 11.sp,
-                lineHeight = 16.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 8.dp)
-            )
-
-            Spacer(
-                modifier = Modifier.height(18.dp)
-            )
-            /*
-            Button(
-                onClick = onSafeRouteClick,
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp)
-                    .height(54.dp),
-
-                shape = RoundedCornerShape(12.dp),
-
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MapCard,
-                    contentColor = MapText
-                )
-            ) {
-
-                Icon(
-                    imageVector = Icons.Default.Navigation,
-                    contentDescription = null,
-                    tint = MapText
-                )
-
-                Spacer(
-                    modifier = Modifier.width(8.dp)
-                )
-
-                Text(
-                    text = "CHỈ ĐƯỜNG AN TOÀN",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            }
-            */
-
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
-
-                horizontalArrangement =
-                    Arrangement.spacedBy(12.dp)
-            ) {
-
-                OutlinedButton(
-                    onClick = onShelterDetailClick,
-
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-
-                    shape = RoundedCornerShape(12.dp),
-
-                    border = BorderStroke(
-                        1.dp,
-                        MapBorder
-                    )
-                ) {
-
-                    Text(
-                        text = "Chi tiết trạm trú",
-                        color = MapText
-                    )
-                }
-
-                Button(
-                    onClick = onSosClick,
-
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-
-                    shape = RoundedCornerShape(12.dp),
-
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE53935)
-                    )
-                ) {
-
-                    Icon(
-                        imageVector = Icons.Default.Sos,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
-
-                    Spacer(
-                        modifier = Modifier.width(6.dp)
-                    )
-
-                    Text(
-                        text = "PHÁT SOS",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
                 }
             }
 
@@ -562,7 +460,7 @@ private fun FloodMapHeader(
             )
 
             Text(
-                text = "Dữ liệu minh họa • Chưa kết nối dữ liệu thời gian thực",
+                text = "Nguồn dữ liệu: FloodGuard API",
                 color = MapSecondary,
                 fontSize = 10.sp
             )
@@ -668,7 +566,8 @@ private fun FloodLayerRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         FloodLayerItem(
             text = "Vùng ngập",
@@ -677,19 +576,18 @@ private fun FloodLayerRow(
         )
 
         FloodLayerItem(
-            text = "Vị trí bạn",
+            text = "Vị trí của tôi",
             selected = state.isUserLayerEnabled,
             onClick = onToggleUserLayer
         )
 
         FloodLayerItem(
-            text = "Điểm trú",
+            text = "Điểm tránh trú",
             selected = state.isShelterLayerEnabled,
             onClick = onToggleShelterLayer
         )
     }
 }
-
 
 @Composable
 private fun FloodLayerItem(
@@ -697,23 +595,16 @@ private fun FloodLayerItem(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-
     Text(
         text = text,
-
-        color = if (selected) {
-            MapGreen
-        } else {
-            MapSecondary
-        },
-
-        fontSize = 11.sp,
-
+        color = if (selected) MapGreen else MapSecondary,
+        fontSize = 13.sp,
         modifier = Modifier
-            .clickable {
-                onClick()
-            }
-            .padding(6.dp)
+            .clickable(onClick = onClick)
+            .padding(
+                horizontal = 6.dp,
+                vertical = 10.dp
+            )
     )
 }
 // =====================================================
@@ -724,7 +615,10 @@ private fun FloodLayerItem(
 @Composable
 private fun FloodGoogleMap(
     state: FloodMapUiState,
-    onSelectFloodAlert: (String?) -> Unit,
+    onSelectSafeLocation: (String?) -> Unit,
+    onSelectCitizenArea: (String?) -> Unit,
+    onSelectHistoryPoint: (HistoricalFloodPoint?) -> Unit,
+    onClearMapSelection: () -> Unit,
     onMapTouchChanged: (Boolean) -> Unit
 ) {
 
@@ -776,12 +670,42 @@ private fun FloodGoogleMap(
             )
         }
 
+
+    var isMapLoaded by remember {
+        mutableStateOf(false)
+    }
+
+    var hasAutoCenteredOnUser by remember {
+        mutableStateOf(false)
+    }
+
+    var hasUserInteractedWithMap by remember {
+        mutableStateOf(false)
+    }
+
+    var previousFloodLayer by remember {
+        mutableStateOf(state.isFloodLayerEnabled)
+    }
+
+    LaunchedEffect(state.isFloodLayerEnabled) {
+        if (previousFloodLayer != state.isFloodLayerEnabled) {
+            hasUserInteractedWithMap = true
+            previousFloodLayer = state.isFloodLayerEnabled
+        }
+    }
+
+    val cameraScope = rememberCoroutineScope()
+
     var userLocation by remember {
         mutableStateOf<LatLng?>(null)
     }
 
-    var hasCenteredOnUserLocation by remember {
-        mutableStateOf(false)
+    var lastValidGpsFixNanos by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var activeGpsCallback by remember {
+        mutableStateOf<LocationCallback?>(null)
     }
 
     var hasLocationPermission by remember {
@@ -822,6 +746,17 @@ private fun FloodGoogleMap(
 
     val fusedLocationClient = remember {
         LocationServices.getFusedLocationProviderClient(context)
+    }
+
+    fun invalidateGpsPosition(
+        message: String,
+        timedOut: Boolean = false
+    ) {
+        userLocation = null
+        lastValidGpsFixNanos = null
+        hasReceivedGpsLocation = false
+        isGpsTimedOut = timedOut
+        locationMessage = message
     }
 
     val permissionLauncher =
@@ -898,103 +833,176 @@ private fun FloodGoogleMap(
         isLocationServiceEnabled,
         gpsRetryKey
     ) {
+        invalidateGpsPosition(
+            message = when {
+                !hasLocationPermission && permissionPermanentlyDenied ->
+                    "Quyền vị trí đã bị chặn. Vui lòng mở Cài đặt."
 
-        if (!hasLocationPermission) {
-
-            locationMessage =
-                if (permissionPermanentlyDenied) {
-                    "Quyền vị trí đã bị chặn. Vui lòng mở Cài đặt để cấp lại quyền."
-                } else {
+                !hasLocationPermission ->
                     "Chưa được cấp quyền vị trí"
+
+                !isLocationServiceEnabled ->
+                    "Dịch vụ vị trí đang tắt"
+
+                !isScreenActive ->
+                    "Vị trí sẽ được cập nhật khi quay lại bản đồ"
+
+                else ->
+                    "Đang lấy vị trí hiện tại..."
+            }
+        )
+
+        if (
+            !hasLocationPermission ||
+            !isLocationServiceEnabled ||
+            !isScreenActive
+        ) {
+            onDispose { }
+        } else {
+            var isCallbackActive = true
+            val sessionStartNanos = SystemClock.elapsedRealtimeNanos()
+
+            val locationCallback = object : LocationCallback() {
+
+                private fun canUseCallback(): Boolean {
+                    return isCallbackActive &&
+                            activeGpsCallback === this &&
+                            isScreenActive &&
+                            hasLocationPermission &&
+                            isLocationServiceEnabled &&
+                            lifecycleOwner.lifecycle.currentState
+                                .isAtLeast(Lifecycle.State.STARTED)
                 }
 
-            onDispose { }
+                override fun onLocationResult(result: LocationResult) {
+                    if (!canUseCallback()) return
 
-        } else if (!isLocationServiceEnabled) {
+                    val location = result.lastLocation
+                    val nowNanos = SystemClock.elapsedRealtimeNanos()
 
-            locationMessage =
-                "Dịch vụ vị trí đang tắt"
-
-            onDispose { }
-
-        } else if (!isScreenActive) {
-
-            onDispose { }
-
-        } else {
-
-            hasReceivedGpsLocation = false
-            isGpsTimedOut = false
-
-            var isCallbackActive = true
-
-            locationMessage =
-                "Đang lấy vị trí hiện tại..."
-
-            val locationRequest =
-                LocationRequest.Builder(
-                    Priority.PRIORITY_HIGH_ACCURACY,
-                    5000L
-                )
-                    .setMinUpdateIntervalMillis(
-                        2000L
-                    )
-                    .build()
-
-            val locationCallback =
-                object : LocationCallback() {
-
-                    override fun onLocationResult(
-                        result: LocationResult
-                    ) {
-                        if (!isCallbackActive) {
-                            return
-                        }
-
-                        val location = result.lastLocation
-
-                        if (location == null) {
-
-                            locationMessage =
-                                "Chưa có dữ liệu vị trí"
-
-                            return
-                        }
-
-                        hasReceivedGpsLocation = true
-                        isGpsTimedOut = false
-
-                        userLocation =
-                            LatLng(
-                                location.latitude,
-                                location.longitude
+                    val usable = location != null &&
+                            isCitizenGpsFixUsable(
+                                latitude = location.latitude,
+                                longitude = location.longitude,
+                                fixNanos = location.elapsedRealtimeNanos,
+                                sessionStartNanos = sessionStartNanos,
+                                nowNanos = nowNanos
                             )
 
-                        locationMessage =
-                            "Đã cập nhật vị trí"
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "CitizenGps",
+                            "accepted=$usable, " +
+                                    "ageMs=${location?.let {
+                                        (nowNanos - it.elapsedRealtimeNanos) / 1_000_000L
+                                    }}, " +
+                                    "sessionDeltaMs=${location?.let {
+                                        (it.elapsedRealtimeNanos - sessionStartNanos) / 1_000_000L
+                                    }}"
+                        )
                     }
+
+                    if (location == null || !usable) {
+                        if (userLocation == null && !isGpsTimedOut) {
+                            locationMessage = "Đang lấy vị trí..."
+                        }
+                        return
+                    }
+
+                    userLocation = LatLng(
+                        location.latitude,
+                        location.longitude
+                    )
+
+                    lastValidGpsFixNanos = location.elapsedRealtimeNanos
+                    hasReceivedGpsLocation = true
+                    isGpsTimedOut = false
+                    locationMessage = "Đã cập nhật vị trí"
                 }
 
-            fusedLocationClient
-                .requestLocationUpdates(
+                override fun onLocationAvailability(
+                    availability: LocationAvailability
+                ) {
+                    if (!canUseCallback()) return
+
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "CitizenGps",
+                            "available=${availability.isLocationAvailable}, " +
+                                    "hasFix=${userLocation != null}"
+                        )
+                    }
+
+                    if (
+                        !availability.isLocationAvailable &&
+                        userLocation == null &&
+                        !isGpsTimedOut
+                    ) {
+                        locationMessage = "Đang lấy vị trí..."
+                    }
+                }
+            }
+
+            activeGpsCallback = locationCallback
+
+            val locationRequest = LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                5000L
+            )
+                .setMinUpdateIntervalMillis(2000L)
+                .setWaitForAccurateLocation(false)
+                .setMaxUpdateAgeMillis(0L)
+                .build()
+
+            try {
+                fusedLocationClient.requestLocationUpdates(
                     locationRequest,
                     locationCallback,
                     Looper.getMainLooper()
-                )
-                .addOnFailureListener {
-                    if (isCallbackActive) {
-                        isGpsTimedOut = true
+                ).addOnSuccessListener {
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "CitizenGps",
+                            "updates_registered"
+                        )
+                    }
+                }.addOnFailureListener { error ->
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.e(
+                            "CitizenGps",
+                            "request_failed",
+                            error
+                        )
+                    }
 
-                        locationMessage =
-                            "Không thể lấy vị trí hiện tại. Vui lòng thử lại."
+                    if (
+                        isCallbackActive &&
+                        activeGpsCallback === locationCallback &&
+                        isScreenActive &&
+                        hasLocationPermission &&
+                        isLocationServiceEnabled
+                    ) {
+                        invalidateGpsPosition(
+                            message = "Không thể lấy vị trí. Vui lòng thử lại.",
+                            timedOut = true
+                        )
                     }
                 }
+            } catch (error: SecurityException) {
+                hasLocationPermission = false
+                invalidateGpsPosition(
+                    message = "Quyền vị trí không còn khả dụng. Vui lòng cấp lại."
+                )
+            }
 
             onDispose {
                 isCallbackActive = false
 
-                fusedLocationClient
-                    .removeLocationUpdates(locationCallback)
+                if (activeGpsCallback === locationCallback) {
+                    activeGpsCallback = null
+                }
+
+                fusedLocationClient.removeLocationUpdates(locationCallback)
             }
         }
     }
@@ -1008,6 +1016,7 @@ private fun FloodGoogleMap(
 
                     Lifecycle.Event.ON_START -> {
                         isScreenActive = true
+                        gpsRetryKey++
                     }
 
                     Lifecycle.Event.ON_RESUME -> {
@@ -1055,6 +1064,17 @@ private fun FloodGoogleMap(
 
                     Lifecycle.Event.ON_STOP -> {
                         isScreenActive = false
+
+                        val callback = activeGpsCallback
+                        activeGpsCallback = null
+
+                        if (callback != null) {
+                            fusedLocationClient.removeLocationUpdates(callback)
+                        }
+
+                        invalidateGpsPosition(
+                            message = "Vị trí sẽ được cập nhật khi quay lại bản đồ"
+                        )
                     }
 
                     else -> Unit
@@ -1068,51 +1088,138 @@ private fun FloodGoogleMap(
         }
     }
 
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(
+                receiverContext: Context?,
+                intent: Intent?
+            ) {
+                val manager = context.getSystemService(
+                    LocationManager::class.java
+                )
+
+                val enabledNow = manager?.let {
+                    it.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+                            it.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                } == true
+
+                if (enabledNow == isLocationServiceEnabled) {
+                    return
+                }
+
+                isLocationServiceEnabled = enabledNow
+                val callback = activeGpsCallback
+                activeGpsCallback = null
+
+                if (callback != null) {
+                    fusedLocationClient.removeLocationUpdates(callback)
+                }
+
+                invalidateGpsPosition(
+                    message = if (isLocationServiceEnabled) {
+                        "Đang lấy vị trí hiện tại..."
+                    } else {
+                        "Dịch vụ vị trí đang tắt"
+                    }
+                )
+
+                gpsRetryKey++
+            }
+        }
+
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
     // CCF-65: Timeout khi GPS không trả về tọa độ sau 15 giây
     LaunchedEffect(
         hasLocationPermission,
         isLocationServiceEnabled,
         isScreenActive,
         gpsRetryKey,
-        hasReceivedGpsLocation,
+        lastValidGpsFixNanos,
         isGpsTimedOut
     ) {
+        if (
+            !hasLocationPermission ||
+            !isLocationServiceEnabled ||
+            !isScreenActive ||
+            isGpsTimedOut
+        ) {
+            return@LaunchedEffect
+        }
+
+        val observedFix = lastValidGpsFixNanos
+        val observedRetryKey = gpsRetryKey
+
+        val referenceNanos =
+            observedFix ?: SystemClock.elapsedRealtimeNanos()
+
+        val elapsedMillis = (
+                SystemClock.elapsedRealtimeNanos() - referenceNanos
+                ).coerceAtLeast(0L) / 1_000_000L
+
+        val remainingMillis = (
+                CITIZEN_GPS_TIMEOUT_MILLIS - elapsedMillis
+                ).coerceAtLeast(0L)
+
+        delay(remainingMillis)
+
         if (
             hasLocationPermission &&
             isLocationServiceEnabled &&
             isScreenActive &&
-            !hasReceivedGpsLocation &&
-            !isGpsTimedOut
+            !isGpsTimedOut &&
+            gpsRetryKey == observedRetryKey &&
+            lastValidGpsFixNanos == observedFix
         ) {
-            delay(15_000L)
-
-            if (!hasReceivedGpsLocation && !isGpsTimedOut) {
-                isGpsTimedOut = true
-
-                locationMessage =
-                    "Không thể xác định vị trí sau 15 giây. Vui lòng thử lại."
-            }
+            invalidateGpsPosition(
+                message = "Chưa nhận được tọa độ mới. Vui lòng thử lại GPS.",
+                timedOut = true
+            )
         }
     }
 
-    LaunchedEffect(userLocation) {
-
-        val location = userLocation
+    LaunchedEffect(
+        isMapLoaded,
+        isScreenActive,
+        hasLocationPermission,
+        isLocationServiceEnabled,
+        state.isUserLayerEnabled,
+        userLocation
+    ) {
+        val location = userLocation ?: return@LaunchedEffect
 
         if (
-            location != null &&
-            !hasCenteredOnUserLocation
+            !isMapLoaded ||
+            !isScreenActive ||
+            !hasLocationPermission ||
+            !isLocationServiceEnabled ||
+            !state.isUserLayerEnabled ||
+            hasAutoCenteredOnUser ||
+            hasUserInteractedWithMap
         ) {
-
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    location,
-                    16f
-                )
-            )
-
-            hasCenteredOnUserLocation = true
+            return@LaunchedEffect
         }
+
+
+
+        cameraPositionState.move(
+            CameraUpdateFactory.newLatLngZoom(
+                location,
+                16f
+            )
+        )
+
+        hasAutoCenteredOnUser = true
     }
 
     val currentOnMapTouchChanged by rememberUpdatedState(onMapTouchChanged)
@@ -1122,6 +1229,14 @@ private fun FloodGoogleMap(
             currentOnMapTouchChanged(false)
         }
     }
+
+    val canShowUserLocation =
+        hasLocationPermission &&
+                isLocationServiceEnabled &&
+                isScreenActive &&
+                state.isUserLayerEnabled &&
+                userLocation != null &&
+                !isGpsTimedOut
 
     Card(
         modifier = Modifier
@@ -1155,6 +1270,7 @@ private fun FloodGoogleMap(
                                 pass = PointerEventPass.Initial
                             )
 
+                            hasUserInteractedWithMap = true
                             currentOnMapTouchChanged(true)
 
                             try {
@@ -1168,249 +1284,175 @@ private fun FloodGoogleMap(
                             }
                         }
                     },
+
                 cameraPositionState = cameraPositionState,
-                properties = MapProperties(
-                    isMyLocationEnabled =
+                onMapLoaded = {
+                    isMapLoaded = true
+                },
+
+                onMyLocationButtonClick = {
+                    hasUserInteractedWithMap = true
+
+                    val location = userLocation
+
+                    if (
+                        location != null &&
                         hasLocationPermission &&
-                                isLocationServiceEnabled &&
-                                state.isUserLayerEnabled
+                        isLocationServiceEnabled &&
+                        isScreenActive &&
+                        !isGpsTimedOut
+                    ) {
+                        cameraScope.launch {
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngZoom(location, 16f)
+                            )
+                        }
+                    } else {
+                        invalidateGpsPosition(
+                            message = "Đang lấy vị trí hiện tại..."
+                        )
+                        gpsRetryKey++
+                    }
+
+                    true
+                },
+
+                properties = MapProperties(
+                    isMyLocationEnabled = canShowUserLocation
                 )
             ) {
 
-                if (state.isFloodLayerEnabled) {
-
-                    state.floodAreas
-                        .filter {
-                            it.geometry.type.equals(
-                                "polygon",
-                                ignoreCase = true
-                            ) &&
-                                    it.status.equals(
-                                        "active",
-                                        ignoreCase = true
-                                    )
-                        }
-                        .forEach { floodArea ->
-
-
-                            val rawPoints = floodArea.geometry.points
-
-                            val hasValidCoordinates =
-                                rawPoints.all { point ->
-                                    point.latitude.isFinite() &&
-                                            point.longitude.isFinite() &&
-                                            point.latitude in -90.0..90.0 &&
-                                            point.longitude in -180.0..180.0
-                                }
-
-                            val hasEnoughDistinctPoints =
-                                rawPoints
-                                    .map { point ->
-                                        point.latitude to point.longitude
-                                    }
-                                    .distinct()
-                                    .size >= 3
-
-                            if (hasValidCoordinates && hasEnoughDistinctPoints) {
-
-                                val polygonPoints = rawPoints.map { point ->
-                                    LatLng(
-                                        point.latitude,
-                                        point.longitude
-                                    )
-                                }
-
-
-                                val fillColor =
-                                    when (
-                                        floodArea.severity.lowercase()
-                                    ) {
-
-                                        "critical" ->
-                                            Color(0x66B71C1C)
-
-                                        "high" ->
-                                            Color(0x66F44336)
-
-                                        "medium" ->
-                                            Color(0x66FFA000)
-
-                                        "low" ->
-                                            Color(0x664CAF50)
-
-                                        else ->
-                                            Color(0x665F6368)
-                                    }
-
-                                val strokeColor =
-                                    when (
-                                        floodArea.severity.lowercase()
-                                    ) {
-
-                                        "critical" ->
-                                            Color(0xFFB71C1C)
-
-                                        "high" ->
-                                            Color(0xFFF44336)
-
-                                        "medium" ->
-                                            Color(0xFFFFA000)
-
-                                        "low" ->
-                                            Color(0xFF4CAF50)
-
-                                        else ->
-                                            Color(0xFF5F6368)
-                                    }
-
-                                val matchingAlert =
-                                    state.floodAlerts
-                                        .filter { alert ->
-                                            alert.areaId == floodArea.id
-                                        }
-                                        .maxByOrNull { alert ->
-                                            when (alert.severity.lowercase()) {
-                                                "critical" -> 4
-                                                "high" -> 3
-                                                "medium" -> 2
-                                                "low" -> 1
-                                                else -> 0
-                                            }
-                                        }
-
-                                Polygon(
-                                    points = polygonPoints,
-                                    fillColor = fillColor,
-                                    strokeColor = strokeColor,
-                                    strokeWidth = 4f,
-                                    clickable = true,
-                                    onClick = {
-                                        onSelectFloodAlert(
-                                            matchingAlert?.id
-                                        )
-                                    }
-                                )
+                state.citizenAreas.forEach { area ->
+                    key("citizen-area", area.id) {
+                        val polygonPoints = remember(area.id, area.vertices) {
+                            area.vertices.map { vertex ->
+                                LatLng(vertex.latitude, vertex.longitude)
                             }
                         }
-                }
 
-
-                // CCF-60 TC05: Warning Marker từ Backend
-                if (state.isFloodLayerEnabled) {
-                    state.floodAlerts
-                        .filter { alert ->
-                            alert.status.equals(
-                                "active",
-                                ignoreCase = true
-                            )
+                        val color = when (area.areaType) {
+                            CitizenAreaType.FLOOD -> CitizenFloodColor
+                            CitizenAreaType.LOW_LYING -> CitizenLowLyingColor
                         }
-                        .forEach { alert ->
 
-                            val floodArea = state.floodAreas.find { area ->
-                                area.id == alert.areaId &&
-                                        area.status.equals(
-                                            "active",
-                                            ignoreCase = true
-                                        ) &&
-                                        area.geometry.type.equals(
-                                            "polygon",
-                                            ignoreCase = true
-                                        )
+                        Polygon(
+                            points = polygonPoints,
+                            fillColor = color.copy(alpha = 0.35f),
+                            strokeColor = color,
+                            strokeWidth = 3f,
+                            zIndex = 10f,
+                            visible = state.isFloodLayerEnabled,
+                            clickable = state.isFloodLayerEnabled,
+                            onClick = {
+                                hasUserInteractedWithMap = true
+                                onSelectCitizenArea(area.id)
                             }
-
-                            if (floodArea != null) {
-                                val points = floodArea.geometry.points
-
-                                val validPoints = points.filter { point ->
-                                    point.latitude.isFinite() &&
-                                            point.longitude.isFinite() &&
-                                            point.latitude in -90.0..90.0 &&
-                                            point.longitude in -180.0..180.0
-                                }
-
-                                if (validPoints.size >= 3) {
-
-                                    // Tọa độ đại diện, không phải vị trí GPS của cảnh báo
-                                    val latitude =
-                                        validPoints.map { it.latitude }.average()
-
-                                    val longitude =
-                                        validPoints.map { it.longitude }.average()
-
-                                    val markerState = rememberUpdatedMarkerState(
-                                        position = LatLng(latitude, longitude)
-                                    )
-
-                                    Marker(
-                                        state = markerState,
-                                        title = "[Cảnh báo] ${alert.title}",
-                                        snippet = "Mức độ: ${alert.severity}",
-                                        onClick = {
-                                            onSelectFloodAlert(alert.id)
-                                            true
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                }
-
-
-                if (state.isUserLayerEnabled) {
-                    userLocation?.let { location ->
-                        val markerState = rememberUpdatedMarkerState(
-                            position = location
-                        )
-
-                        Marker(
-                            state = markerState,
-                            title = "Vị trí của bạn"
                         )
                     }
+                }
+
+                state.historyRadarMapPolygons.forEachIndexed { index, polygon ->
+                    key("citizen-radar", index) {
+                        Polygon(
+                            points = polygon.outer,
+                            holes = polygon.holes,
+                            fillColor = CitizenLowLyingColor.copy(alpha = 0.35f),
+                            strokeColor = CitizenLowLyingColor,
+                            strokeWidth = 2f,
+                            zIndex = 5f,
+                            visible = state.isFloodLayerEnabled &&
+                                    state.isHistoryRadarLayerEnabled,
+                            clickable = false
+                        )
+                    }
+                }
+
+                val historyPointIcon = remember {
+                    BitmapDescriptorFactory.defaultMarker(
+                        BitmapDescriptorFactory.HUE_RED
+                    )
+                }
+
+                state.historyPoints.forEachIndexed { index, point ->
+                    key("history-point", point.id, index) {
+                        Marker(
+                            state = rememberUpdatedMarkerState(
+                                position = LatLng(
+                                    point.latitude,
+                                    point.longitude
+                                )
+                            ),
+                            title = point.name ?: "Ngập lịch sử",
+                            snippet = "Dữ liệu lịch sử tham khảo",
+                            icon = historyPointIcon,
+                            anchor = Offset(0.5f, 1f),
+                            zIndex = 30f,
+                            visible = state.isFloodLayerEnabled &&
+                                    state.isHistoryPointsLayerEnabled,
+                            onClick = {
+                                hasUserInteractedWithMap = true
+                                onSelectHistoryPoint(point)
+                                true
+                            }
+                        )
+                    }
+                }
+
+                val shelterPointIcon = remember {
+                    BitmapDescriptorFactory.defaultMarker(
+                        BitmapDescriptorFactory.HUE_AZURE
+                    )
                 }
 
                 // CCF-71: Hiển thị Safe Locations từ Backend.
                 // Marker chỉ là dữ liệu thử nghiệm/chưa xác minh.
                 // Không dùng để quyết định sơ tán.
-                if (state.isShelterLayerEnabled) {
-                    state.safeLocations
-                        .filter { safeLocation ->
-                            safeLocation.status.equals(
-                                "active",
-                                ignoreCase = true
-                            ) &&
-                                    safeLocation.location.latitude.isFinite() &&
-                                    safeLocation.location.longitude.isFinite() &&
-                                    safeLocation.location.latitude in -90.0..90.0 &&
-                                    safeLocation.location.longitude in -180.0..180.0
-                        }
-                        .forEach { safeLocation ->
+                state.safeLocations
+                    .filter { safeLocation ->
+                        safeLocation.status.equals(
+                            "active",
+                            ignoreCase = true
+                        ) &&
+                                safeLocation.location.latitude.isFinite() &&
+                                safeLocation.location.longitude.isFinite() &&
+                                safeLocation.location.latitude in -90.0..90.0 &&
+                                safeLocation.location.longitude in -180.0..180.0
+                    }
+                    .forEach { safeLocation ->
 
-                            val markerPosition = LatLng(
-                                safeLocation.location.latitude,
-                                safeLocation.location.longitude
-                            )
+                        val markerPosition = LatLng(
+                            safeLocation.location.latitude,
+                            safeLocation.location.longitude
+                        )
 
-                            val markerState = rememberUpdatedMarkerState(
-                                position = markerPosition
-                            )
+                        val markerState = rememberUpdatedMarkerState(
+                            position = markerPosition
+                        )
 
-                            Marker(
-                                state = markerState,
-                                title = safeLocation.name,
-                                snippet = "DỮ LIỆU THỬ NGHIỆM — " +
-                                        "Chưa xác minh điểm tránh trú"
-                            )
-                        }
-                }
+                        Marker(
+                            state = markerState,
+                            icon = shelterPointIcon,
+                            title = safeLocation.name,
+                            snippet = "Chưa xác minh mức độ an toàn " +
+                                    "và khả năng tiếp nhận hiện tại",
+                            visible = state.isShelterLayerEnabled,
+                            onClick = {
+                                onSelectSafeLocation(safeLocation.id)
+                                false
+                            }
+                        )
+                    }
 
             }
 
             if (
-                !hasLocationPermission ||
-                !isLocationServiceEnabled ||
-                userLocation == null ||
-                isGpsTimedOut
+                state.isUserLayerEnabled &&
+                (
+                        !hasLocationPermission ||
+                                !isLocationServiceEnabled ||
+                                userLocation == null ||
+                                isGpsTimedOut
+                        )
             ) {
 
                 Column(
@@ -1478,9 +1520,7 @@ private fun FloodGoogleMap(
                                 fontSize = 10.sp
                             )
                         }
-                    }
-
-                    else if (
+                    } else if (
                         hasLocationPermission &&
                         isLocationServiceEnabled &&
                         isGpsTimedOut
@@ -1507,6 +1547,96 @@ private fun FloodGoogleMap(
             }
         }
     }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        val hasMapGeometry = state.isFloodLayerEnabled &&
+                (
+                        state.citizenAreas.isNotEmpty() ||
+                                (
+                                        state.isHistoryPointsLayerEnabled &&
+                                                state.historyPoints.isNotEmpty()
+                                        ) ||
+                                (
+                                        state.isHistoryRadarLayerEnabled &&
+                                                state.historyRadarMapPolygons.isNotEmpty()
+                                        )
+                        )
+
+        OutlinedButton(
+            enabled = isMapLoaded && hasMapGeometry,
+            onClick = {
+                hasUserInteractedWithMap = true
+
+                cameraScope.launch {
+                    val bounds = withContext(Dispatchers.Default) {
+                        buildCitizenMapBounds(state)
+                    }
+
+                    if (bounds != null) {
+                        cameraPositionState.animate(
+                            CameraUpdateFactory.newLatLngBounds(
+                                bounds,
+                                36
+                            )
+                        )
+                    }
+                }
+            },
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color(0xD9000000),
+                contentColor = Color.White
+            )
+        ) {
+            Text(
+                text = "Xem toàn vùng dữ liệu",
+                fontSize = 11.sp
+            )
+        }
+    }
+    CitizenMapSelectionDialog(
+        state = state,
+        canShowOnMap = isMapLoaded,
+        onDismiss = onClearMapSelection,
+        onShowArea = { area ->
+            hasUserInteractedWithMap = true
+
+            val builder = LatLngBounds.Builder()
+            area.vertices.forEach { vertex ->
+                builder.include(
+                    LatLng(vertex.latitude, vertex.longitude)
+                )
+            }
+            val bounds = builder.build()
+
+            onClearMapSelection()
+
+            cameraScope.launch {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngBounds(bounds, 48)
+                )
+            }
+        },
+        onShowPoint = { point ->
+            hasUserInteractedWithMap = true
+            onClearMapSelection()
+
+            cameraScope.launch {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(point.latitude, point.longitude),
+                        16f
+                    )
+                )
+            }
+        }
+    )
 }
 
 
@@ -1764,6 +1894,36 @@ private fun FloodShelterCard(
 // FLOOD SEVERITY LEGEND
 // =====================================================
 
+
+@Composable
+private fun FloodHistoryPointLegend(
+    text: String = "Điểm lịch sử"
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFE53935))
+                .border(
+                    width = 1.dp,
+                    color = Color.White,
+                    shape = CircleShape
+                )
+        )
+
+        Spacer(modifier = Modifier.width(5.dp))
+
+        Text(
+            text = text,
+            color = MapSecondary,
+            fontSize = 10.sp
+        )
+    }
+}
+
 @Composable
 private fun FloodSeverityLegend(
     color: Color,
@@ -1791,6 +1951,16 @@ private fun FloodSeverityLegend(
     }
 }
 
+private fun floodSeverityLabel(severity: String): String {
+    return when (severity.trim().lowercase()) {
+        "low" -> "Thấp"
+        "medium" -> "Trung bình"
+        "high" -> "Cao"
+        "critical" -> "Nghiêm trọng"
+        else -> "Chưa xác định"
+    }
+}
+
 @Composable
 private fun FloodWarningInfoCard(
     title: String,
@@ -1799,10 +1969,11 @@ private fun FloodWarningInfoCard(
 ) {
 
     val severityColor =
-        when (severity.lowercase()) {
-            "high" -> Color(0xFFF44336)
-            "medium" -> Color(0xFFFFA000)
+        when (severity.trim().lowercase()) {
             "low" -> Color(0xFF4CAF50)
+            "medium" -> Color(0xFFFFA000)
+            "high" -> Color(0xFFF44336)
+            "critical" -> Color(0xFFB71C1C)
             else -> MapSecondary
         }
 
@@ -1850,7 +2021,7 @@ private fun FloodWarningInfoCard(
             )
 
             Text(
-                text = "Mức độ: ${severity.uppercase()}",
+                text = "Mức độ: ${floodSeverityLabel(severity)}",
                 color = severityColor,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
@@ -1873,4 +2044,426 @@ private fun Context.findActivity(): Activity? {
     }
 
     return null
+}
+@Composable
+private fun CitizenMapDataPanel(
+    state: FloodMapUiState,
+    onRefresh: () -> Unit,
+    onRetryAreas: () -> Unit,
+    onRetryAlerts: () -> Unit,
+    onRetryShelters: () -> Unit,
+    onRetryHistory: () -> Unit,
+    onRetryRadar: () -> Unit
+) {
+    val busy = state.isLoadingFloodAreas ||
+            state.isLoadingFloodAlerts ||
+            state.isLoadingSafeLocations ||
+            state.isLoadingHistoryPoints ||
+            state.isLoadingHistoryBuffers ||
+            state.isLoadingHistoryRadar
+
+    val lowLyingCount =
+        state.citizenAreas.count {
+            it.areaType == CitizenAreaType.LOW_LYING
+        } + if (state.isHistoryRadarLayerEnabled) {
+            state.historyRadarFeatureCount
+        } else {
+            0
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (state.isFloodLayerEnabled) {
+            Text(
+                text = "CHÚ GIẢI BẢN ĐỒ",
+                color = MapText,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            CitizenLegendItem(
+                label = "Ngập lịch sử (${state.historyPoints.size})",
+                color = Color.Red,
+                isPoint = true
+            )
+
+            CitizenLegendItem(
+                label = "Vùng ngập (${
+                    state.citizenAreas.count {
+                        it.areaType == CitizenAreaType.FLOOD
+                    }
+                })",
+                color = CitizenFloodColor
+            )
+
+            CitizenLegendItem(
+                label = "Vùng trũng ($lowLyingCount)",
+                color = CitizenLowLyingColor
+            )
+
+            Text(
+                text = "Màu phân biệt loại dữ liệu, không thể hiện " +
+                        "mức độ nguy hiểm. Ngập lịch sử và radar là dữ liệu " +
+                        "tham khảo, không xác nhận khu vực đang ngập hoặc an toàn.",
+                color = MapSecondary,
+                fontSize = 12.sp
+            )
+        }
+
+        OutlinedButton(
+            onClick = onRefresh,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MapText
+            )
+        ) {
+            Text(
+                if (busy) "Đang tải dữ liệu..."
+                else "Làm mới dữ liệu"
+            )
+        }
+
+        Text(
+            text = "Nguồn: FloodGuard API. Thời gian bên dưới " +
+                    "là lúc ứng dụng tải thành công.",
+            color = MapSecondary,
+            fontSize = 12.sp
+        )
+
+        CitizenSourceStatus(
+            title = "Vùng do Admin quản lý",
+            count = state.citizenAreas.size,
+            loading = state.isLoadingFloodAreas,
+            error = state.floodAreasError,
+            loadedAt = state.floodAreasLoadedAt,
+            onRetry = onRetryAreas
+        )
+
+        if (state.floodAreasUnsupportedTypeCount > 0) {
+            Text(
+                text = "Có ${state.floodAreasUnsupportedTypeCount} vùng " +
+                        "chưa xác định được loại dữ liệu nên chưa hiển thị.",
+                color = MapOrange,
+                fontSize = 12.sp
+            )
+        }
+
+        if (state.floodAreasInvalidRecordCount > 0) {
+            Text(
+                text = "Có ${state.floodAreasInvalidRecordCount} " +
+                        "bản ghi vùng không hợp lệ nên chưa hiển thị.",
+                color = MapOrange,
+                fontSize = 12.sp
+            )
+        }
+
+        CitizenSourceStatus(
+            title = "Ngập lịch sử",
+            count = state.historyPoints.size,
+            loading = state.isLoadingHistoryPoints,
+            error = state.historyPointsError,
+            loadedAt = state.historyPointsLoadedAt,
+            onRetry = onRetryHistory
+        )
+
+        if (state.historyPointsInvalidFeatureCount > 0) {
+            Text(
+                text = "Đã bỏ qua ${state.historyPointsInvalidFeatureCount} " +
+                        "bản ghi lịch sử không hợp lệ.",
+                color = MapOrange,
+                fontSize = 12.sp
+            )
+        }
+
+        CitizenSourceStatus(
+            title = "Vùng trũng — radar tham khảo",
+            count = state.historyRadarFeatureCount,
+            loading = state.isLoadingHistoryRadar,
+            error = state.historyRadarError,
+            loadedAt = state.historyRadarLoadedAt,
+            onRetry = onRetryRadar
+        )
+
+        CitizenSourceStatus(
+            title = "Điểm tránh trú",
+            count = state.safeLocations.count {
+                it.status.equals("active", ignoreCase = true)
+            },
+            loading = state.isLoadingSafeLocations,
+            error = state.safeLocationsError,
+            loadedAt = state.safeLocationsLoadedAt,
+            onRetry = onRetryShelters
+        )
+
+        CitizenSourceStatus(
+            title = "Bản tin cảnh báo",
+            count = state.floodAlerts.size,
+            loading = state.isLoadingFloodAlerts,
+            error = state.floodAlertsError,
+            loadedAt = state.floodAlertsLoadedAt,
+            onRetry = onRetryAlerts
+        )
+    }
+}
+
+@Composable
+private fun CitizenSourceStatus(
+    title: String,
+    count: Int,
+    loading: Boolean,
+    error: String?,
+    loadedAt: Long?,
+    onRetry: () -> Unit
+) {
+    val loadedText = remember(loadedAt) {
+        loadedAt?.let {
+            SimpleDateFormat(
+                "dd/MM/yyyy HH:mm:ss",
+                Locale.forLanguageTag("vi-VN")
+            ).format(Date(it))
+        }
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = "$title: $count",
+            color = MapText,
+            fontSize = 13.sp
+        )
+
+        if (loading) {
+            Text(
+                text = "Đang tải; dữ liệu đã có vẫn được giữ hiển thị.",
+                color = MapSecondary,
+                fontSize = 12.sp
+            )
+        }
+
+        Text(
+            text = loadedText?.let { "Đã tải: $it" }
+                ?: "Chưa tải thành công.",
+            color = MapSecondary,
+            fontSize = 11.sp
+        )
+
+        if (error != null) {
+            Text(
+                text = error,
+                color = Color(0xFFEF9A9A),
+                fontSize = 12.sp
+            )
+
+            OutlinedButton(
+                onClick = onRetry,
+                enabled = !loading,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MapText
+                )
+            ) {
+                Text("Thử lại")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CitizenLegendItem(
+    label: String,
+    color: Color,
+    isPoint: Boolean = false
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (isPoint) {
+            Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(18.dp)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(color)
+            )
+        }
+
+        Text(
+            text = label,
+            color = MapText,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun CitizenMapSelectionDialog(
+    state: FloodMapUiState,
+    canShowOnMap: Boolean,
+    onDismiss: () -> Unit,
+    onShowArea: (CitizenMapArea) -> Unit,
+    onShowPoint: (HistoricalFloodPoint) -> Unit
+) {
+    val area = state.citizenAreas.firstOrNull {
+        state.isFloodLayerEnabled &&
+                it.id == state.selectedCitizenAreaId
+    }
+
+    val point = state.selectedHistoryPoint?.takeIf {
+        state.isFloodLayerEnabled &&
+                state.isHistoryPointsLayerEnabled
+    }
+
+    if (area == null && point == null) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MapCard,
+        title = {
+            Text(
+                text = area?.name ?: point?.name ?: "Thông tin bản đồ",
+                color = MapText
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (area != null) {
+                    CitizenInfoLine("Loại dữ liệu", area.areaType.label)
+                    CitizenInfoLine("ID", area.id)
+                    CitizenInfoLine("Tên", area.name)
+                    CitizenInfoLine("Mô tả", area.description)
+                    CitizenInfoLine("Nguồn", area.source)
+
+                    state.floodAreasError?.let {
+                        Text(
+                            text = "Thông tin vùng đang lấy từ lần tải trước.",
+                            color = MapOrange,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    val relatedAlerts = state.floodAlerts.filter {
+                        it.areaId == area.id
+                    }
+
+                    if (relatedAlerts.isNotEmpty()) {
+                        Text(
+                            text = "ĐỢT CẢNH BÁO LIÊN QUAN",
+                            color = MapText,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        state.floodAlertsError?.let {
+                            Text(
+                                text = "Bản tin cảnh báo chưa được làm mới.",
+                                color = MapOrange,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        relatedAlerts.forEach { alert ->
+                            FloodWarningInfoCard(
+                                title = alert.title,
+                                content = alert.content,
+                                severity = alert.severity
+                            )
+                        }
+                    }
+                }
+
+                if (point != null) {
+                    CitizenInfoLine("Loại dữ liệu", "Ngập lịch sử")
+                    CitizenInfoLine("ID", point.id)
+                    CitizenInfoLine("Tên", point.name)
+                    CitizenInfoLine("Nguồn", point.sourceUrl)
+                    CitizenInfoLine(
+                        "Nguồn tham chiếu vị trí",
+                        point.locationRefUrl
+                    )
+                    CitizenInfoLine("Giai đoạn dữ liệu", point.dataPeriod)
+
+                    CitizenInfoLine(
+                        "Thông tin tọa độ",
+                        when (point.coordinateStatus) {
+                            "landmark_reference" ->
+                                "Tọa độ tham chiếu theo địa danh"
+
+                            "historical_reference_estimated" ->
+                                "Tọa độ lịch sử ước lượng"
+
+                            else -> point.coordinateStatus
+                        }
+                    )
+
+                    CitizenInfoLine(
+                        "Tọa độ",
+                        "${point.latitude}, ${point.longitude}"
+                    )
+
+                    Text(
+                        text = "Dữ liệu lịch sử phục vụ tham khảo, " +
+                                "không xác nhận khu vực đang ngập hoặc an toàn.",
+                        color = MapSecondary,
+                        fontSize = 12.sp
+                    )
+
+                    state.historyPointsError?.let {
+                        Text(
+                            text = "Thông tin điểm đang lấy từ lần tải trước.",
+                            color = MapOrange,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canShowOnMap,
+                onClick = {
+                    if (area != null) {
+                        onShowArea(area)
+                    } else if (point != null) {
+                        onShowPoint(point)
+                    }
+                }
+            ) {
+                Text("Xem trên bản đồ", color = MapText)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Đóng", color = MapText)
+            }
+        }
+    )
+}
+
+@Composable
+private fun CitizenInfoLine(
+    label: String,
+    value: String?
+) {
+    Text(
+        text = "$label: ${
+            value?.takeIf { it.isNotBlank() }
+                ?: "Chưa được bổ sung"
+        }",
+        color = MapText,
+        fontSize = 13.sp
+    )
 }
