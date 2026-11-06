@@ -223,6 +223,53 @@ internal fun RescueMapScreen(
                 )
             }
 
+            // Data notices sit outside the map legend, which contains three area categories.
+            val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
+            val warningLoadFailed = dataState.activeWarnings is RescueMapLoadState.Error
+            val historyLoadFailed = historyLayers.values.any { it.error }
+            if (showFloodLayers && (layers.unclassifiedCount > 0 || layers.skippedCount > 0 ||
+                    areaLoadFailed || warningLoadFailed || historyLoadFailed)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    color = MapSurface,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            if (layers.legacyFormatCount > 0) {
+                                MapLabel("Máy chủ trả dữ liệu vùng định dạng cũ (${layers.legacyFormatCount} bản ghi).")
+                            }
+                            val needsClassification = layers.unclassifiedCount - layers.legacyFormatCount
+                            if (needsClassification > 0) {
+                                MapLabel("$needsClassification vùng chưa có loại hợp lệ; Admin cần phân loại.")
+                            }
+                            if (layers.unclassifiedCount > 0) {
+                                MapLabel("Chưa hiển thị các vùng này trên bản đồ.")
+                            }
+                            if (layers.skippedCount > 0) {
+                                MapLabel("${layers.skippedCount} vùng có thông tin hoặc ranh giới không hợp lệ.")
+                            }
+                            if (areaLoadFailed) MapLabel("Chưa tải được vùng Admin.")
+                            if (warningLoadFailed) MapLabel("Chưa tải được cảnh báo.")
+                            if (historyLoadFailed) {
+                                MapLabel("Một phần dữ liệu lịch sử chưa tải được.")
+                                if (historyLayers.values.any { it.error &&
+                                        (it.points.isNotEmpty() || it.polygons.isNotEmpty()) }) {
+                                    MapLabel("Đang giữ dữ liệu lịch sử lần tải trước.")
+                                }
+                            }
+                        }
+                        TextButton(onClick = {
+                            dataViewModel.refresh()
+                            historyViewModel.refresh()
+                        }) { MapLabel("Tải lại", MapCyan) }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -331,10 +378,11 @@ internal fun RescueMapScreen(
                                         points = polygonPoints.getValue(area.id),
                                         visible = showFloodLayers,
                                         clickable = true,
-                                        fillColor = color.copy(alpha = if (area.isActive) 0.24f else 0.08f),
-                                        strokeColor = color,
+                                        fillColor = color.copy(alpha = area.areaType.fillAlpha),
+                                        strokeColor = if (area.areaType == RescueAreaType.LOW_LYING)
+                                            color.copy(alpha = 0.7f) else color,
                                         strokeWidth = if (selectedAreaId == area.id) 7f else 3f,
-                                        zIndex = if (area.isActive) 10f + area.severity.priority else 1f,
+                                        zIndex = if (area.areaType == RescueAreaType.FLOOD) 10f else 5f,
                                         onClick = {
                                             selectedHistoryPoint = null
                                             selectedAreaId = area.id
@@ -387,7 +435,7 @@ internal fun RescueMapScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(
                                                 modifier = Modifier.size(14.dp)
-                                                    .background(Color(0xFFFDD835))
+                                                    .background(Color(RescueAreaType.FLOOD.colorArgb))
                                             )
                                             MapLabel("  Vùng ngập", MapText)
                                         }
@@ -398,7 +446,7 @@ internal fun RescueMapScreen(
                                                 tint = Color(0xFFF44336),
                                                 modifier = Modifier.size(18.dp)
                                             )
-                                            MapLabel(" Ngập lịch sử", Color(0xFFFF7777))
+                                            MapLabel(" Vùng ngập lịch sử", Color(0xFFFF7777))
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(
@@ -406,26 +454,6 @@ internal fun RescueMapScreen(
                                                     .background(Color(0xFFE53935).copy(alpha = 0.40f))
                                             )
                                             MapLabel("  Vùng trũng", MapText)
-                                        }
-                                        if (dataState.floodAreas is RescueMapLoadState.Error ||
-                                            dataState.activeWarnings is RescueMapLoadState.Error) {
-                                            MapLabel("Một phần dữ liệu hệ thống chưa tải được.")
-                                            TextButton(onClick = dataViewModel::refresh) {
-                                                MapLabel("Thử tải lại dữ liệu hệ thống", MapCyan)
-                                            }
-                                        }
-                                        when {
-                                            historyLayers.values.any { it.loading } -> MapLabel("Đang tải dữ liệu lịch sử…")
-                                            historyLayers.values.any { it.error } -> {
-                                                MapLabel("Một phần dữ liệu lịch sử chưa tải được.")
-                                                if (historyLayers.values.any { it.error &&
-                                                        (it.points.isNotEmpty() || it.polygons.isNotEmpty()) }) {
-                                                    MapLabel("Đang giữ dữ liệu lần tải trước.")
-                                                }
-                                                TextButton(onClick = historyViewModel::refresh) {
-                                                    MapLabel("Thử tải lại", MapCyan)
-                                                }
-                                            }
                                         }
                                     }
                                 }

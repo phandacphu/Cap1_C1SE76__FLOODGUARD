@@ -40,16 +40,8 @@ private val LayerMuted = Color(0xFFBBC9CD)
 private val LayerCyan = Color(0xFF8AEBFF)
 private val LayerFont = FontFamily(Font(R.font.rescue_be_vietnam_regular))
 
-internal fun rescueSeverityColor(severity: RescueFloodSeverity): Color = when (severity) {
-    RescueFloodSeverity.LOW -> Color(0xFF42A5F5)
-    RescueFloodSeverity.MEDIUM -> Color(0xFFFDD835)
-    RescueFloodSeverity.HIGH -> Color(0xFFFF9800)
-    RescueFloodSeverity.CRITICAL -> Color(0xFFEF5350)
-    RescueFloodSeverity.UNKNOWN -> Color(0xFF90A4AE)
-}
-
 internal fun rescueAreaColor(area: RescueFloodMapArea): Color =
-    if (area.isActive) rescueSeverityColor(area.severity) else Color(0xFF90A4AE)
+    Color(area.areaType.colorArgb)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,7 +65,7 @@ internal fun RescueFloodAreaSheet(
         Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f).padding(horizontal = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (selectedAreaId == null) "Vùng ngập và cảnh báo" else "Thông tin vùng ngập",
+                    if (selectedAreaId == null) "Các vùng và cảnh báo" else "Thông tin vùng",
                     modifier = Modifier.weight(1f), fontFamily = LayerFont,
                     fontWeight = FontWeight.Bold, fontSize = 18.sp
                 )
@@ -91,15 +83,18 @@ internal fun RescueFloodAreaSheet(
                 ) {
                     if (selectedAreaId == null) {
                         item { FloodLegend() }
-                        item { LayerLabel("Chạm vùng trên bản đồ hoặc chọn từ danh sách. Màu thể hiện mức độ do hệ thống cung cấp.") }
+                        item { LayerLabel("Chạm vùng trên bản đồ hoặc chọn từ danh sách. Màu thể hiện loại vùng do Admin khai báo.") }
                         item { AreaLoadNotice(state.floodAreas, onRetryAreas) }
+                        if (layers.unclassifiedCount > 0) {
+                            item { LayerLabel("${layers.unclassifiedCount} vùng chưa được Admin phân loại nên chưa hiển thị trên bản đồ.") }
+                        }
                         if (layers.skippedCount > 0) {
                             item { LayerLabel("${layers.skippedCount} bản ghi không đủ thông tin hoặc có ranh giới không hợp lệ nên không được vẽ.") }
                         }
                         items(layers.areas, key = { "area:${it.id}" }) { area ->
                             LayerCard {
                                 LayerLabel(area.name, LayerText, bold = true)
-                                AreaStatus(area)
+                                AreaTypeLabel(area)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton(onClick = { onSelect(area.id) }) { LayerLabel("Thông tin", LayerCyan) }
                                     TextButton(onClick = { onFocus(area) }, enabled = canFocus) {
@@ -126,9 +121,9 @@ internal fun RescueFloodAreaSheet(
                             item {
                                 LayerCard {
                                     LayerLabel(area.name, LayerText, bold = true)
-                                    AreaStatus(area)
+                                    AreaTypeLabel(area)
                                     LayerLabel(area.description)
-                                    LayerLabel("Nguồn vùng ngập: ${area.source}")
+                                    LayerLabel("Nguồn: ${area.source}")
                                     Button(
                                         onClick = { onFocus(area) }, enabled = canFocus,
                                         colors = ButtonDefaults.buttonColors(
@@ -161,34 +156,28 @@ internal fun RescueFloodAreaSheet(
 }
 
 @Composable
-private fun AreaStatus(area: RescueFloodMapArea) {
+private fun AreaTypeLabel(area: RescueFloodMapArea) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(12.dp).background(rescueAreaColor(area)))
-        LayerLabel("${area.statusLabel} · Mức độ: ${area.severity.label}")
+        LayerLabel("Loại vùng: ${area.areaType.label}")
     }
 }
 
 @Composable
 private fun FloodLegend() {
     LayerCard {
-        LayerLabel("Chú giải vùng ngập", LayerText, bold = true)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            LegendEntry(RescueFloodSeverity.LOW)
-            LegendEntry(RescueFloodSeverity.MEDIUM)
+        LayerLabel("Chú giải loại vùng", LayerText, bold = true)
+        RescueAreaType.entries.forEach { type ->
+            LegendEntry(type)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            LegendEntry(RescueFloodSeverity.HIGH)
-            LegendEntry(RescueFloodSeverity.CRITICAL)
-        }
-        LayerLabel("Xám: vùng đã ngừng hoạt động, trạng thái hoặc mức độ chưa xác định.")
     }
 }
 
 @Composable
-private fun LegendEntry(severity: RescueFloodSeverity) {
+private fun LegendEntry(type: RescueAreaType) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(12.dp).background(rescueSeverityColor(severity)))
-        LayerLabel(severity.label)
+        Box(Modifier.size(12.dp).background(Color(type.colorArgb)))
+        LayerLabel(type.label)
     }
 }
 
@@ -207,10 +196,10 @@ private fun WarningCard(warning: FloodAlertDto, areaName: String) {
 @Composable
 private fun AreaLoadNotice(state: RescueMapLoadState<*>, onRetry: () -> Unit) {
     when (state) {
-        RescueMapLoadState.Loading -> LayerLabel("Đang tải vùng ngập…")
-        RescueMapLoadState.Empty -> LayerLabel("Chưa có vùng ngập để hiển thị.")
+        RescueMapLoadState.Loading -> LayerLabel("Đang tải các vùng…")
+        RescueMapLoadState.Empty -> LayerLabel("Chưa có dữ liệu vùng để hiển thị.")
         is RescueMapLoadState.Error -> RetryNotice(state.message, onRetry)
-        is RescueMapLoadState.Data<*> -> if (state.items.isEmpty()) LayerLabel("Chưa có vùng ngập để hiển thị.")
+        is RescueMapLoadState.Data<*> -> if (state.items.isEmpty()) LayerLabel("Chưa có dữ liệu vùng để hiển thị.")
     }
 }
 
