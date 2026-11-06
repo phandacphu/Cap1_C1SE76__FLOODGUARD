@@ -85,11 +85,9 @@ class SendSosViewModelTest {
         viewModel: SendSosViewModel
     ) {
         viewModel.toggleSituation(SosSituation.TRAPPED)
-        viewModel.selectPeopleCount(SosPeopleCount.ONE)
         viewModel.selectWaterLevel(SosWaterLevel.WAIST)
 
         // Trường mới của CCF-83
-        viewModel.selectUrgency(SosUrgency.HIGH)
         viewModel.updateExactPeopleCount("1")
     }
 
@@ -102,12 +100,10 @@ class SendSosViewModelTest {
         val errors = viewModel.uiState.value.validationErrors
 
         assertNotNull(errors.situations)
-        assertNotNull(errors.peopleCount)
         assertNotNull(errors.waterLevel)
         assertNotNull(errors.location)
 
         // CCF-83
-        assertNotNull(errors.urgency)
         assertNotNull(errors.exactPeopleCount)
     }
 
@@ -187,7 +183,6 @@ class SendSosViewModelTest {
         val state = viewModel.uiState.value
 
         assertTrue(state.selectedSituations.isEmpty())
-        assertNull(state.peopleCount)
         assertNull(state.waterLevel)
         assertEquals("", state.note)
 
@@ -196,7 +191,6 @@ class SendSosViewModelTest {
         assertNull(state.locationTimestampMillis)
 
         // CCF-83
-        assertNull(state.urgency)
         assertEquals("", state.exactPeopleCount)
     }
 
@@ -207,11 +201,9 @@ class SendSosViewModelTest {
         assertFalse(viewModel.validateForm())
 
         viewModel.toggleSituation(SosSituation.TRAPPED)
-        viewModel.selectPeopleCount(SosPeopleCount.ONE)
         viewModel.selectWaterLevel(SosWaterLevel.WAIST)
 
         // CCF-83
-        viewModel.selectUrgency(SosUrgency.HIGH)
         viewModel.updateExactPeopleCount("1")
 
         viewModel.updateLocation(createLocation())
@@ -219,10 +211,8 @@ class SendSosViewModelTest {
         val errors = viewModel.uiState.value.validationErrors
 
         assertNull(errors.situations)
-        assertNull(errors.peopleCount)
         assertNull(errors.waterLevel)
         assertNull(errors.location)
-        assertNull(errors.urgency)
         assertNull(errors.exactPeopleCount)
 
         assertTrue(viewModel.validateForm())
@@ -263,17 +253,14 @@ class SendSosViewModelTest {
     }
 
     @Test
-    fun missingUrgency_isInvalid() {
+    fun completeForm_withoutUrgency_isValid() {
         val vm = createViewModel()
 
-        vm.toggleSituation(SosSituation.TRAPPED)
-        vm.selectPeopleCount(SosPeopleCount.ONE)
-        vm.selectWaterLevel(SosWaterLevel.WAIST)
-        vm.updateExactPeopleCount("1")
+        fillRequiredFields(vm)
         vm.updateLocation(createLocation())
 
-        assertFalse(vm.validateForm())
-        assertNotNull(vm.uiState.value.validationErrors.urgency)
+        assertTrue(vm.validateForm())
+        assertFalse(vm.uiState.value.validationErrors.hasErrors())
     }
 
     @Test
@@ -281,9 +268,7 @@ class SendSosViewModelTest {
         val vm = createViewModel()
 
         vm.toggleSituation(SosSituation.TRAPPED)
-        vm.selectPeopleCount(SosPeopleCount.ONE)
         vm.selectWaterLevel(SosWaterLevel.WAIST)
-        vm.selectUrgency(SosUrgency.HIGH)
         vm.updateLocation(createLocation())
 
         assertFalse(vm.validateForm())
@@ -307,19 +292,15 @@ class SendSosViewModelTest {
     }
 
     @Test
-    fun peopleCountMismatch_isInvalid() {
+    fun exactPeopleCount_threePeople_isValid() {
         val vm = createViewModel()
 
         fillRequiredFields(vm)
-
-        // Nhóm ONE chỉ chấp nhận đúng 1 người.
         vm.updateExactPeopleCount("3")
         vm.updateLocation(createLocation())
 
-        assertFalse(vm.validateForm())
-        assertNotNull(
-            vm.uiState.value.validationErrors.exactPeopleCount
-        )
+        assertTrue(vm.validateForm())
+        assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
     }
 
     private fun validViewModel(
@@ -342,33 +323,32 @@ class SendSosViewModelTest {
     fun exactPeopleCount_errorRemainsUntilValidValue() {
         val vm = createViewModel()
         fillRequiredFields(vm)
-        vm.updateExactPeopleCount("0")
-        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        listOf("", "0", "-1", "1a", "1.5").forEach { invalid ->
+            vm.updateExactPeopleCount(invalid)
+            assertNotNull(
+                "Phải từ chối: $invalid",
+                vm.uiState.value.validationErrors.exactPeopleCount
+            )
+        }
 
         vm.updateExactPeopleCount("4")
-        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
-
-        vm.updateExactPeopleCount("-1")
-        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
-
-        vm.updateExactPeopleCount("1a")
-        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
-
-        vm.updateExactPeopleCount("1")
         assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
     }
 
     @Test
-    fun changingPeopleGroup_revalidatesExactCount() {
+    fun changingExactPeopleCount_revalidatesValue() {
         val vm = createViewModel()
-        fillRequiredFields(vm) // ONE, exact = 1
-        vm.selectPeopleCount(SosPeopleCount.TWO_THREE)
-        assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+        fillRequiredFields(vm)
 
         vm.updateExactPeopleCount("2")
         assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
-        vm.selectPeopleCount(SosPeopleCount.ONE)
+
+        vm.updateExactPeopleCount("0")
         assertNotNull(vm.uiState.value.validationErrors.exactPeopleCount)
+
+        vm.updateExactPeopleCount("7")
+        assertNull(vm.uiState.value.validationErrors.exactPeopleCount)
     }
 
     @Test
@@ -388,7 +368,8 @@ class SendSosViewModelTest {
         assertNull(vm.uiState.value.submitError)
         assertEquals("test-sos-123", vm.uiState.value.submittedSosId)
         assertEquals(1, calls)
-        assertEquals("high", received?.urgency)
+        assertEquals(listOf("trapped"), received?.situations)
+        assertEquals("waist", received?.waterLevel)
         assertEquals(1, received?.numberOfPeople)
 
         vm.submitSos()
@@ -418,7 +399,6 @@ class SendSosViewModelTest {
         assertFalse(vm.uiState.value.isSubmitting)
         assertNull(vm.uiState.value.submittedSosId)
         assertTrue(vm.uiState.value.submitError.orEmpty().contains("timeout"))
-        assertEquals(SosPeopleCount.ONE, vm.uiState.value.peopleCount)
         assertEquals("1", vm.uiState.value.exactPeopleCount)
     }
 
@@ -452,8 +432,6 @@ class SendSosViewModelTest {
 
         vm.updateNote("Thay ghi chú")
         vm.updateExactPeopleCount("999")
-        vm.selectUrgency(SosUrgency.CRITICAL)
-        vm.selectPeopleCount(SosPeopleCount.FOUR_SIX)
         vm.selectWaterLevel(SosWaterLevel.CHEST)
         vm.toggleSituation(SosSituation.INJURED)
         vm.startLocationLoading()
@@ -508,7 +486,6 @@ class SendSosViewModelTest {
         val vm = createViewModel()
 
         fillRequiredFields(vm)
-        vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
         vm.updateExactPeopleCount("1234")
         vm.updateLocation(createLocation())
 
@@ -522,7 +499,6 @@ class SendSosViewModelTest {
         val vm = createViewModel()
 
         fillRequiredFields(vm)
-        vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
         vm.updateExactPeopleCount("99999999999999999999")
         vm.updateLocation(createLocation())
 
@@ -550,7 +526,6 @@ class SendSosViewModelTest {
                 )
             })
 
-            vm.selectPeopleCount(SosPeopleCount.MORE_THAN_SIX)
             vm.updateExactPeopleCount("1234")
 
             assertTrue(vm.validateForm())

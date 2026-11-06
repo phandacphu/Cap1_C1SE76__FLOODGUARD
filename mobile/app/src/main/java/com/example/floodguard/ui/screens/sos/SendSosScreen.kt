@@ -289,10 +289,6 @@ fun SendSosScreen(
     }
 
 
-    var showDemoDialog by rememberSaveable {
-        mutableStateOf(false)
-    }
-
     var showSubmitConfirmation by rememberSaveable {
         mutableStateOf(false)
     }
@@ -366,35 +362,6 @@ fun SendSosScreen(
                     }
                 )
             }
-
-            item {
-                SosSectionTitle(
-                    "SỐ NGƯỜI CẦN HỖ TRỢ"
-                )
-
-                uiState.validationErrors.peopleCount?.let {
-                    Text(it, color = SosPink, fontSize = 12.sp)
-                }
-                Spacer(Modifier.height(8.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SosPeopleCount.entries.forEach { count ->
-                        SosChoiceChip(
-                            text = count.label,
-                            selected = uiState.peopleCount == count,
-                            modifier = Modifier.weight(1f),
-                            enabled = formEnabled,
-                            onClick = {
-                                viewModel.selectPeopleCount(count)
-                            }
-                        )
-                    }
-
-                }
-            }
-
 
             item {
                 Column(
@@ -486,56 +453,6 @@ fun SendSosScreen(
             }
 
             item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SosSectionTitle("MỨC ĐỘ KHẨN CẤP")
-
-                    SosUrgency.entries.forEach { urgency ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (uiState.urgency == urgency) {
-                                        SosCardSelected
-                                    } else {
-                                        SosCard
-                                    }
-                                )
-                                .clickable(enabled = formEnabled) {
-                                    viewModel.selectUrgency(urgency)
-                                }
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = uiState.urgency == urgency,
-                                enabled = formEnabled,
-                                onClick = {
-                                    viewModel.selectUrgency(urgency)
-                                }
-                            )
-
-                            Text(
-                                text = urgency.label,
-                                color = SosText,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                    }
-
-                    uiState.validationErrors.urgency?.let { error ->
-                        Text(
-                            text = error,
-                            color = SosPink,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-
-            item {
                 SosSectionTitle(
                     "GHI CHÚ CHO ĐỘI CỨU HỘ"
                 )
@@ -605,21 +522,9 @@ fun SendSosScreen(
 
                             val targetIndex = when {
                                 errors.location != null -> 1
-
                                 errors.situations != null -> 2
-
-                                errors.peopleCount != null ->
-                                    3 + situationCount
-
-                                errors.exactPeopleCount != null ->
-                                    4 + situationCount
-
-                                errors.waterLevel != null ->
-                                    5 + situationCount
-
-                                errors.urgency != null ->
-                                    6 + situationCount
-
+                                errors.exactPeopleCount != null -> 3 + situationCount
+                                errors.waterLevel != null -> 4 + situationCount
                                 else -> 0
                             }
 
@@ -654,7 +559,11 @@ fun SendSosScreen(
                             Arrangement.Center
                     ) {
                         Text(
-                            "◆ GỬI TÍN HIỆU SOS",
+                            text = when {
+                                uiState.isSubmitting -> "ĐANG GỬI SOS..."
+                                uiState.submittedSosId != null -> "ĐÃ TIẾP NHẬN SOS"
+                                else -> "GỬI TÍN HIỆU SOS"
+                            },
                             fontSize = 23.sp,
                             fontWeight = FontWeight.Black
                         )
@@ -662,7 +571,7 @@ fun SendSosScreen(
                         Spacer(Modifier.height(5.dp))
 
                         Text(
-                            "BẢN DEMO • CHƯA GỬI YÊU CẦU THẬT",
+                            "Yêu cầu được gửi lên hệ thống",
                             fontSize = 10.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold
@@ -741,71 +650,46 @@ fun SendSosScreen(
     }
 
 
-    if (showSubmitConfirmation) {
-        AlertDialog(
-            onDismissRequest = {
-                showSubmitConfirmation = false
-            },
-            title = {
-                Text("Xác nhận gửi SOS")
-            },
-            text = {
-                Text(
-                    "Bạn đã kiểm tra thông tin, số người cần hỗ trợ " +
-                            "và vị trí GPS chưa? " +
-                            "Chức năng gửi SOS thật chưa được kích hoạt " +
-                            "trong bản kiểm thử này."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSubmitConfirmation = false
-                        showDemoDialog = true
-                    }
-                ) {
-                    Text("Tiếp tục Demo")
+if (showSubmitConfirmation) {
+    AlertDialog(
+        onDismissRequest = {
+            showSubmitConfirmation = false
+        },
+        containerColor = SosCard,
+        titleContentColor = SosText,
+        textContentColor = SosText,
+        title = {
+            Text("Xác nhận gửi SOS")
+        },
+        text = {
+            Text(
+                "Bạn muốn gửi yêu cầu cứu hộ với thông tin " +
+                        "và vị trí GPS đã nhập lên hệ thống?"
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = formEnabled,
+                onClick = {
+                    showSubmitConfirmation = false
+                    viewModel.submitSos()
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showSubmitConfirmation = false
-                    }
-                ) {
-                    Text("Quay lại")
-                }
+            ) {
+                Text("Gửi SOS", color = SosPink)
             }
-        )
-    }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    showSubmitConfirmation = false
+                }
+            ) {
+                Text("Quay lại", color = SosCyan)
+            }
+        }
+    )
+}
 
-    if (showDemoDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showDemoDialog = false
-            },
-            title = {
-                Text("Chức năng SOS đang phát triển")
-            },
-            text = {
-                Text(
-                    "Đây là giao diện thử nghiệm CCF-80. " +
-                            "Ứng dụng chưa gửi yêu cầu SOS đến lực lượng cứu hộ. " +
-                            "Tọa độ GPS chỉ được hiển thị trong biểu mẫu. " +
-                            "Ứng dụng chưa gửi yêu cầu SOS lên hệ thống cứu hộ."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDemoDialog = false
-                    }
-                ) {
-                    Text("Đã hiểu")
-                }
-            }
-        )
-    }
 }
 
 @Composable
@@ -836,7 +720,7 @@ private fun SosTopBar(
             modifier = Modifier.weight(1f)
         ) {
             Text(
-                "● GIAO DIỆN THỬ NGHIỆM",
+                "YÊU CẦU CỨU HỘ",
                 color = Color(0xFF23D6A4),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
@@ -871,9 +755,8 @@ private fun SosEmergencyBanner() {
         Spacer(Modifier.height(10.dp))
 
         Text(
-            "Điền thông tin tình huống để chuẩn bị " +
-                    "yêu cầu cứu hộ. Chức năng gửi SOS thực tế " +
-                    "chưa được kích hoạt trong bản demo này.",
+            "Điền thông tin tình huống và kiểm tra vị trí GPS " +
+                    "trước khi gửi yêu cầu cứu hộ lên hệ thống.",
             color = SosText,
             fontSize = 14.sp,
             lineHeight = 21.sp

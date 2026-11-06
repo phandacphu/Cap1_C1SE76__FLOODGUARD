@@ -28,23 +28,13 @@ class SendSosViewModel(
     private fun canEdit(state: SendSosUiState): Boolean =
         !state.isSubmitting && state.submittedSosId == null
 
-    private fun exactPeopleCountError(
-        value: String,
-        peopleGroup: SosPeopleCount?
-    ): String? {
-        val count = value.toIntOrNull()
-        if (count == null || count <= 0) {
-            return "Vui lòng nhập số người chính xác, lớn hơn 0."
+    private fun exactPeopleCountError(value: String): String? {
+        val count = value.trim().toIntOrNull()
+        return if (count == null || count <= 0) {
+            "Vui lòng nhập số người chính xác, lớn hơn 0."
+        } else {
+            null
         }
-
-        val matches = when (peopleGroup) {
-            SosPeopleCount.ONE -> count == 1
-            SosPeopleCount.TWO_THREE -> count in 2..3
-            SosPeopleCount.FOUR_SIX -> count in 4..6
-            SosPeopleCount.MORE_THAN_SIX -> count > 6
-            null -> true
-        }
-        return if (matches) null else "Số người chính xác không khớp với nhóm đã chọn."
     }
 
     private fun hasFreshLocation(state: SendSosUiState, timeMillis: Long): Boolean =
@@ -72,31 +62,6 @@ class SendSosViewModel(
         }
     }
 
-    fun selectPeopleCount(count: SosPeopleCount) {
-        _uiState.update { current ->
-            if (!canEdit(current)) return@update current
-            current.copy(
-                peopleCount = count,
-                validationErrors = current.validationErrors.copy(
-                    peopleCount = null,
-                    exactPeopleCount = exactPeopleCountError(current.exactPeopleCount, count)
-                )
-            )
-        }
-    }
-
-    fun selectUrgency(urgency: SosUrgency) {
-        _uiState.update { current ->
-            if (!canEdit(current)) return@update current
-            current.copy(
-                urgency = urgency,
-                submitError = null,
-                validationErrors = current.validationErrors.copy(urgency = null)
-            )
-        }
-    }
-
-
     fun updateExactPeopleCount(value: String) {
         _uiState.update { current ->
             if (!canEdit(current)) return@update current
@@ -105,10 +70,7 @@ class SendSosViewModel(
                 exactPeopleCount = value,
                 submitError = null,
                 validationErrors = current.validationErrors.copy(
-                    exactPeopleCount = exactPeopleCountError(
-                        value,
-                        current.peopleCount
-                    )
+                    exactPeopleCount = exactPeopleCountError(value)
                 )
             )
         }
@@ -190,26 +152,18 @@ class SendSosViewModel(
         val errors = SosFormErrors(
             situations = if (current.selectedSituations.isEmpty())
                 "Vui lòng chọn ít nhất một tình huống." else null,
-            peopleCount = if (current.peopleCount == null)
-                "Vui lòng chọn số người cần hỗ trợ." else null,
             waterLevel = if (current.waterLevel == null)
                 "Vui lòng chọn mức nước ước tính." else null,
             location = if (!hasFreshLocation(current, nowMillis()))
-                "Vị trí GPS chưa hợp lệ hoặc đã cũ. Vui lòng thử lại GPS." else null,
-            urgency = if (current.urgency == null)
-                "Vui lòng chọn mức độ khẩn cấp." else null,
-            exactPeopleCount = exactPeopleCountError(
-                current.exactPeopleCount,
-                current.peopleCount
-            )
+                "Vị trí GPS chưa hợp lệ hoặc đã cũ. Vui lòng thử lại GPS."
+            else null,
+            exactPeopleCount = exactPeopleCountError(current.exactPeopleCount)
         )
         _uiState.update { latest ->
             if (!canEdit(latest)) latest else latest.copy(validationErrors = errors)
         }
         return !errors.hasErrors() && canEdit(_uiState.value)
     }
-
-    // Data layer only. The UI remains Demo until an isolated staging environment is approved.
     fun submitSos() {
         if (!canEdit(_uiState.value)) return
         if (!validateForm()) return
@@ -218,13 +172,34 @@ class SendSosViewModel(
         if (!canEdit(validated)) return
         val latitude = validated.latitude ?: return
         val longitude = validated.longitude ?: return
-        val urgency = validated.urgency ?: return
-        val numberOfPeople = validated.exactPeopleCount.toIntOrNull() ?: return
+        val numberOfPeople =
+            validated.exactPeopleCount.trim().toIntOrNull() ?: return
+
+        val selectedWaterLevel = validated.waterLevel ?: return
 
         val request = CreateSosRequest(
-            location = CreateSosLocation(latitude = latitude, longitude = longitude),
-            urgency = urgency.apiValue,
+            location = CreateSosLocation(
+                latitude = latitude,
+                longitude = longitude
+            ),
+            situations = SosSituation.entries
+                .filter { it in validated.selectedSituations }
+                .map { situation ->
+                    when (situation) {
+                        SosSituation.TRAPPED -> "trapped"
+                        SosSituation.EVACUATION -> "evacuation"
+                        SosSituation.INJURED -> "injured"
+                        SosSituation.VULNERABLE -> "vulnerable"
+                        SosSituation.OTHER -> "other"
+                    }
+                },
             numberOfPeople = numberOfPeople,
+            waterLevel = when (selectedWaterLevel) {
+                SosWaterLevel.BELOW_KNEE -> "below_knee"
+                SosWaterLevel.WAIST -> "waist"
+                SosWaterLevel.CHEST -> "chest"
+                SosWaterLevel.DANGEROUS -> "above_two_meters"
+            },
             note = validated.note.trim().ifBlank { null }
         )
 
