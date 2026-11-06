@@ -230,7 +230,7 @@ class FloodMapViewModel(
                 isFloodLayerEnabled = enabled,
                 isHistoryPointsLayerEnabled = enabled,
                 isHistoryBuffersLayerEnabled = false,
-                isHistoryRadarLayerEnabled = false,
+                isHistoryRadarLayerEnabled = enabled,
                 selectedCitizenAreaId =
                     state.selectedCitizenAreaId.takeIf { enabled },
                 selectedHistoryPoint =
@@ -467,74 +467,64 @@ class FloodMapViewModel(
 
 
     fun loadHistoryRadar() {
+        if (_uiState.value.isLoadingHistoryRadar) return
 
-        if (
-            _uiState.value.historyRadarLoadStatus ==
-            HistoricalLoadStatus.LOADING
-        ) {
-            return
+        _uiState.update {
+            it.copy(
+                historyRadarLoadStatus = HistoricalLoadStatus.LOADING,
+                isLoadingHistoryRadar = true,
+                historyRadarError = null
+            )
         }
 
-        _uiState.value = _uiState.value.copy(
-            historyRadarLoadStatus =
-                HistoricalLoadStatus.LOADING,
-            isLoadingHistoryRadar = true,
-            historyRadarError = null
-        )
+        launchMapRequest(
+            request = {
+                val geojson = floodHistoryRepository.getRadar()
+                    .getOrThrow()
 
-        viewModelScope.launch {
+                withContext(parsingDispatcher) {
+                    val featureGroups =
+                        parseHistoricalFloodPolygonFeatures(geojson)
+                            .getOrThrow()
 
-            try {
-                val geojson =
-                    floodHistoryRepository.getRadar()
-                        .getOrThrow()
+                    val polygons = featureGroups.flatten()
 
+                    Triple(
+                        featureGroups.size,
+                        polygons,
+                        prepareHistoricalMapPolygons(polygons)
+                    )
+                }
+            },
+            onSuccess = { result ->
+                val (featureCount, polygons, mapPolygons) = result
 
-                val (featureCount, polygons, mapPolygons) =
-                    withContext(parsingDispatcher) {
-
-                        val featureGroups =
-                            parseHistoricalFloodPolygonFeatures(
-                                geojson
-                            ).getOrThrow()
-
-                        val polygons = featureGroups.flatten()
-
-                        Triple(
-                            featureGroups.size,
-                            polygons,
-                            prepareHistoricalMapPolygons(polygons)
+                _uiState.update {
+                    it.copy(
+                        historyRadarFeatureCount = featureCount,
+                        historyRadarPolygons = polygons,
+                        historyRadarMapPolygons = mapPolygons,
+                        historyRadarLoadedAt = System.currentTimeMillis(),
+                        historyRadarLoadStatus = HistoricalLoadStatus.SUCCESS,
+                        isLoadingHistoryRadar = false,
+                        historyRadarError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        historyRadarLoadStatus = HistoricalLoadStatus.FAILED,
+                        isLoadingHistoryRadar = false,
+                        historyRadarError = mapLoadError(
+                            sourceName = "vùng trũng từ radar tham khảo",
+                            loadedAt = state.historyRadarLoadedAt,
+                            error = error
                         )
-                    }
-
-                _uiState.value = _uiState.value.copy(
-                    historyRadarFeatureCount = featureCount,
-                    historyRadarPolygons = polygons,
-                    historyRadarMapPolygons = mapPolygons,
-                    historyRadarLoadStatus =
-                        HistoricalLoadStatus.SUCCESS,
-                    isLoadingHistoryRadar = false,
-                    historyRadarError = null
-                )
-
-            } catch (error: CancellationException) {
-                throw error
-
-            } catch (error: Exception) {
-
-                _uiState.value = _uiState.value.copy(
-                    historyRadarFeatureCount = 0,
-                    historyRadarPolygons = emptyList(),
-                    historyRadarMapPolygons = emptyList(),
-                    historyRadarLoadStatus =
-                        HistoricalLoadStatus.FAILED,
-                    isLoadingHistoryRadar = false,
-                    historyRadarError =
-                        error.message
-                            ?: "Không thể tải dữ liệu Radar."
-                )
+                    )
+                }
             }
-        }
+        )
     }
 
     private fun prepareHistoricalMapPolygons(
@@ -578,6 +568,7 @@ class FloodMapViewModel(
         loadFloodAlerts()
         loadSafeLocations()
         loadHistoryPoints()
+        loadHistoryRadar()
     }
 
     private fun <T> launchMapRequest(

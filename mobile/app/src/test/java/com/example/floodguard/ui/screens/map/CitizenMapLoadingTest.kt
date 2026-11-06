@@ -77,7 +77,7 @@ class CitizenMapLoadingTest {
             recovered.citizenAreas.single().areaType
         )
         assertNotNull(recovered.floodAreasLoadedAt)
-        assertEquals(listOf(2, 1, 1, 1, 0), apis.counts())
+        assertEquals(listOf(2, 1, 1, 1, 1), apis.counts())
     }
 
     @Test
@@ -144,7 +144,7 @@ class CitizenMapLoadingTest {
                 }
                 runCurrent()
 
-                assertEquals(listOf(1, 1, 1, 1, 0), apis.counts())
+                assertEquals(listOf(1, 1, 1, 1, 1), apis.counts())
             } finally {
                 gate.complete(Unit)
             }
@@ -239,7 +239,7 @@ class CitizenMapLoadingTest {
         advanceUntilIdle()
 
         assertNull(vm.uiState.value.safeLocationsError)
-        assertEquals(listOf(1, 1, 2, 1, 0), apis.counts())
+        assertEquals(listOf(1, 1, 2, 1, 1), apis.counts())
 
         vm.selectSafeLocation("unit-shelter-1")
         assertEquals(
@@ -254,6 +254,111 @@ class CitizenMapLoadingTest {
         vm.toggleShelterLayer()
         assertNull(vm.uiState.value.selectedSafeLocationId)
     }
+    @Test
+    fun radar_initialLoad_preservesGeometryAndTogglesWithoutRequests() =
+        runTest(dispatcher) {
+            val apis = FakeCitizenMapApis()
+            val vm = createViewModel(apis)
+            advanceUntilIdle()
+
+            val before = vm.uiState.value
+            assertTrue(before.isHistoryRadarLayerEnabled)
+            assertEquals(2, before.historyRadarFeatureCount)
+            assertEquals(3, before.historyRadarMapPolygons.size)
+            assertEquals(1, before.historyRadarMapPolygons.first().holes.size)
+            assertNotNull(before.historyRadarLoadedAt)
+            assertNull(before.historyRadarError)
+            assertEquals(0, apis.bufferCalls)
+
+            val calls = apis.counts()
+
+            vm.toggleFloodLayer()
+            assertFalse(vm.uiState.value.isHistoryRadarLayerEnabled)
+            vm.toggleFloodLayer()
+            assertTrue(vm.uiState.value.isHistoryRadarLayerEnabled)
+            advanceUntilIdle()
+
+            assertEquals(calls, apis.counts())
+            assertSame(
+                before.historyRadarMapPolygons,
+                vm.uiState.value.historyRadarMapPolygons
+            )
+        }
+
+    @Test
+    fun radar_failedRefresh_keepsCache_thenRetryAcceptsEmptyData() =
+        runTest(dispatcher) {
+            val apis = FakeCitizenMapApis()
+            val vm = createViewModel(apis)
+            advanceUntilIdle()
+
+            val before = vm.uiState.value
+            apis.radarOffline = true
+
+            vm.refreshMapData()
+            advanceUntilIdle()
+
+            val failed = vm.uiState.value
+            assertNotNull(failed.historyRadarError)
+            assertFalse(failed.isLoadingHistoryRadar)
+            assertSame(
+                before.historyRadarMapPolygons,
+                failed.historyRadarMapPolygons
+            )
+            assertEquals(before.historyRadarLoadedAt, failed.historyRadarLoadedAt)
+            assertEquals(2, failed.historyRadarFeatureCount)
+            assertNull(failed.floodAreasError)
+            assertNull(failed.historyPointsError)
+            assertEquals(0, apis.bufferCalls)
+
+            apis.radarOffline = false
+            apis.radarJson =
+                """{"success":true,"data":{"layer":"radar","geojson":{"type":"FeatureCollection","features":[]}}}"""
+
+            vm.loadHistoryRadar()
+            advanceUntilIdle()
+
+            val recovered = vm.uiState.value
+            assertNull(recovered.historyRadarError)
+            assertEquals(HistoricalLoadStatus.SUCCESS, recovered.historyRadarLoadStatus)
+            assertEquals(0, recovered.historyRadarFeatureCount)
+            assertTrue(recovered.historyRadarMapPolygons.isEmpty())
+            assertNotNull(recovered.historyRadarLoadedAt)
+            assertEquals(listOf(2, 2, 2, 2, 3), apis.counts())
+        }
+
+    @Test
+    fun radar_inFlightRetry_doesNotDuplicate_orBlockOtherSources() =
+        runTest(dispatcher) {
+            val apis = FakeCitizenMapApis()
+            val gate = CompletableDeferred<Unit>()
+            apis.radarGate = gate
+
+            val vm = createViewModel(apis)
+            runCurrent()
+
+            try {
+                assertTrue(vm.uiState.value.isLoadingHistoryRadar)
+                assertEquals(1, vm.uiState.value.citizenAreas.size)
+                assertEquals(1, vm.uiState.value.historyPoints.size)
+
+                repeat(20) {
+                    vm.loadHistoryRadar()
+                    vm.refreshMapData()
+                }
+                runCurrent()
+
+                assertEquals(listOf(1, 1, 1, 1, 1), apis.counts())
+                assertEquals(0, apis.bufferCalls)
+            } finally {
+                gate.complete(Unit)
+            }
+
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.isLoadingHistoryRadar)
+            assertNull(vm.uiState.value.historyRadarError)
+            assertEquals(3, vm.uiState.value.historyRadarMapPolygons.size)
+        }
 }
 
 private class FakeCitizenMapApis {
@@ -262,19 +367,23 @@ private class FakeCitizenMapApis {
     var areaHttpCode = 200
     var areaGate: CompletableDeferred<Unit>? = null
     var areasJson = UNIT_AREAS_JSON
+    var bufferCalls = 0
+    var radarOffline = false
+    var radarGate: CompletableDeferred<Unit>? = null
+    var radarJson = UNIT_RADAR_JSON
 
     private var areaCalls = 0
     private var alertCalls = 0
     private var shelterCalls = 0
     private var pointCalls = 0
-    private var researchCalls = 0
+    private var radarCalls = 0
 
     fun counts(): List<Int> = listOf(
         areaCalls,
         alertCalls,
         shelterCalls,
         pointCalls,
-        researchCalls
+        radarCalls
     )
 
     private fun checkOnline() {
@@ -356,16 +465,27 @@ private class FakeCitizenMapApis {
         }
 
         override suspend fun getBuffers(): Response<FloodHistoryResponse> {
-            researchCalls++
-            error("Lớp chưa xác nhận phân loại không tự tải")
+            bufferCalls++
+            error("Buffer không được tự tải cùng lớp vùng trũng")
         }
 
         override suspend fun getRadar(): Response<FloodHistoryResponse> {
-            researchCalls++
-            error("Lớp chưa xác nhận phân loại không tự tải")
+            radarCalls++
+            radarGate?.await()
+            checkOnline()
+
+            if (radarOffline) {
+                throw IOException("isolated-radar-offline")
+            }
+
+            return citizenFixtureResponse(
+                radarJson,
+                FloodHistoryResponse::class.java
+            )
         }
-    }
-}
+    } // Đóng object historyApi
+} // Đóng class FakeCitizenMapApis
+
 
 private fun <T> citizenFixtureResponse(
     json: String,
@@ -435,6 +555,42 @@ private const val UNIT_HISTORY_JSON = """
           "coordinates": [108.2, 16.05]
         }
       }]
+    }
+  }
+}
+"""
+
+        private const val UNIT_RADAR_JSON = """
+{
+  "success": true,
+  "data": {
+    "layer": "radar",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [[108.18,16.04],[108.20,16.04],[108.20,16.06],[108.18,16.06],[108.18,16.04]],
+              [[108.185,16.045],[108.195,16.045],[108.195,16.055],[108.185,16.055],[108.185,16.045]]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "MultiPolygon",
+            "coordinates": [
+              [[[108.21,16.04],[108.22,16.04],[108.22,16.05],[108.21,16.05],[108.21,16.04]]],
+              [[[108.23,16.04],[108.24,16.04],[108.24,16.05],[108.23,16.05],[108.23,16.04]]]
+            ]
+          }
+        }
+      ]
     }
   }
 }

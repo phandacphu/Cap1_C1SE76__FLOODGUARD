@@ -170,6 +170,15 @@ private fun buildCitizenMapBounds(
         }
     }
 
+    if (state.isHistoryRadarLayerEnabled) {
+        state.historyRadarMapPolygons.forEach { polygon ->
+            polygon.outer.forEach { coordinate ->
+                builder.include(coordinate)
+                hasCoordinates = true
+            }
+        }
+    }
+
     return if (hasCoordinates) builder.build() else null
 }
 
@@ -348,7 +357,8 @@ fun FloodMapScreen(
                 onRetryAreas = onRetryFloodAreas,
                 onRetryAlerts = onRetryFloodAlerts,
                 onRetryShelters = onRetrySafeLocations,
-                onRetryHistory = onRetryHistoryPoints
+                onRetryHistory = onRetryHistoryPoints,
+                onRetryRadar = onRetryHistoryRadar
             )
 
             val selectedSafeLocation =
@@ -940,6 +950,8 @@ private fun FloodGoogleMap(
                 5000L
             )
                 .setMinUpdateIntervalMillis(2000L)
+                .setWaitForAccurateLocation(false)
+                .setMaxUpdateAgeMillis(0L)
                 .build()
 
             try {
@@ -947,7 +959,22 @@ private fun FloodGoogleMap(
                     locationRequest,
                     locationCallback,
                     Looper.getMainLooper()
-                ).addOnFailureListener {
+                ).addOnSuccessListener {
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.d(
+                            "CitizenGps",
+                            "updates_registered"
+                        )
+                    }
+                }.addOnFailureListener { error ->
+                    if (com.example.floodguard.BuildConfig.DEBUG) {
+                        android.util.Log.e(
+                            "CitizenGps",
+                            "request_failed",
+                            error
+                        )
+                    }
+
                     if (
                         isCallbackActive &&
                         activeGpsCallback === locationCallback &&
@@ -1324,6 +1351,22 @@ private fun FloodGoogleMap(
                     }
                 }
 
+                state.historyRadarMapPolygons.forEachIndexed { index, polygon ->
+                    key("citizen-radar", index) {
+                        Polygon(
+                            points = polygon.outer,
+                            holes = polygon.holes,
+                            fillColor = CitizenLowLyingColor.copy(alpha = 0.35f),
+                            strokeColor = CitizenLowLyingColor,
+                            strokeWidth = 2f,
+                            zIndex = 5f,
+                            visible = state.isFloodLayerEnabled &&
+                                    state.isHistoryRadarLayerEnabled,
+                            clickable = false
+                        )
+                    }
+                }
+
                 val historyPointIcon = remember {
                     BitmapDescriptorFactory.defaultMarker(
                         BitmapDescriptorFactory.HUE_RED
@@ -1519,6 +1562,10 @@ private fun FloodGoogleMap(
                                 (
                                         state.isHistoryPointsLayerEnabled &&
                                                 state.historyPoints.isNotEmpty()
+                                        ) ||
+                                (
+                                        state.isHistoryRadarLayerEnabled &&
+                                                state.historyRadarMapPolygons.isNotEmpty()
                                         )
                         )
 
@@ -2005,7 +2052,8 @@ private fun CitizenMapDataPanel(
     onRetryAreas: () -> Unit,
     onRetryAlerts: () -> Unit,
     onRetryShelters: () -> Unit,
-    onRetryHistory: () -> Unit
+    onRetryHistory: () -> Unit,
+    onRetryRadar: () -> Unit
 ) {
     val busy = state.isLoadingFloodAreas ||
             state.isLoadingFloodAlerts ||
@@ -2013,6 +2061,15 @@ private fun CitizenMapDataPanel(
             state.isLoadingHistoryPoints ||
             state.isLoadingHistoryBuffers ||
             state.isLoadingHistoryRadar
+
+    val lowLyingCount =
+        state.citizenAreas.count {
+            it.areaType == CitizenAreaType.LOW_LYING
+        } + if (state.isHistoryRadarLayerEnabled) {
+            state.historyRadarFeatureCount
+        } else {
+            0
+        }
 
     Column(
         modifier = Modifier
@@ -2043,18 +2100,14 @@ private fun CitizenMapDataPanel(
             )
 
             CitizenLegendItem(
-                label = "Vùng trũng (${
-                    state.citizenAreas.count {
-                        it.areaType == CitizenAreaType.LOW_LYING
-                    }
-                })",
+                label = "Vùng trũng ($lowLyingCount)",
                 color = CitizenLowLyingColor
             )
 
             Text(
                 text = "Màu phân biệt loại dữ liệu, không thể hiện " +
-                        "mức độ nguy hiểm. Ngập lịch sử là dữ liệu tham khảo, " +
-                        "không phải cảnh báo ngập hiện tại.",
+                        "mức độ nguy hiểm. Ngập lịch sử và radar là dữ liệu " +
+                        "tham khảo, không xác nhận khu vực đang ngập hoặc an toàn.",
                 color = MapSecondary,
                 fontSize = 12.sp
             )
@@ -2082,7 +2135,7 @@ private fun CitizenMapDataPanel(
         )
 
         CitizenSourceStatus(
-            title = "Vùng ngập và vùng trũng",
+            title = "Vùng do Admin quản lý",
             count = state.citizenAreas.size,
             loading = state.isLoadingFloodAreas,
             error = state.floodAreasError,
@@ -2125,6 +2178,15 @@ private fun CitizenMapDataPanel(
                 fontSize = 12.sp
             )
         }
+
+        CitizenSourceStatus(
+            title = "Vùng trũng — radar tham khảo",
+            count = state.historyRadarFeatureCount,
+            loading = state.isLoadingHistoryRadar,
+            error = state.historyRadarError,
+            loadedAt = state.historyRadarLoadedAt,
+            onRetry = onRetryRadar
+        )
 
         CitizenSourceStatus(
             title = "Điểm tránh trú",

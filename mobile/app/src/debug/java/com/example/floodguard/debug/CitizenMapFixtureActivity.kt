@@ -226,7 +226,7 @@ private class CitizenMapFixtureApi :
         historyResponse("buffers")
 
     override suspend fun getRadar(): Response<FloodHistoryResponse> =
-        historyResponse("radar")
+        historyResponse("radar", FIXTURE_RADAR_FEATURES)
 
     private fun historyResponse(
         layer: String,
@@ -346,6 +346,22 @@ private const val FIXTURE_HISTORY_FEATURES = """
     "geometry":{
       "type":"Point",
       "coordinates":[108.19,16.07]
+    }
+  }
+]
+"""
+
+private const val FIXTURE_RADAR_FEATURES = """
+[
+  {
+    "type": "Feature",
+    "properties": {},
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [[108.18,16.055],[108.195,16.055],[108.195,16.065],[108.18,16.065],[108.18,16.055]],
+        [[108.184,16.058],[108.190,16.058],[108.190,16.062],[108.184,16.062],[108.184,16.058]]
+      ]
     }
   }
 ]

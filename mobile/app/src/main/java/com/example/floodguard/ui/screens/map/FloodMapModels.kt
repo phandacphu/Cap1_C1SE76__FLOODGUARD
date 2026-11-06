@@ -119,7 +119,7 @@ data class FloodMapUiState(
 
     val historyBuffersError: String? = null,
 
-    val isHistoryRadarLayerEnabled: Boolean = false,
+    val isHistoryRadarLayerEnabled: Boolean = true,
     val historyRadarFeatureCount: Int = 0,
     val historyRadarPolygons: List<HistoricalFloodPolygon> = emptyList(),
 
@@ -142,6 +142,7 @@ data class FloodMapUiState(
     val floodAreasLoadedAt: Long? = null,
     val floodAlertsLoadedAt: Long? = null,
     val safeLocationsLoadedAt: Long? = null,
-    val historyPointsLoadedAt: Long? = null
+    val historyPointsLoadedAt: Long? = null,
+    val historyRadarLoadedAt: Long? = null,
 
 )
