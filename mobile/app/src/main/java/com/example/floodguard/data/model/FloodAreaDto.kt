@@ -15,9 +15,11 @@ data class FloodAreaDto(
     val name: String,
     val description: String?,
     val geometry: FloodGeometryDto,
+    // Legacy Resident consumers still reference these fields. Rescue uses only areaType.
     val severity: String,
     val status: String,
-    val source: String
+    val source: String,
+    val areaType: String? = null
 )
 
 data class FloodGeometryDto(
