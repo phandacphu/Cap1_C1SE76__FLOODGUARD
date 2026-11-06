@@ -1,15 +1,14 @@
 import { useState } from "react";
 import { PolygonDrawMap } from "./PolygonDrawMap";
 import {
-  SEVERITIES,
-  SEVERITY_LABEL,
-  STATUS_LABEL,
+  AREA_TYPES,
+  AREA_TYPE_LABEL,
+  isAreaType,
   validateArea,
-  type AreaStatus,
+  type AreaType,
   type FloodAreaInput,
   type FloodAreaItem,
   type GeoPoint,
-  type Severity,
 } from "../floodAreaTypes";
 
 interface Props {
@@ -39,25 +38,22 @@ export function AreaFormModal({
 }: Props) {
   const [name, setName] = useState(area?.name ?? "");
   const [description, setDescription] = useState(area?.description ?? "");
-  const [severity, setSeverity] = useState<Severity>(area?.severity ?? "medium");
-  const [status, setStatus] = useState<AreaStatus>(area?.status ?? "active");
+  const [areaType, setAreaType] = useState<AreaType | "">(area?.areaType ?? "");
   const [source, setSource] = useState(area?.source ?? "");
   const [points, setPoints] = useState<GeoPoint[]>(
     area ? area.geometry.points.map((p) => ({ ...p })) : [],
   );
   const [errors, setErrors] = useState<string[]>([]);
 
-  const toInput = (): FloodAreaInput => ({
-    name: name.trim(),
-    description: description.trim(),
-    severity,
-    status,
-    source: source.trim(),
-    geometry: { type: "polygon", points },
-  });
-
   const submit = () => {
-    const input = toInput();
+    if (!isAreaType(areaType)) {
+      setErrors(["Vui lòng chọn Vùng ngập hoặc Vùng trũng trước khi lưu."]);
+      return;
+    }
+    const input: FloodAreaInput = {
+      name: name.trim(), description: description.trim(), areaType,
+      source: source.trim(), geometry: { type: "polygon", points },
+    };
     const found = validateArea(input);
     setErrors(found);
     if (found.length === 0) onSubmit(input);
@@ -75,16 +71,16 @@ export function AreaFormModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={area ? "Sửa vùng ngập" : "Thêm vùng ngập"}
+        aria-label={area ? "Sửa vùng" : "Thêm vùng"}
         className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-xl"
       >
-        <h2 className="text-lg font-bold">{area ? "Sửa vùng ngập" : "Thêm vùng ngập"}</h2>
+        <h2 className="text-lg font-bold">{area ? "Sửa vùng" : "Thêm vùng"}</h2>
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="sm:col-span-2">
-            <span className={LABEL}>Tên vùng ngập</span>
+            <span className={LABEL}>Tên vùng</span>
             <input
-              aria-label="Tên vùng ngập"
+              aria-label="Tên vùng"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={busy}
@@ -102,34 +98,23 @@ export function AreaFormModal({
               className={`${FIELD} mt-1 resize-none`}
             />
           </label>
-          <label>
-            <span className={LABEL}>Mức độ</span>
+          <label className="sm:col-span-2">
+            <span className={LABEL}>Loại vùng</span>
             <select
-              aria-label="Mức độ"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value as Severity)}
+              aria-label="Loại vùng"
+              value={areaType}
+              onChange={(e) => setAreaType(isAreaType(e.target.value) ? e.target.value : "")}
               disabled={busy}
               className={`${FIELD} mt-1`}
             >
-              {SEVERITIES.map((s) => (
-                <option key={s} value={s}>
-                  {SEVERITY_LABEL[s]} ({s})
-                </option>
+              <option value="">Chọn loại vùng</option>
+              {AREA_TYPES.map((type) => (
+                <option key={type} value={type}>{AREA_TYPE_LABEL[type]}</option>
               ))}
             </select>
-          </label>
-          <label>
-            <span className={LABEL}>Trạng thái</span>
-            <select
-              aria-label="Trạng thái"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as AreaStatus)}
-              disabled={busy}
-              className={`${FIELD} mt-1`}
-            >
-              <option value="active">{STATUS_LABEL.active} (active)</option>
-              <option value="inactive">{STATUS_LABEL.inactive} (inactive)</option>
-            </select>
+            {area && area.areaType === null && (
+              <span className="mt-1 block text-xs text-warn">Vùng cũ chưa phân loại. Chọn loại đúng trước khi lưu.</span>
+            )}
           </label>
           <label className="sm:col-span-2">
             <span className={LABEL}>Nguồn dữ liệu</span>
@@ -189,7 +174,7 @@ export function AreaFormModal({
             onClick={submit}
             className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
           >
-            {busy ? "Đang lưu..." : area ? "Lưu thay đổi" : "Tạo vùng ngập"}
+            {busy ? "Đang lưu..." : area ? "Lưu thay đổi" : "Tạo vùng"}
           </button>
         </div>
       </div>

@@ -10,7 +10,7 @@ import {
     type HistoricalFeatureCollection,
 } from '../historicalMapService';
 import { listAreas } from '../floodAreaService';
-import { SEVERITY_LABEL, type FloodAreaItem } from '../floodAreaTypes';
+import { AREA_TYPE_LABEL, AREA_TYPE_COLOR, type FloodAreaItem } from '../floodAreaTypes';
 import { formatAreaId } from '../areaId';
 
 import { AppShell } from '../../../../components/layout/AppShell';
@@ -25,13 +25,6 @@ const DefaultIcon = L.icon({
     iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
-
-const SEVERITY_COLOR: Record<string, string> = {
-    low: '#facc15',
-    medium: '#fb923c',
-    high: '#ef4444',
-    critical: '#b91c1c',
-};
 
 type LayerKey = 'points' | 'buffers' | 'radar';
 
@@ -52,7 +45,7 @@ const FETCHERS: Record<LayerKey, () => Promise<HistoricalFeatureCollection>> = {
 const LAYER_LABEL: Record<LayerKey, string> = {
     points: 'Điểm ngập lịch sử',
     buffers: 'Vùng đệm tham khảo',
-    radar: 'Radar nghi ngập',
+    radar: 'Vùng trũng',
 };
 
 const LOADING: LayerState = { status: 'loading', data: null, error: null };
@@ -75,11 +68,6 @@ export default function HistoricalMapScreen() {
 
     // Tải từng lớp độc lập: lớp nào lỗi không ảnh hưởng lớp đã tải thành công
     const loadLayers = useCallback(async (keys: LayerKey[]) => {
-        setLayers((prev) => {
-            const next = { ...prev };
-            keys.forEach((k) => { next[k] = LOADING; });
-            return next;
-        });
         const results = await Promise.allSettled(keys.map((k) => FETCHERS[k]()));
         if (!mountedRef.current) return;
         setLayers((prev) => {
@@ -98,17 +86,11 @@ export default function HistoricalMapScreen() {
         });
     }, []);
 
-    const loadAreas = useCallback(async () => {
-        setAreasError(null);
-        try {
-            const data = await listAreas();
-            if (mountedRef.current) setAreas(data.filter((a) => a.status === 'active'));
-        } catch (err) {
-            if (mountedRef.current) {
-                setAreasError(err instanceof Error ? err.message : 'Không tải được vùng ngập.');
-            }
-        }
-    }, []);
+    const loadAreas = useCallback(() => listAreas()
+        .then((data) => { if (mountedRef.current) setAreas(data); })
+        .catch((err: unknown) => {
+            if (mountedRef.current) setAreasError(err instanceof Error ? err.message : 'Không tải được vùng Admin.');
+        }), []);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -132,11 +114,11 @@ export default function HistoricalMapScreen() {
     };
 
     const radarStyle = {
-        color: '#991b1b',
+        color: AREA_TYPE_COLOR.low_lying,
         weight: 1.5,
         opacity: 0.8,
-        fillColor: '#b91c1c',
-        fillOpacity: 0.2
+        fillColor: AREA_TYPE_COLOR.low_lying,
+        fillOpacity: 0.32
     };
 
     const pointsData = layers.points.data;
@@ -153,6 +135,11 @@ export default function HistoricalMapScreen() {
             header={<AdminHeader alertCount={0} />}
         >
             <div className="mx-auto max-w-[1500px] space-y-5">
+                {(areas ?? []).some((a) => a.areaType === null) && (
+                    <p role="status" className="rounded-xl border border-yellow-700 p-3 text-sm text-yellow-200">
+                        {(areas ?? []).filter((a) => a.areaType === null).length} vùng Admin chưa phân loại nên chưa được vẽ. Mở Quản lý vùng để chọn loại.
+                    </p>
+                )}
                 <div className="bg-[#1e293b] border border-red-900/50 p-4 rounded-xl shadow-sm shrink-0">
                     <p className="text-gray-300 text-sm">
                         <span className="text-red-400 font-semibold mr-1">Dữ liệu ngập lịch sử phục vụ tham khảo — không phải cảnh báo ngập hiện tại.</span>
@@ -176,7 +163,14 @@ export default function HistoricalMapScreen() {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => void loadLayers(failedKeys)}
+                                onClick={() => {
+                                    setLayers((prev) => {
+                                        const next = { ...prev };
+                                        failedKeys.forEach((key) => { next[key] = LOADING; });
+                                        return next;
+                                    });
+                                    void loadLayers(failedKeys);
+                                }}
                                 className="shrink-0 rounded border border-red-400/50 px-3 py-1 text-xs hover:bg-red-500/20"
                             >
                                 Thử lại
@@ -191,7 +185,7 @@ export default function HistoricalMapScreen() {
                         <span>Không tải được vùng ngập đã tạo: {areasError}</span>
                         <button
                             type="button"
-                            onClick={() => void loadAreas()}
+                            onClick={() => { setAreasError(null); void loadAreas(); }}
                             className="shrink-0 rounded border border-yellow-500/50 px-3 py-1 text-xs hover:bg-yellow-500/20"
                         >
                             Thử lại
@@ -255,21 +249,21 @@ export default function HistoricalMapScreen() {
                             />
                         )}
 
-                        {(areas ?? []).map((a) => (
+                        {(areas ?? []).map((a) => a.areaType === null ? null : (
                             <Polygon
                                 key={a.id}
                                 positions={a.geometry.points.map((p) => [p.latitude, p.longitude] as [number, number])}
                                 pathOptions={{
-                                    color: SEVERITY_COLOR[a.severity] ?? '#ef4444',
+                                    color: AREA_TYPE_COLOR[a.areaType],
                                     weight: 2,
-                                    fillColor: SEVERITY_COLOR[a.severity] ?? '#ef4444',
-                                    fillOpacity: 0.3,
+                                    fillColor: AREA_TYPE_COLOR[a.areaType],
+                                    fillOpacity: a.areaType === "low_lying" ? 0.32 : 0.24,
                                 }}
                             >
                                 <Popup>
                                     <strong>{a.name}</strong>
                                     <div style={{ fontSize: 12 }}>ID: {formatAreaId(a.id)}</div>
-                                    <div style={{ fontSize: 12 }}>Mức độ: {SEVERITY_LABEL[a.severity]}</div>
+                                    <div style={{ fontSize: 12 }}>Loại vùng: {AREA_TYPE_LABEL[a.areaType]}</div>
                                     {a.description && <div style={{ fontSize: 12 }}>{a.description}</div>}
                                 </Popup>
                             </Polygon>
@@ -304,17 +298,17 @@ export default function HistoricalMapScreen() {
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 bg-red-700 opacity-60 border border-red-800"></div>
-                                <span>Radar nghi ngập ({countLabel(layers.radar)})</span>
+                                <span>Vùng trũng ({countLabel(layers.radar)})</span>
                             </div>
-                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vùng phân tích Radar phục vụ nghiên cứu lịch sử. Chưa được xác minh.</div>
+                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Lớp radar được nhóm quy ước hiển thị là vùng trũng; giữ nguyên dữ liệu tham khảo.</div>
                         </div>
 
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 bg-orange-400 opacity-70 border border-orange-500"></div>
-                                <span>Vùng ngập quản lý ({areasCount})</span>
+                                <span>Vùng Admin ({areasCount})</span>
                             </div>
-                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vùng do quản trị viên tạo, màu theo mức độ.</div>
+                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vàng: vùng ngập. Đỏ nhạt: vùng trũng, cùng màu lớp radar. Vùng chưa phân loại chưa được vẽ.</div>
                         </div>
                     </div>
                 </div>

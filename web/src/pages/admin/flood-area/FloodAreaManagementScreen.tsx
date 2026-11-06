@@ -9,7 +9,7 @@ import { AreaFormModal } from "./components/AreaFormModal";
 import { DATA_SOURCE } from "./floodAreaService";
 import { fetchHistoricalPoints } from "./historicalMapService";
 import { formatAreaId } from "./areaId";
-import { type FloodAreaInput, type FloodAreaItem } from "./floodAreaTypes";
+import { AREA_TYPES, AREA_TYPE_LABEL, type AreaType, type FloodAreaInput, type FloodAreaItem } from "./floodAreaTypes";
 import { useFloodAreas } from "./useFloodAreas";
 
 interface HistoricalPointFeature {
@@ -51,18 +51,16 @@ export default function FloodAreaManagementScreen() {
   const [historyRound, setHistoryRound] = useState(0);
 
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<AreaType | "all" | "unclassified">("all");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
-  const [offerInactive, setOfferInactive] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Service đã kiểm tra success / FeatureCollection / features là mảng,
   // dữ liệu sai cấu trúc sẽ vào nhánh catch và hiện lỗi có kiểm soát.
   useEffect(() => {
     let isMounted = true;
-    setHistoryLoading(true);
-    setHistoryError(null);
     fetchHistoricalPoints()
       .then((collection) => {
         if (!isMounted) return;
@@ -103,23 +101,22 @@ export default function FloodAreaManagementScreen() {
 
   const filteredAreas = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return list.filter(
-      (a) =>
-        q === "" ||
-        a.name.toLowerCase().includes(q) ||
-        a.id.toLowerCase().includes(q) ||
-        formatAreaId(a.id).toLowerCase().includes(q),
+    return list.filter((a) =>
+      (q === "" || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q) ||
+        formatAreaId(a.id).toLowerCase().includes(q)) &&
+      (typeFilter === "all" || (typeFilter === "unclassified" ? a.areaType === null : a.areaType === typeFilter))
     );
-  }, [list, search]);
+  }, [list, search, typeFilter]);
 
   const filteredHistory = useMemo(() => {
     const q = search.trim().toLowerCase();
+    if (typeFilter !== "all") return [];
     return historicalPoints.filter((pt) => {
       const name = (pt.properties?.name ?? "").toLowerCase();
       const id = (pt.properties?.id ?? "").toLowerCase();
       return q === "" || name.includes(q) || id.includes(q);
     });
-  }, [historicalPoints, search]);
+  }, [historicalPoints, search, typeFilter]);
 
   const totalRows = filteredAreas.length + filteredHistory.length;
   const kpi = (n: number) => (areas === null ? "—" : String(n));
@@ -128,7 +125,6 @@ export default function FloodAreaManagementScreen() {
     if (busy) return;
     setDialog(null);
     setDialogError(null);
-    setOfferInactive(false);
   };
 
   const submitForm = async (input: FloodAreaInput) => {
@@ -143,7 +139,7 @@ export default function FloodAreaManagementScreen() {
       return;
     }
     setDialog(null);
-    setNotice(target ? "Đã cập nhật vùng ngập." : "Đã tạo vùng ngập mới.");
+    setNotice(target ? "Đã cập nhật vùng." : "Đã tạo vùng mới.");
   };
 
   const confirmDelete = async () => {
@@ -154,26 +150,10 @@ export default function FloodAreaManagementScreen() {
     setBusy(false);
     if (!result.ok) {
       setDialogError(result.error ?? "Xóa thất bại.");
-      setOfferInactive(result.status === 409);
       return;
     }
     setDialog(null);
-    setNotice("Đã xóa vùng ngập.");
-  };
-
-  const setInactiveInstead = async () => {
-    if (dialog?.kind !== "delete") return;
-    setBusy(true);
-    const result = await update(dialog.area.id, { status: "inactive" });
-    setBusy(false);
-    if (!result.ok) {
-      setDialogError(result.error ?? "Cập nhật thất bại.");
-      return;
-    }
-    setDialog(null);
-    setOfferInactive(false);
-    setDialogError(null);
-    setNotice("Đã chuyển vùng ngập sang ngừng hoạt động.");
+    setNotice("Đã xóa vùng.");
   };
 
   const openCreate = () => {
@@ -188,7 +168,6 @@ export default function FloodAreaManagementScreen() {
 
   const openDelete = (area: FloodAreaItem) => {
     setDialogError(null);
-    setOfferInactive(false);
     setDialog({ kind: "delete", area });
   };
 
@@ -198,7 +177,7 @@ export default function FloodAreaManagementScreen() {
       brandSub="ADMIN COMMAND"
       roleLabel="QUẢN TRỊ VIÊN"
       accent="water"
-      header={<AdminHeader title="Quản lý vùng ngập" />}
+      header={<AdminHeader title="Quản lý vùng ngập và vùng trũng" />}
     >
       <div className="space-y-5 p-4 sm:p-6">
         {isMock && (
@@ -225,13 +204,20 @@ export default function FloodAreaManagementScreen() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
-            label="Tổng vùng ngập"
+            label="Tổng vùng Admin"
             icon="flood"
             tone="water"
             value={kpi(list.length)}
             mock={isMock}
           />
+          {AREA_TYPES.map((type) => <KpiCard key={type} label={AREA_TYPE_LABEL[type]} icon="flood" tone="water" value={kpi(list.filter((a) => a.areaType === type).length)} mock={isMock} />)}
+          <KpiCard label="Chưa phân loại" icon="alert" tone="warn" value={kpi(list.filter((a) => a.areaType === null).length)} mock={isMock} />
         </div>
+        {list.some((a) => a.areaType === null) && (
+          <div role="note" className={BANNER_WARN}>
+            Có vùng chưa phân loại. Bấm Sửa để chọn Vùng ngập hoặc Vùng trũng; hệ thống không tự chuyển loại.
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3">
           <input
@@ -241,6 +227,11 @@ export default function FloodAreaManagementScreen() {
             onChange={(e) => setSearch(e.target.value)}
             className={`${SELECT} min-w-56 flex-1`}
           />
+          <select aria-label="Lọc theo loại vùng" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AreaType | "all" | "unclassified")} className={SELECT}>
+            <option value="all">Tất cả loại vùng và điểm lịch sử</option>
+            {AREA_TYPES.map((type) => <option key={type} value={type}>{AREA_TYPE_LABEL[type]}</option>)}
+            <option value="unclassified">Chưa phân loại</option>
+          </select>
           <button
             type="button"
             disabled={areas === null}
@@ -248,7 +239,7 @@ export default function FloodAreaManagementScreen() {
             onClick={openCreate}
             className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg hover:brightness-110 disabled:opacity-50"
           >
-            + Thêm vùng ngập
+            + Thêm vùng
           </button>
         </div>
 
@@ -269,7 +260,7 @@ export default function FloodAreaManagementScreen() {
         {historyError && (
           <div role="alert" className={BANNER_WARN}>
             <span>{historyError}</span>
-            <button type="button" onClick={() => setHistoryRound((r) => r + 1)} className={BTN_RETRY}>
+            <button type="button" onClick={() => { setHistoryLoading(true); setHistoryError(null); setHistoryRound((r) => r + 1); }} className={BTN_RETRY}>
               Thử lại
             </button>
           </div>
@@ -304,6 +295,7 @@ export default function FloodAreaManagementScreen() {
                   <tr>
                     <th className="pb-2 pr-3">ID</th>
                     <th className="pb-2 pr-3">Tên vùng</th>
+                    <th className="pb-2 pr-3">Loại vùng</th>
                     <th className="pb-2 pr-3">Điểm / Tọa độ</th>
                     <th className="pb-2" />
                   </tr>
@@ -318,6 +310,7 @@ export default function FloodAreaManagementScreen() {
                         {formatAreaId(a.id)}
                       </td>
                       <td className="py-2.5 pr-3 font-medium">{a.name}</td>
+                      <td className="py-2.5 pr-3">{a.areaType === null ? "Chưa phân loại" : AREA_TYPE_LABEL[a.areaType]}</td>
                       <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs">
                         {a.geometry.points.length} điểm
                       </td>
@@ -347,6 +340,7 @@ export default function FloodAreaManagementScreen() {
                         <td className="py-2.5 pr-3 font-medium">
                           {props.name ?? "Điểm ngập lịch sử"}
                         </td>
+                        <td className="py-2.5 pr-3">Vùng ngập lịch sử</td>
                         <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-muted">
                           {hasCoords ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "—"}
                         </td>
@@ -384,22 +378,7 @@ export default function FloodAreaManagementScreen() {
           onCancel={closeDialog}
         >
           <p>Bạn sắp xóa &ldquo;{dialog.area.name}&rdquo;. Thao tác này không thể hoàn tác.</p>
-          {offerInactive && (
-            <div className="mt-3 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs text-warn">
-              <p>
-                Vùng này đang được cảnh báo tham chiếu. Bạn có thể chuyển sang &ldquo;Ngừng hoạt
-                động&rdquo; thay vì xóa (các cảnh báo không bị xóa).
-              </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={setInactiveInstead}
-                className="mt-2 rounded border border-warn/60 px-3 py-1 font-semibold hover:bg-warn/20 disabled:opacity-60"
-              >
-                Chuyển sang inactive
-              </button>
-            </div>
-          )}
+
         </ConfirmDialog>
       )}
     </AppShell>
