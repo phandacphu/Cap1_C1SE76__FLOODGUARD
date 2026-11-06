@@ -42,7 +42,8 @@ internal fun parseHistoricalFloodPoints(
                 return@runCatching null
             }
 
-            HistoricalFloodPoint(
+            readHistoricalPoint(
+                feature = feature.asJsonObject,
                 latitude = latitude,
                 longitude = longitude
             )
@@ -150,7 +151,8 @@ internal fun parseHistoricalFloodPointsValidated(
                 return@runCatching null
             }
 
-            HistoricalFloodPoint(
+            readHistoricalPoint(
+                feature = feature.asJsonObject,
                 latitude = latitude,
                 longitude = longitude
             )
@@ -310,4 +312,84 @@ private fun readHistoricalRing(
     return normalized.takeIf {
         it.distinct().size >= 3
     }
+}
+
+private fun readHistoricalPoint(
+    feature: JsonObject,
+    latitude: Double,
+    longitude: Double
+): HistoricalFloodPoint {
+    val properties = feature.get("properties")
+        ?.takeIf { it.isJsonObject }
+        ?.asJsonObject
+
+    return HistoricalFloodPoint(
+        latitude = latitude,
+        longitude = longitude,
+        id = historicalIdentifier(properties?.get("id"))
+            ?: historicalIdentifier(feature.get("id")),
+        name = historicalText(properties?.get("name")),
+        sourceUrl = historicalText(properties?.get("source_url")),
+        locationRefUrl = historicalText(
+            properties?.get("location_ref_url")
+        ),
+        dataPeriod = historicalText(properties?.get("data_period")),
+        coordinateStatus = historicalText(
+            properties?.get("coordinate_status")
+        ),
+        layerType = historicalText(properties?.get("layer_type")),
+        displayOnly = historicalBoolean(
+            properties?.get("display_only")
+        ),
+        verifiedFloodPolygon = historicalBoolean(
+            properties?.get("verified_flood_polygon")
+        ),
+        currentFloodAlert = historicalBoolean(
+            properties?.get("current_flood_alert")
+        )
+    )
+}
+
+private fun historicalIdentifier(
+    element: JsonElement?
+): String? {
+    if (element == null || !element.isJsonPrimitive) {
+        return null
+    }
+
+    val primitive = element.asJsonPrimitive
+
+    if (!primitive.isString && !primitive.isNumber) {
+        return null
+    }
+
+    return primitive.asString.takeIf { it.isNotBlank() }
+}
+
+private fun historicalText(
+    element: JsonElement?
+): String? {
+    if (
+        element == null ||
+        !element.isJsonPrimitive ||
+        !element.asJsonPrimitive.isString
+    ) {
+        return null
+    }
+
+    return element.asString.trim().takeIf { it.isNotEmpty() }
+}
+
+private fun historicalBoolean(
+    element: JsonElement?
+): Boolean? {
+    if (
+        element == null ||
+        !element.isJsonPrimitive ||
+        !element.asJsonPrimitive.isBoolean
+    ) {
+        return null
+    }
+
+    return element.asBoolean
 }
