@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { floodAreaService } from '../../api/floodAreaService';
+import { floodAreaService, isValidFloodArea } from '../../api/floodAreaService';
 import { useAuth } from '../../context/AuthContext';
 import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
@@ -49,71 +49,40 @@ const escapeHtml = (unsafe?: string | null): string => {
     .replace(/'/g, '&#039;');
 };
 
-const ALERT_COUNT_CACHE_KEY = 'floodguard_active_alerts_count';
 type FilterStatus = 'active_only' | 'all' | 'inactive_only';
 
 export const FloodMapView: React.FC = () => {
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const polygonLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const [floodAreas, setFloodAreas] = useState<FloodArea[]>([]);
   const [dataLoading, setDataLoading] = useState<boolean>(true);
   const [dataError, setDataError] = useState<string | null>(null);
-  const [isStaleData, setIsStaleData] = useState<boolean>(false);
+
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const isStaleData = lastUpdated !== null && dataError !== null;
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('active_only');
   const [tileErrorCount, setTileErrorCount] = useState<number>(0);
 
-  // Khởi tạo state alertCount cho Admin thông qua lazy init tránh setState trong effect (A.1)
-  const [adminAlertCount, setAdminAlertCount] = useState<number>(() => {
-    try {
-      const cached = sessionStorage.getItem(ALERT_COUNT_CACHE_KEY);
-      return cached !== null ? Number(cached) || 0 : 0;
-    } catch {
-      return 0;
-    }
-  });
-
-  // Tải alertCount tối ưu, chỉ gọi API nhẹ nếu chưa có cache
+  const [adminAlertCount, setAdminAlertCount] = useState<number | undefined>(undefined);
+  const [alertCountError, setAlertCountError] = useState<string | null>(null);
   useEffect(() => {
-    if (!isAdmin || !token) return;
-
+    if (!isAdmin) return;
     let ignore = false;
-    const hasCache = sessionStorage.getItem(ALERT_COUNT_CACHE_KEY) !== null;
-    if (hasCache) return;
-
-    const fetchAlertCount = async () => {
-      try {
-        const res = await fetch('/api/flood-alerts/active', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const count = Array.isArray(data) ? data.length : (Array.isArray(data?.data) ? data.data.length : 0);
-        if (!ignore) {
-          setAdminAlertCount(count);
-          sessionStorage.setItem(ALERT_COUNT_CACHE_KEY, String(count));
-        }
-      } catch {
-        // Bỏ qua lỗi phụ để không gián đoạn giao diện chính
-      }
-    };
-
-    void fetchAlertCount();
-
-    return () => {
-      ignore = true;
-    };
-  }, [isAdmin, token]);
+    void floodAreaService.getActiveAlertCount(reloadTrigger > 0).then(count => {
+      if (!ignore) { setAdminAlertCount(count); setAlertCountError(null); }
+    }).catch(() => {
+      if (!ignore) setAlertCountError('Không tải được số cảnh báo hiện hành; số trên thanh đầu trang có thể chưa cập nhật.');
+    });
+    return () => { ignore = true; };
+  }, [isAdmin, reloadTrigger]);
 
   // Fetch API vùng ngập và quản lý trạng thái dữ liệu cũ (A.3, A.5)
   useEffect(() => {
@@ -121,23 +90,17 @@ export const FloodMapView: React.FC = () => {
 
     const loadFloodAreas = async () => {
       try {
-        const data = await floodAreaService.getFloodAreas(token);
+        const data = await floodAreaService.getFloodAreas(reloadTrigger > 0);
         if (!ignore) {
           setFloodAreas(data);
           setDataError(null);
-          setIsStaleData(false);
           setLastUpdated(new Date());
         }
       } catch (err: unknown) {
         if (!ignore) {
           const errMsg = err instanceof Error ? err.message : 'Lỗi kết nối máy chủ API vùng ngập';
           setDataError(errMsg);
-          setFloodAreas((prev) => {
-            if (prev.length > 0) {
-              setIsStaleData(true);
-            }
-            return prev;
-          });
+
         }
       } finally {
         if (!ignore) {
@@ -151,12 +114,12 @@ export const FloodMapView: React.FC = () => {
     return () => {
       ignore = true;
     };
-  }, [token, reloadTrigger]);
+  }, [reloadTrigger]);
 
   const handleRetry = useCallback(() => {
     setDataLoading(true);
-    setDataError(null);
-    setTileErrorCount(0);
+    // Keep stale/error labels until a successful refresh.
+
     setReloadTrigger((prev) => prev + 1);
   }, []);
 
@@ -172,10 +135,11 @@ export const FloodMapView: React.FC = () => {
     });
 
     const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       maxZoom: 19,
     });
 
+    tileLayerRef.current = tileLayer;
     tileLayer.on('tileerror', () => {
       setTileErrorCount((prev) => prev + 1);
     });
@@ -185,12 +149,14 @@ export const FloodMapView: React.FC = () => {
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
 
-    const t1 = setTimeout(() => map.invalidateSize(), 150);
-    const t2 = setTimeout(() => map.invalidateSize(), 500);
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(mapContainerRef.current);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+      observer.disconnect();
+      tileLayer.off();
+      tileLayerRef.current = null;
+      polygonLayerGroupRef.current = null;
       map.remove();
       mapInstanceRef.current = null;
     };
@@ -215,17 +181,8 @@ export const FloodMapView: React.FC = () => {
     const bounds: L.LatLngExpression[] = [];
 
     filteredAreas.forEach((area) => {
-      if (
-        area.geometry?.type?.toLowerCase() === 'polygon' &&
-        Array.isArray(area.geometry.points) &&
-        area.geometry.points.length >= 3
-      ) {
-        // Kiểm tra tính hợp lệ của từng tọa độ
-        const validPoints = area.geometry.points.filter(
-          (pt) => typeof pt?.latitude === 'number' && typeof pt?.longitude === 'number' && !isNaN(pt.latitude) && !isNaN(pt.longitude)
-        );
-
-        if (validPoints.length < 3) return;
+      if (isValidFloodArea(area)) {
+        const validPoints = area.geometry.points;
 
         const latLngs: L.LatLngExpression[] = validPoints.map((pt) => {
           const point: [number, number] = [pt.latitude, pt.longitude];
@@ -247,8 +204,8 @@ export const FloodMapView: React.FC = () => {
 
         const safeName = escapeHtml(area.name);
         const safeStatus = isAreaActive
-          ? '<span style="color: #10B981; font-weight: bold;">● ĐANG HIỆU LỰC (ACTIVE)</span>'
-          : '<span style="color: #94A3B8; font-weight: bold;">○ NGỪNG CẢNH BÁO (INACTIVE)</span>';
+          ? '<span style="color: #10B981; font-weight: bold;">● ĐANG HOẠT ĐỘNG (ACTIVE)</span>'
+          : '<span style="color: #94A3B8; font-weight: bold;">○ NGỪNG HOẠT ĐỘNG (INACTIVE)</span>';
         const safeSource = escapeHtml(area.source || 'Hệ thống FloodGuard');
         const safeDesc = escapeHtml(area.description || 'Không có mô tả chi tiết');
 
@@ -288,7 +245,7 @@ export const FloodMapView: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
-              Bản Đồ Cảnh Báo Vùng Ngập Lụt (OpenStreetMap)
+              Bản Đồ Vùng Ngập (OpenStreetMap)
             </h1>
             {isStaleData && (
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 border border-amber-600 text-amber-300">
@@ -297,7 +254,7 @@ export const FloodMapView: React.FC = () => {
             )}
           </div>
           <p className="text-xs font-mono text-slate-400 mt-0.5">
-            Dữ liệu tọa độ đa giác từ API Backend • Phục vụ cứu hộ và điều hướng C4I
+            Vùng ngập tham khảo từ hệ thống. Trạng thái hoạt động không xác nhận ngập theo thời gian thực.
           </p>
         </div>
 
@@ -310,7 +267,7 @@ export const FloodMapView: React.FC = () => {
                 statusFilter === 'active_only' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Hiệu lực ({activeCount})
+              Hoạt động ({activeCount})
             </button>
             <button
               onClick={() => setStatusFilter('all')}
@@ -351,6 +308,8 @@ export const FloodMapView: React.FC = () => {
         </div>
       </div>
 
+      {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
+      {lastUpdated && <p className="text-xs text-slate-400">Dữ liệu tải lúc: {lastUpdated.toLocaleString('vi-VN')}</p>}
       {/* Thông báo lỗi API và cảnh báo dữ liệu cũ (A.3) */}
       {dataError && (
         <div className="bg-rose-950/60 border border-rose-700 p-3.5 rounded-lg text-rose-200 text-xs font-mono flex items-center justify-between shadow-lg">
@@ -359,12 +318,13 @@ export const FloodMapView: React.FC = () => {
             <span>{dataError}</span>
             {isStaleData && (
               <span className="block text-amber-300 mt-0.5 text-[11px]">
-                Lưu ý: Các đa giác hiển thị bên dưới là bản sao lưu tạm thời từ phiên trước, không phản ánh hiện trạng mới nhất.
+                Lưu ý: Các đa giác hiển thị bên dưới là bản sao lưu tạm thời từ lần tải thành công trước, không phản ánh hiện trạng mới nhất.
               </span>
             )}
           </div>
           <button
             onClick={handleRetry}
+            disabled={dataLoading}
             className="px-3 py-1.5 bg-rose-900/90 hover:bg-rose-800 rounded text-xs font-mono border border-rose-500 transition-colors whitespace-nowrap ml-3"
           >
             Thử lại
@@ -373,13 +333,14 @@ export const FloodMapView: React.FC = () => {
       )}
 
       {/* Cảnh báo khi Tile OpenStreetMap không tải được (A.4) */}
-      {tileErrorCount > 3 && (
+      {tileErrorCount > 0 && (
         <div className="bg-amber-950/50 border border-amber-600/70 p-2.5 rounded-lg text-amber-200 text-xs font-mono flex items-center justify-between">
-          <span>⚠️ Một số mảnh bản đồ nền OpenStreetMap tải chậm hoặc mất kết nối mạng. Các đa giác cảnh báo vẫn được vẽ đúng tọa độ.</span>
+          <span>⚠️ Một số mảnh bản đồ nền OpenStreetMap tải chậm hoặc mất kết nối mạng. Vui lòng kiểm tra kết nối và thử tải lại.</span>
           <button
             onClick={() => {
               if (mapInstanceRef.current) {
                 mapInstanceRef.current.invalidateSize();
+                tileLayerRef.current?.redraw();
                 setTileErrorCount(0);
               }
             }}
@@ -406,7 +367,7 @@ export const FloodMapView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#1E3A5F]/40 pb-2">
               <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Danh sách vùng ({filteredAreas.length})</span>
               <span className="text-[10px] font-mono text-slate-400">
-                {statusFilter === 'active_only' ? 'Chỉ hiệu lực' : statusFilter === 'inactive_only' ? 'Đã ngưng' : 'Tất cả'}
+                {statusFilter === 'active_only' ? 'Chỉ hoạt động' : statusFilter === 'inactive_only' ? 'Đã ngưng' : 'Tất cả'}
               </span>
             </div>
 
@@ -441,9 +402,9 @@ export const FloodMapView: React.FC = () => {
                     </div>
                     <div className="text-[10px] font-mono mt-1 flex items-center justify-between">
                       <span className={isAreaActive ? 'text-emerald-400' : 'text-slate-500'}>
-                        {isAreaActive ? '● Đang hiệu lực' : '○ Đã ngừng'}
+                        {isAreaActive ? '● Đang hoạt động' : '○ Đã ngừng'}
                       </span>
-                      <span className="text-slate-500 truncate max-w-[100px]">{area.source || 'Cảm biến'}</span>
+                      <span className="text-slate-500 truncate max-w-[100px]">{area.source || 'Chưa rõ nguồn'}</span>
                     </div>
                   </div>
                 );
@@ -452,9 +413,10 @@ export const FloodMapView: React.FC = () => {
           </div>
 
           <div className="border-t border-[#1E3A5F]/40 pt-3 mt-3 flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <span>Độ phân giải: GeoJSON</span>
+            <span>Vùng đa giác từ API</span>
             <button
               onClick={handleRetry}
+            disabled={dataLoading}
               className="hover:text-cyan-400 underline"
             >
               Làm mới
@@ -484,7 +446,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={adminAlertCount} />}
+      header={<AdminHeader alertCount={alertCountError ? undefined : adminAlertCount} title="Bản đồ trực quan" />}
     >
       {mapContent}
     </AppShell>

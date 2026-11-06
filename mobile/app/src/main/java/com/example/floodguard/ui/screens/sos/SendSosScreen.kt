@@ -17,7 +17,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
@@ -44,11 +47,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,6 +63,8 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 
 
@@ -76,10 +81,14 @@ private val SosYellow = Color(0xFFFFC83D)
 fun SendSosScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: SendSosViewModel = viewModel()
+    viewModel: SendSosViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val formEnabled = !uiState.isSubmitting && uiState.submittedSosId == null
+
 
     // CCF-81: Theo dõi vòng đời màn SOS
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -90,6 +99,36 @@ fun SendSosScreen(
                 .isAtLeast(Lifecycle.State.STARTED)
         )
     }
+
+
+    var locationIsExpired by remember {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(
+        uiState.locationTimestampMillis,
+        uiState.isLoadingLocation,
+        isScreenActive
+    ) {
+        locationIsExpired = false
+
+        val timestamp = uiState.locationTimestampMillis
+            ?: return@LaunchedEffect
+
+        if (!isScreenActive || uiState.isLoadingLocation) {
+            return@LaunchedEffect
+        }
+
+        val ageMillis = System.currentTimeMillis() - timestamp
+
+        if (ageMillis < 0L || ageMillis > 30_000L) {
+            locationIsExpired = true
+        } else {
+            delay(30_001L - ageMillis)
+            locationIsExpired = true
+        }
+    }
+
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -133,7 +172,9 @@ fun SendSosScreen(
                         permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
 
             if (granted) {
-                gpsRetryKey++
+                if (!viewModel.uiState.value.isSubmitting &&
+                    viewModel.uiState.value.submittedSosId == null
+                ) gpsRetryKey++
             } else {
                 viewModel.setLocationError(
                     "Chưa được cấp quyền truy cập vị trí."
@@ -143,6 +184,9 @@ fun SendSosScreen(
 
 
     LaunchedEffect(gpsRetryKey, isScreenActive) {
+        if (viewModel.uiState.value.isSubmitting ||
+            viewModel.uiState.value.submittedSosId != null
+        ) return@LaunchedEffect
 
         if (!isScreenActive) {
             // Xóa vị trí cũ khi ứng dụng không còn hoạt động.
@@ -249,6 +293,10 @@ fun SendSosScreen(
         mutableStateOf(false)
     }
 
+    var showSubmitConfirmation by rememberSaveable {
+        mutableStateOf(false)
+    }
+
     Scaffold(
         containerColor = SosBackground,
         topBar = {
@@ -258,6 +306,7 @@ fun SendSosScreen(
         }
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding),
@@ -276,11 +325,13 @@ fun SendSosScreen(
             item {
                 SosLocationCard(
                     uiState = uiState,
+                    isExpired = locationIsExpired,
+                    enabled = formEnabled,
                     onRetry = {
-                        gpsRetryKey++
+                        if (formEnabled) gpsRetryKey++
                     },
                     onRequestPermission = {
-                        permissionLauncher.launch(
+                        if (formEnabled) permissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_COARSE_LOCATION
@@ -288,18 +339,28 @@ fun SendSosScreen(
                         )
                     }
                 )
+                uiState.validationErrors.location?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
 
             item {
                 SosSectionTitle(
                     "LOẠI TÌNH HUỐNG (CHỌN NHIỀU)"
                 )
+
+                uiState.validationErrors.situations?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
             }
+
+
 
             items(SosSituation.entries.toList()) { situation ->
                 SosSituationRow(
                     situation = situation,
                     selected = situation in uiState.selectedSituations,
+                    enabled = formEnabled,
                     onClick = {
                         viewModel.toggleSituation(situation)
                     }
@@ -310,6 +371,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "SỐ NGƯỜI CẦN HỖ TRỢ"
                 )
+
+                uiState.validationErrors.peopleCount?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
                 Spacer(Modifier.height(8.dp))
 
                 Row(
@@ -320,9 +385,65 @@ fun SendSosScreen(
                             text = count.label,
                             selected = uiState.peopleCount == count,
                             modifier = Modifier.weight(1f),
+                            enabled = formEnabled,
                             onClick = {
                                 viewModel.selectPeopleCount(count)
                             }
+                        )
+                    }
+
+                }
+            }
+
+
+            item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SosSectionTitle("SỐ NGƯỜI CHÍNH XÁC")
+
+
+                    OutlinedTextField(
+                        value = uiState.exactPeopleCount,
+                        onValueChange = viewModel::updateExactPeopleCount,
+                        label = {
+                            Text("Nhập số người")
+                        },
+                        placeholder = {
+                            Text("Ví dụ: 3")
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        singleLine = true,
+                        enabled = formEnabled,
+                        isError = uiState.validationErrors.exactPeopleCount != null,
+                        modifier = Modifier.fillMaxWidth(),
+
+                        // Màu chữ giống phần Ghi chú
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = SosText,
+                            fontSize = 14.sp
+                        ),
+
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = SosText,
+                            unfocusedTextColor = SosText,
+                            cursorColor = SosCyan,
+                            focusedBorderColor = SosCyan,
+                            unfocusedBorderColor = SosMuted,
+                            focusedLabelColor = SosCyan,
+                            unfocusedLabelColor = SosMuted,
+                            focusedContainerColor = SosCard,
+                            unfocusedContainerColor = SosCard
+                        )
+                    )
+
+                    uiState.validationErrors.exactPeopleCount?.let { error ->
+                        Text(
+                            text = error,
+                            color = SosPink,
+                            fontSize = 12.sp
                         )
                     }
                 }
@@ -332,6 +453,10 @@ fun SendSosScreen(
                 SosSectionTitle(
                     "MỨC NƯỚC ƯỚC TÍNH"
                 )
+
+                uiState.validationErrors.waterLevel?.let {
+                    Text(it, color = SosPink, fontSize = 12.sp)
+                }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -348,6 +473,7 @@ fun SendSosScreen(
                                     level = level,
                                     selected = uiState.waterLevel == level,
                                     modifier = Modifier.weight(1f),
+                                    enabled = formEnabled,
                                     onClick = {
                                         viewModel.selectWaterLevel(level)
                                     }
@@ -360,6 +486,56 @@ fun SendSosScreen(
             }
 
             item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SosSectionTitle("MỨC ĐỘ KHẨN CẤP")
+
+                    SosUrgency.entries.forEach { urgency ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (uiState.urgency == urgency) {
+                                        SosCardSelected
+                                    } else {
+                                        SosCard
+                                    }
+                                )
+                                .clickable(enabled = formEnabled) {
+                                    viewModel.selectUrgency(urgency)
+                                }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = uiState.urgency == urgency,
+                                enabled = formEnabled,
+                                onClick = {
+                                    viewModel.selectUrgency(urgency)
+                                }
+                            )
+
+                            Text(
+                                text = urgency.label,
+                                color = SosText,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+
+                    uiState.validationErrors.urgency?.let { error ->
+                        Text(
+                            text = error,
+                            color = SosPink,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            item {
                 SosSectionTitle(
                     "GHI CHÚ CHO ĐỘI CỨU HỘ"
                 )
@@ -368,15 +544,100 @@ fun SendSosScreen(
 
                 SosNoteField(
                     note = uiState.note,
+                    enabled = formEnabled,
                     onNoteChange = viewModel::updateNote
                 )
+            }
+
+
+            item {
+                if (uiState.isSubmitting) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = SosCyan,
+                            strokeWidth = 2.dp
+                        )
+
+                        Text(
+                            "Đang gửi yêu cầu SOS...",
+                            color = SosText
+                        )
+                    }
+                }
+
+                uiState.submitError?.let { error ->
+                    Text(
+                        text = error,
+                        color = SosPink,
+                        fontSize = 13.sp
+                    )
+                }
+
+                uiState.submittedSosId?.let { sosId ->
+                    Text(
+                        text = "Yêu cầu SOS đã được hệ thống ghi nhận. Mã: $sosId",
+                        color = Color(0xFF22D3A0),
+                        fontSize = 13.sp
+                    )
+                }
             }
 
             item {
                 Button(
                     onClick = {
-                        showDemoDialog = true
+                        val isValid = viewModel.validateForm()
+
+                        android.util.Log.d(
+                            "SosValidation",
+                            "SOS button clicked, isValid=$isValid"
+                        )
+
+                        if (isValid) {
+                            showSubmitConfirmation = true
+                        } else {
+                            val errors = viewModel.uiState.value.validationErrors
+
+                            val situationCount = SosSituation.entries.size
+
+                            val targetIndex = when {
+                                errors.location != null -> 1
+
+                                errors.situations != null -> 2
+
+                                errors.peopleCount != null ->
+                                    3 + situationCount
+
+                                errors.exactPeopleCount != null ->
+                                    4 + situationCount
+
+                                errors.waterLevel != null ->
+                                    5 + situationCount
+
+                                errors.urgency != null ->
+                                    6 + situationCount
+
+                                else -> 0
+                            }
+
+                            scope.launch {
+                                listState.animateScrollToItem(targetIndex)
+                            }
+
+                            android.widget.Toast.makeText(
+                                context,
+                                "Thông tin SOS chưa đầy đủ. Vui lòng kiểm tra các mục báo lỗi.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     },
+
+                    enabled = !uiState.isSubmitting &&
+                            uiState.submittedSosId == null,
+
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(94.dp),
@@ -444,8 +705,12 @@ fun SendSosScreen(
 
                     OutlinedButton(
                         onClick = {
-                            viewModel.resetForm()
+                            if (formEnabled) {
+                                viewModel.resetForm()
+                                gpsRetryKey++
+                            }
                         },
+                        enabled = formEnabled,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp)
                     ) {
@@ -473,6 +738,45 @@ fun SendSosScreen(
                 )
             }
         }
+    }
+
+
+    if (showSubmitConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                showSubmitConfirmation = false
+            },
+            title = {
+                Text("Xác nhận gửi SOS")
+            },
+            text = {
+                Text(
+                    "Bạn đã kiểm tra thông tin, số người cần hỗ trợ " +
+                            "và vị trí GPS chưa? " +
+                            "Chức năng gửi SOS thật chưa được kích hoạt " +
+                            "trong bản kiểm thử này."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSubmitConfirmation = false
+                        showDemoDialog = true
+                    }
+                ) {
+                    Text("Tiếp tục Demo")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSubmitConfirmation = false
+                    }
+                ) {
+                    Text("Quay lại")
+                }
+            }
+        )
     }
 
     if (showDemoDialog) {
@@ -589,6 +893,8 @@ private fun SosEmergencyBanner() {
 @Composable
 private fun SosLocationCard(
     uiState: SendSosUiState,
+    isExpired: Boolean,
+    enabled: Boolean,
     onRetry: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
@@ -625,6 +931,16 @@ private fun SosLocationCard(
             color = SosText,
             fontWeight = FontWeight.Bold
         )
+
+        if (isExpired) {
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "GPS đã quá 30 giây. Vui lòng cập nhật vị trí trước khi gửi SOS.",
+                color = SosPink,
+                fontSize = 12.sp
+            )
+        }
 
         if (
             uiState.latitude != null &&
@@ -677,6 +993,7 @@ private fun SosLocationCard(
             )
         }
 
+
         uiState.locationError?.let { error ->
             Spacer(Modifier.height(8.dp))
 
@@ -686,24 +1003,31 @@ private fun SosLocationCard(
                 fontSize = 12.sp
             )
 
-            Spacer(Modifier.height(8.dp))
+            if (error.contains("quyền", ignoreCase = true)) {
+                Spacer(Modifier.height(8.dp))
 
-            if (
-                error.contains("quyền", ignoreCase = true)
-            ) {
                 OutlinedButton(
-                    onClick = onRequestPermission
+                    onClick = onRequestPermission,
+                    enabled = enabled
                 ) {
                     Text("Cấp quyền vị trí", color = SosCyan)
                 }
-            } else {
-                OutlinedButton(
-                    onClick = onRetry
-                ) {
-                    Text("Thử lại GPS", color = SosCyan)
-                }
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onRetry,
+            enabled = enabled && !uiState.isLoadingLocation,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "Cập nhật GPS",
+                color = SosCyan
+            )
+        }
+
     }
 }
 
@@ -723,6 +1047,7 @@ private fun SosSectionTitle(title: String) {
 private fun SosSituationRow(
     situation: SosSituation,
     selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Row(
@@ -732,7 +1057,7 @@ private fun SosSituationRow(
             .background(
                 if (selected) SosCardSelected else SosCard
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -772,6 +1097,7 @@ private fun SosChoiceChip(
     text: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Box(
@@ -781,7 +1107,7 @@ private fun SosChoiceChip(
             .background(
                 if (selected) SosCyan else SosCard
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -798,6 +1124,7 @@ private fun SosWaterLevelCard(
     level: SosWaterLevel,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val accent = if (level == SosWaterLevel.DANGEROUS) {
@@ -813,7 +1140,7 @@ private fun SosWaterLevelCard(
             .background(
                 if (selected) SosCardSelected else SosCard
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
@@ -859,6 +1186,7 @@ private fun SosWaterLevelCard(
 @Composable
 private fun SosNoteField(
     note: String,
+    enabled: Boolean,
     onNoteChange: (String) -> Unit
 ) {
     Column(
@@ -870,6 +1198,7 @@ private fun SosNoteField(
     ) {
         OutlinedTextField(
             value = note,
+            enabled = enabled,
             onValueChange = { newValue ->
                 onNoteChange(newValue.take(200))
             },

@@ -10,12 +10,12 @@ export interface NavItem {
 /** Admin sidebar (Figma: Admin Command C4I). Only finished screens have a route. */
 export const ADMIN_NAV: NavItem[] = [
   { label: "Tổng quan", icon: "dashboard", to: "/admin/dashboard" },
-  { label: "Bản đồ trực quan", icon: "map", to: "/map" },
+  { label: "Bản đồ trực quan", icon: "map", to: "/admin/map" },
   { label: "Theo dõi SOS", icon: "sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert" },
-  { label: "Quản lý vùng ngập", icon: "flood" },
+  { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
   { label: "Quản lý địa điểm an toàn", icon: "shield" },
-  { label: "Quản lý người dùng", icon: "users" },
+  { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
   { label: "Quản lý Rescue Staff", icon: "staff" },
   { label: "Thông báo", icon: "bell" },
   { label: "Báo cáo", icon: "report" },

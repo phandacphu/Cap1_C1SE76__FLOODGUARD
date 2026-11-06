@@ -1,5 +1,10 @@
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
+
+const {
+  stageNotificationDeliveryLog,
+} = require("./notification-delivery-log.service");
+
 const NOTIFICATIONS_COLLECTION = "notifications";
 const ALLOWED_NOTIFICATION_TYPES = ["flood_warning", "sos_status"];
 const RELATED_ENTITY_TYPES = {
@@ -73,8 +78,9 @@ async function createNotification(data) {
   const normalizedData = normalizeNotificationData(data);
 
   const notificationRef = db.collection(NOTIFICATIONS_COLLECTION).doc();
+  const batch = db.batch();
 
-  await notificationRef.set({
+  batch.create(notificationRef, {
     ...normalizedData,
     createdAt: FieldValue.serverTimestamp(),
     readAt: null,
@@ -83,6 +89,19 @@ async function createNotification(data) {
     lastAttemptAt: null,
     nextRetryAt: null,
   });
+
+  stageNotificationDeliveryLog(
+    batch,
+    {
+      notificationId: notificationRef.id,
+      status: "queued",
+      retryCount: 0,
+      providerResponseCode: "LOCAL_QUEUED",
+    },
+    "queued",
+  );
+
+  await batch.commit();
 
   const savedDoc = await notificationRef.get();
 

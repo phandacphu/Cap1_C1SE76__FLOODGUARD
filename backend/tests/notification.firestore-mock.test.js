@@ -2,19 +2,29 @@ const assert = require("node:assert/strict");
 
 // Firestore giả lập bằng bộ nhớ RAM.
 const store = new Map();
+const logStore = new Map();
 let nextId = 0;
 let updateCount = 0;
 
-function createDocRef(id) {
+function getCollectionStore(name) {
+  assert.ok(name === "notifications" || name === "notification_delivery_logs");
+
+  return name === "notifications" ? store : logStore;
+}
+
+function createDocRef(id, collectionName = "notifications") {
+  const collectionStore = getCollectionStore(collectionName);
+
   return {
     id,
+    collectionName,
 
     async set(data) {
-      store.set(id, { ...data });
+      collectionStore.set(id, { ...data });
     },
 
     async get() {
-      const data = store.get(id);
+      const data = collectionStore.get(id);
 
       return {
         id,
@@ -27,14 +37,15 @@ function createDocRef(id) {
 
 const mockDb = {
   collection(name) {
-    assert.equal(name, "notifications");
+    getCollectionStore(name);
 
     return {
       doc(id) {
-        return createDocRef(id === undefined ? `mock_${++nextId}` : id);
+        return createDocRef(id === undefined ? `mock_${++nextId}` : id, name);
       },
 
       where(field, operator, value) {
+        assert.equal(name, "notifications");
         assert.equal(field, "recipientId");
         assert.equal(operator, "==");
 
@@ -50,6 +61,39 @@ const mockDb = {
             return { docs };
           },
         };
+      },
+    };
+  },
+
+  batch() {
+    const writes = [];
+
+    return {
+      create(ref, data) {
+        writes.push({ ref, data });
+        return this;
+      },
+
+      async commit() {
+        // Kiểm tra toàn bộ trước khi ghi để mô phỏng batch nguyên tử.
+        const seen = new Set();
+
+        for (const { ref } of writes) {
+          const collectionStore = getCollectionStore(ref.collectionName);
+          const key = `${ref.collectionName}/${ref.id}`;
+
+          if (collectionStore.has(ref.id) || seen.has(key)) {
+            const error = new Error("Document already exists");
+            error.code = 6;
+            throw error;
+          }
+
+          seen.add(key);
+        }
+
+        for (const { ref, data } of writes) {
+          getCollectionStore(ref.collectionName).set(ref.id, { ...data });
+        }
       },
     };
   },

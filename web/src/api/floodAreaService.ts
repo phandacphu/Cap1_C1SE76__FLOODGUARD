@@ -1,41 +1,69 @@
+import { API_URL } from './authApi';
+import { ApiError } from './http';
 import type { FloodArea } from '../types/floodArea';
 
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function isValidFloodArea(value: unknown): value is FloodArea {
+  if (!record(value) || typeof value.id !== 'string' || !value.id.trim() ||
+      typeof value.name !== 'string' || !value.name.trim() ||
+      !['low', 'medium', 'high', 'critical'].includes(String(value.severity)) ||
+      !['active', 'inactive'].includes(String(value.status)) ||
+      ![value.source, value.description].every(v => v == null || typeof v === 'string')) return false;
+  const geometry = value.geometry;
+  if (!record(geometry) || geometry.type !== 'polygon' || !Array.isArray(geometry.points) || geometry.points.length < 3) return false;
+  if (!geometry.points.every(pt => record(pt) && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' &&
+      Number.isFinite(pt.latitude) && Math.abs(pt.latitude) <= 90 && Number.isFinite(pt.longitude) && Math.abs(pt.longitude) <= 180)) return false;
+  return new Set(geometry.points.map(pt => `${pt.latitude},${pt.longitude}`)).size >= 3;
+}
+
+async function publicGet(path: string): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 70_000);
+  try {
+    const response = await fetch(`${API_URL}${path}`, { signal: controller.signal });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw new ApiError(record(body) && typeof body.message === 'string' ? body.message : `Lỗi máy chủ (${response.status}).`, response.status);
+    if (!record(body) || body.success !== true || !record(body.data)) throw new ApiError('Phản hồi API không đúng cấu trúc.', response.status);
+    return body.data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Không thể kết nối máy chủ. Vui lòng thử lại.', 0);
+  } finally { clearTimeout(timeout); }
+}
+
+// Public data: share and deduplicate concurrent requests, including React StrictMode.
+const CACHE_MS = 60_000;
+let areaCache: { value: FloodArea[]; expires: number } | null = null;
+let areaPending: Promise<FloodArea[]> | null = null;
+let alertCache: { count: number; expires: number } | null = null;
+let alertPending: Promise<number> | null = null;
+
 export const floodAreaService = {
-  async getFloodAreas(token: string | null): Promise<FloodArea[]> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    const response = await fetch('/api/flood-areas', {
-      method: 'GET',
-      headers,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Máy chủ trả về mã lỗi HTTP ${response.status} (${response.statusText})`);
-    }
-
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new Error('Định dạng dữ liệu trả về từ máy chủ không phải JSON hợp lệ');
-    }
-
-    // Kiểm tra cấu trúc API trả về: hỗ trợ dạng mảng trực tiếp hoặc bọc trong thuộc tính data
-    let areaList: unknown = payload;
-    if (payload && typeof payload === 'object' && !Array.isArray(payload) && 'data' in payload) {
-      areaList = (payload as { data: unknown }).data;
-    }
-
-    if (!Array.isArray(areaList)) {
-      throw new Error('Dữ liệu API vùng ngập không đúng cấu trúc danh sách (Array)');
-    }
-
-    return areaList as FloodArea[];
+  getFloodAreas(force = false): Promise<FloodArea[]> {
+    if (areaPending) return areaPending;
+    if (!force && areaCache && areaCache.expires > Date.now()) return Promise.resolve(areaCache.value);
+    areaPending = publicGet('/flood-areas').then(data => {
+      if (!Array.isArray(data.floodAreas) || !data.floodAreas.every(isValidFloodArea)) {
+        throw new ApiError('Dữ liệu vùng ngập hoặc tọa độ đa giác không hợp lệ.', 200);
+      }
+      const value = data.floodAreas;
+      areaCache = { value, expires: Date.now() + CACHE_MS };
+      return value;
+    }).finally(() => { areaPending = null; });
+    return areaPending;
+  },
+  getActiveAlertCount(force = false): Promise<number> {
+    if (alertPending) return alertPending;
+    if (!force && alertCache && alertCache.expires > Date.now()) return Promise.resolve(alertCache.count);
+    alertPending = publicGet('/flood-alerts/active').then(data => {
+      if (!Array.isArray(data.floodAlerts)) throw new ApiError('Dữ liệu cảnh báo không hợp lệ.', 200);
+      const count = data.floodAlerts.length;
+      alertCache = { count, expires: Date.now() + CACHE_MS };
+      return count;
+    }).finally(() => { alertPending = null; });
+    return alertPending;
   },
 };

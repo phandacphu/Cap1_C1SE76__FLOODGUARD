@@ -15,8 +15,8 @@ export interface FloodArea {
   name: string;
   severity: SeverityLevel;
   status: 'active' | 'inactive';
-  source?: string;
-  description?: string;
+  source?: string | null;
+  description?: string | null;
   geometry: FloodAreaGeometry;
   createdAt?: string;
   updatedAt?: string;

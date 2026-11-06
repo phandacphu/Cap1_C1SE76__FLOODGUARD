@@ -3,11 +3,13 @@ import { formatClock, useClock } from "./useClock";
 
 interface AdminHeaderProps {
   /** Number of currently active flood alerts (shown on the bell). */
-  alertCount: number;
+  alertCount?: number;
+  /** Current page name in the breadcrumb (defaults to the dashboard). */
+  title?: string;
 }
 
 /** Admin top bar: breadcrumb, 24/7 status, search, clock, bell. */
-export function AdminHeader({ alertCount }: AdminHeaderProps) {
+export function AdminHeader({ alertCount, title = "Tổng quan" }: AdminHeaderProps) {
   const now = useClock();
 
   return (
@@ -18,7 +20,7 @@ export function AdminHeader({ alertCount }: AdminHeaderProps) {
       >
         <span className="truncate">Hệ thống Quản trị</span>
         <span>/</span>
-        <span className="truncate font-medium text-text">Tổng quan</span>
+        <span className="truncate font-medium text-text">{title}</span>
       </nav>
 
       <span className="hidden items-center gap-2 rounded-full border border-safe/40 bg-safe/10 px-3 py-1 font-mono text-[11px] tracking-wide text-safe xl:flex">
@@ -47,10 +49,10 @@ export function AdminHeader({ alertCount }: AdminHeaderProps) {
         </div>
         <div
           className="relative rounded-lg p-2 text-muted"
-          title={`${alertCount} cảnh báo đang hiệu lực`}
+          title={alertCount === undefined ? "Thông báo" : `${alertCount} cảnh báo đang hiệu lực`}
         >
           <Icon name="bell" className="h-5 w-5" />
-          {alertCount > 0 && (
+          {alertCount !== undefined && alertCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sos px-1 font-mono text-[10px] font-bold text-white">
               {alertCount}
             </span>

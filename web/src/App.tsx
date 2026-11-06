@@ -6,6 +6,8 @@ import { homePathForRole } from './api/authApi';
 import { Login } from './pages/Login';
 import { Unauthorized } from './pages/Unauthorized';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
+import FloodAreaManagementScreen from './pages/admin/flood-area/FloodAreaManagementScreen';
+import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -37,49 +39,24 @@ export const App: React.FC = () => {
           <Route
             path="/admin/map"
             element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'RESCUE_STAFF']}>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
                 <FloodMapView />
               </ProtectedRoute>
             }
           />
 
-          {/* Admin Routes */}
-          <Route
-            path="/admin/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN']}>
-                <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/users" element={<UserManagementScreen />} />
+            <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
+          </Route>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-
-          {/* Rescue Routes */}
-          <Route
-            path="/rescue/dashboard"
-            element={
-              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
-                <RescueDashboard />
-              </ProtectedRoute>
-            }
-          />
+          <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
+            <Route path="/rescue/dashboard" element={<RescueDashboard />} />
+            <Route path="/rescue/sos" element={<RescueSosList />} />
+            <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
+          </Route>
           <Route path="/rescue" element={<Navigate to="/rescue/dashboard" replace />} />
-          <Route
-            path="/rescue/sos"
-            element={
-              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
-                <RescueSosList />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/rescue/sos/:id"
-            element={
-              <ProtectedRoute allowedRoles={['RESCUE_STAFF']}>
-                <RescueSosDetail />
-              </ProtectedRoute>
-            }
-          />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

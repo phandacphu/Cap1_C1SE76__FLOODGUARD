@@ -40,6 +40,23 @@ import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
 import com.example.floodguard.ui.screens.sos.SendSosScreen
+import com.example.floodguard.ui.screens.sos.SendSosViewModel
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.example.floodguard.ui.screens.rescue.RescueEntryScreen
+import com.example.floodguard.ui.screens.rescue.RescueOverviewScreen
+import com.example.floodguard.ui.screens.rescue.RescueOverviewDestination
+import com.example.floodguard.ui.screens.rescue.RescueMapScreen
+import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+
 
 @Composable
 fun AppNavGraph(
@@ -53,6 +70,97 @@ fun AppNavGraph(
         SessionManager(context.applicationContext)
     }
     val scope = rememberCoroutineScope()
+    val navigationSession by produceState<NavigationSession?>(
+        initialValue = null,
+        key1 = sessionManager
+    ) {
+        combine(
+            sessionManager.tokenFlow,
+            sessionManager.userFlow
+        ) { token, user ->
+            NavigationSession(
+                isLoggedIn = !token.isNullOrBlank(),
+                role = user.role
+            )
+        }
+            .catch {
+                emit(NavigationSession())
+            }
+            .collect {
+                value = it
+            }
+    }
+
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute =
+        backStackEntry?.destination?.route ?: startDestination
+
+    val session = navigationSession
+
+    if (session == null) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    val isPublicRoute =
+        currentRoute == AppRoutes.LOGIN ||
+                currentRoute == AppRoutes.REGISTER
+
+    val redirectRoute = when {
+        isPublicRoute -> null
+
+        !session.isLoggedIn -> AppRoutes.LOGIN
+
+        homeRouteForRole(session.role) == AppRoutes.ACCESS_DENIED -> {
+            if (currentRoute != AppRoutes.ACCESS_DENIED) {
+                AppRoutes.ACCESS_DENIED
+            } else {
+                null
+            }
+        }
+
+        session.role == "rescue" -> {
+            if (!isRescueRoute(currentRoute)) {
+                AppRoutes.RESCUE_HOME
+            } else {
+                null
+            }
+        }
+
+        isRescueRoute(currentRoute) ||
+                currentRoute == AppRoutes.ACCESS_DENIED -> {
+            AppRoutes.HOME
+        }
+
+        else -> null
+    }
+
+    if (redirectRoute != null) {
+        LaunchedEffect(redirectRoute) {
+            navController.navigate(redirectRoute) {
+                popUpTo(navController.graph.id) {
+                    inclusive = true
+                }
+                launchSingleTop = true
+            }
+        }
+        return
+    }
+    // One GPS controller for the authenticated Rescue area, shared by its tabs.
+    // Public routes and Resident sessions never start this request.
+    val rescueLocation = if (session.isLoggedIn && session.role == "rescue" &&
+        isRescueRoute(currentRoute)
+    ) {
+        rememberRescueMapLocation(autoLocate = true)
+    } else {
+        null
+    }
+
     val safeLocationViewModel: SafeLocationViewModel = viewModel {
         SafeLocationViewModel(
             repository = SafeLocationRepository(
@@ -65,6 +173,68 @@ fun AppNavGraph(
         navController = navController,
         startDestination = startDestination
     ) {
+        composable(route = AppRoutes.RESCUE_HOME) {
+            RescueOverviewScreen(
+                availableDestinations = setOf(RescueOverviewDestination.MAP),
+                onOpenDestination = { destination ->
+                    if (destination == RescueOverviewDestination.MAP) {
+                        navController.navigate(AppRoutes.RESCUE_MAP) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+                onLogout = {
+                    authRepository.logout()
+                },
+                onLoggedOut = {
+                    navController.navigate(AppRoutes.LOGIN) {
+                        popUpTo(navController.graph.id) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(route = AppRoutes.RESCUE_MAP) {
+            rescueLocation?.let { location ->
+                RescueMapScreen(
+                    location = location,
+                    onBack = {
+                        val returnedHome = navController.popBackStack(
+                            route = AppRoutes.RESCUE_HOME,
+                            inclusive = false,
+                            saveState = true
+                        )
+                        if (!returnedHome) {
+                            navController.navigate(AppRoutes.RESCUE_HOME) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                )
+            }
+        }
+
+        composable(route = AppRoutes.ACCESS_DENIED) {
+            RescueEntryScreen(
+                accessDenied = true,
+                onLogout = {
+                    authRepository.logout()
+                },
+                onLoggedOut = {
+                    navController.navigate(AppRoutes.LOGIN) {
+                        popUpTo(navController.graph.id) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
         // PROFILE — CCF-249
         composable(route = AppRoutes.PROFILE) {
 
@@ -253,15 +423,22 @@ fun AppNavGraph(
             LoginScreen(
                 viewModel = loginViewModel,
                 onLoginSuccess = {
-                    Toast.makeText(
-                        context,
-                        "Đăng nhập thành công",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    scope.launch {
+                        val destination = homeRouteForRole(
+                            sessionManager.getUser().role
+                        )
 
-                    navController.navigate(AppRoutes.HOME) {
-                        popUpTo(AppRoutes.LOGIN) {
-                            inclusive = true
+                        Toast.makeText(
+                            context,
+                            "Đăng nhập thành công",
+                            Toast.LENGTH_SHORT
+                        ).show()
+
+                        navController.navigate(destination) {
+                            popUpTo(navController.graph.id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
                         }
                     }
                 },
@@ -703,9 +880,31 @@ fun AppNavGraph(
             )
         }
 
-        // SEND SOS — CCF-80
+
+        // SEND SOS — CCF-83
         composable(route = AppRoutes.SEND_SOS) {
+
+            val rescueRepository = remember(sessionManager) {
+                val retrofit =
+                    ApiClient.createAuthenticatedRetrofit(
+                        sessionManager
+                    )
+
+                RescueRequestRepository(
+                    api = retrofit.create(
+                        RescueRequestApi::class.java
+                    )
+                )
+            }
+
+            val sendSosViewModel: SendSosViewModel = viewModel {
+                SendSosViewModel(
+                    repository = rescueRepository
+                )
+            }
+
             SendSosScreen(
+                viewModel = sendSosViewModel,
                 onBack = {
                     val returned = navController.popBackStack()
 
