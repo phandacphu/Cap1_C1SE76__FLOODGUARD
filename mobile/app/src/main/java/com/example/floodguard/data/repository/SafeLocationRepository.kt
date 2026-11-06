@@ -12,6 +12,11 @@ class SafeLocationRepository(
     private val safeLocationApi: SafeLocationApi
 ) {
 
+    private val excludedTestLocationIds = setOf(
+        "ccf66-sample-safe-location-01",
+        "lxqyy94dCPrMyP2kKbEs",
+        "LQgJjh7ekqRcTdhKdJGr"
+    )
     suspend fun getSafeLocations(): Result<List<SafeLocationDto>> {
         return try {
             parseResponse(
@@ -99,6 +104,10 @@ class SafeLocationRepository(
                 Exception("Dữ liệu điểm tránh trú không hợp lệ")
             )
 
-        return Result.success(locations)
+        return Result.success(
+            locations.filterNot { location ->
+                location.id in excludedTestLocationIds
+            }
+        )
     }
 }
