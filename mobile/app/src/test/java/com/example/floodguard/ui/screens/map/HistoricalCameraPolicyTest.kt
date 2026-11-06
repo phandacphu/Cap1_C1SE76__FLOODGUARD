@@ -7,6 +7,9 @@ import org.junit.Test
 class HistoricalCameraPolicyTest {
 
     private fun readyState() = FloodMapUiState(
+        isHistoryPointsLayerEnabled = true,
+        isHistoryBuffersLayerEnabled = true,
+        isHistoryRadarLayerEnabled = true,
         historyPointsLoadStatus = HistoricalLoadStatus.SUCCESS,
         historyBuffersLoadStatus = HistoricalLoadStatus.SUCCESS,
         historyRadarLoadStatus = HistoricalLoadStatus.SUCCESS

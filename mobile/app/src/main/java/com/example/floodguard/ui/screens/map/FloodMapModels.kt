@@ -8,7 +8,17 @@ import com.google.android.gms.maps.model.LatLng
 
 data class HistoricalFloodPoint(
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val id: String? = null,
+    val name: String? = null,
+    val sourceUrl: String? = null,
+    val locationRefUrl: String? = null,
+    val dataPeriod: String? = null,
+    val coordinateStatus: String? = null,
+    val layerType: String? = null,
+    val displayOnly: Boolean? = null,
+    val verifiedFloodPolygon: Boolean? = null,
+    val currentFloodAlert: Boolean? = null
 )
 
 
@@ -96,7 +106,7 @@ data class FloodMapUiState(
 
     val historyPointsError: String? = null,
 
-    val isHistoryBuffersLayerEnabled: Boolean = true,
+    val isHistoryBuffersLayerEnabled: Boolean = false,
     val historyBufferFeatureCount: Int = 0,
     val historyBufferPolygons: List<HistoricalFloodPolygon> = emptyList(),
 
@@ -109,7 +119,7 @@ data class FloodMapUiState(
 
     val historyBuffersError: String? = null,
 
-    val isHistoryRadarLayerEnabled: Boolean = true,
+    val isHistoryRadarLayerEnabled: Boolean = false,
     val historyRadarFeatureCount: Int = 0,
     val historyRadarPolygons: List<HistoricalFloodPolygon> = emptyList(),
 
@@ -120,7 +130,18 @@ data class FloodMapUiState(
     val historyRadarLoadStatus: HistoricalLoadStatus =
         HistoricalLoadStatus.NOT_STARTED,
 
-    val historyRadarError: String? = null
+    val historyRadarError: String? = null,
 
+    val citizenAreas: List<CitizenMapArea> = emptyList(),
+    val selectedCitizenAreaId: String? = null,
+    val selectedHistoryPoint: HistoricalFloodPoint? = null,
+
+    val floodAreasUnsupportedTypeCount: Int = 0,
+    val floodAreasInvalidRecordCount: Int = 0,
+
+    val floodAreasLoadedAt: Long? = null,
+    val floodAlertsLoadedAt: Long? = null,
+    val safeLocationsLoadedAt: Long? = null,
+    val historyPointsLoadedAt: Long? = null
 
 )

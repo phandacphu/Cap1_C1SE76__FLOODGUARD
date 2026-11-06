@@ -10,17 +10,22 @@ import com.example.floodguard.data.repository.SafeLocationRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineDispatcher
+import java.io.IOException
+import java.net.SocketTimeoutException
 
 
 class FloodMapViewModel(
     private val floodAreaRepository: FloodAreaRepository,
     private val floodAlertRepository: FloodAlertRepository,
     private val safeLocationRepository: SafeLocationRepository,
-    private val floodHistoryRepository: FloodHistoryRepository
+    private val floodHistoryRepository: FloodHistoryRepository,
+    private val parsingDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
 
@@ -38,154 +43,175 @@ class FloodMapViewModel(
     )
 
     init {
-        loadFloodAreas()
-        loadFloodAlerts()
-        loadSafeLocations()
-
-        // Historical Flood Map
-        loadHistoryPoints()
-        loadHistoryBuffers()
-        loadHistoryRadar()
+        refreshMapData()
     }
 
     fun loadFloodAreas() {
+        if (_uiState.value.isLoadingFloodAreas) return
 
-        viewModelScope.launch {
-
-            _uiState.value =
-                _uiState.value.copy(
-                    isLoadingFloodAreas = true,
-                    floodAreasError = null
-                )
-
-            val result =
-                floodAreaRepository.getFloodAreas()
-
-            result
-                .onSuccess { floodAreas ->
-
-                    Log.d(
-                        "FloodMapTC04",
-                        "API returned ${floodAreas.size} flood areas"
-                    )
-
-                    floodAreas.forEach { area ->
-                        Log.d(
-                            "FloodMapSource",
-                            "id=${area.id}, " +
-                                    "name=${area.name}, " +
-                                    "source=${area.source}, " +
-                                    "status=${area.status}, " +
-                                    "severity=${area.severity}, " +
-                                    "points=${area.geometry.points.size}"
-                        )
-                    }
-
-                    _uiState.value =
-                        _uiState.value.copy(
-                            floodAreas = floodAreas.filterNot { area ->
-                                area.id in excludedDemoFloodAreaIds
-                            },
-                            isLoadingFloodAreas = false,
-                            floodAreasError = null
-                        )
-                }
-                .onFailure { error ->
-
-                    _uiState.value =
-                        _uiState.value.copy(
-                            floodAreas = emptyList(),
-                            isLoadingFloodAreas = false,
-                            floodAreasError =
-                                "Không thể cập nhật vùng ngập. " +
-                                        "Vui lòng kiểm tra kết nối mạng và thử lại."
-                        )
-                }
+        _uiState.update {
+            it.copy(
+                isLoadingFloodAreas = true,
+                floodAreasError = null
+            )
         }
+
+        launchMapRequest(
+            request = {
+                val received:
+                        List<com.example.floodguard.data.model.FloodAreaDto?> =
+                    floodAreaRepository.getFloodAreas().getOrThrow()
+
+                val records = received.filterNot { area ->
+                    area != null && area.id in excludedDemoFloodAreaIds
+                }
+
+                val mapped = withContext(parsingDispatcher) {
+                    mapCitizenFloodAreas(records)
+                }
+
+                val acceptedIds = mapped.areas.map { it.id }.toSet()
+
+                val acceptedRecords = records
+                    .filterNotNull()
+                    .filter { it.id in acceptedIds }
+
+                acceptedRecords to mapped
+            },
+            onSuccess = { (records, mapped) ->
+                _uiState.update { state ->
+                    state.copy(
+                        floodAreas = records,
+                        citizenAreas = mapped.areas,
+                        floodAreasUnsupportedTypeCount =
+                            mapped.unsupportedTypeCount,
+                        floodAreasInvalidRecordCount =
+                            mapped.invalidRecordCount,
+                        selectedCitizenAreaId =
+                            state.selectedCitizenAreaId?.takeIf { id ->
+                                mapped.areas.any { it.id == id }
+                            },
+                        floodAreasLoadedAt = System.currentTimeMillis(),
+                        isLoadingFloodAreas = false,
+                        floodAreasError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isLoadingFloodAreas = false,
+                        floodAreasError = mapLoadError(
+                            sourceName = "vùng ngập và vùng trũng",
+                            loadedAt = state.floodAreasLoadedAt,
+                            error = error
+                        )
+                    )
+                }
+            }
+        )
     }
 
     fun loadFloodAlerts() {
+        if (_uiState.value.isLoadingFloodAlerts) return
 
-        viewModelScope.launch {
-
-            _uiState.value =
-                _uiState.value.copy(
-                    isLoadingFloodAlerts = true,
-                    floodAlertsError = null
-                )
-
-            val result =
-                floodAlertRepository.getActiveFloodAlerts()
-
-            result
-                .onSuccess { floodAlerts ->
-
-                    _uiState.value =
-                        _uiState.value.copy(
-                            floodAlerts = floodAlerts.filterNot { alert ->
-                                alert.areaId in excludedDemoFloodAreaIds
-                            },
-                            isLoadingFloodAlerts = false,
-                            floodAlertsError = null
-                        )
-                }
-                .onFailure { error ->
-
-                    _uiState.value =
-                        _uiState.value.copy(
-                            floodAlerts = emptyList(),
-                            selectedFloodAlertId = null,
-                            isLoadingFloodAlerts = false,
-                            floodAlertsError =
-                                "Không thể cập nhật cảnh báo lũ. " +
-                                        "Vui lòng kiểm tra kết nối mạng và thử lại."
-                        )
-                }
+        _uiState.update {
+            it.copy(
+                isLoadingFloodAlerts = true,
+                floodAlertsError = null
+            )
         }
+
+        launchMapRequest(
+            request = {
+                floodAlertRepository.getActiveFloodAlerts()
+                    .getOrThrow()
+                    .filterNot { it.areaId in excludedDemoFloodAreaIds }
+            },
+            onSuccess = { alerts ->
+                _uiState.update { state ->
+                    state.copy(
+                        floodAlerts = alerts,
+                        selectedFloodAlertId =
+                            state.selectedFloodAlertId?.takeIf { id ->
+                                alerts.any { it.id == id }
+                            },
+                        floodAlertsLoadedAt = System.currentTimeMillis(),
+                        isLoadingFloodAlerts = false,
+                        floodAlertsError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isLoadingFloodAlerts = false,
+                        floodAlertsError = mapLoadError(
+                            sourceName = "cảnh báo",
+                            loadedAt = state.floodAlertsLoadedAt,
+                            error = error
+                        )
+                    )
+                }
+            }
+        )
     }
 
 
     fun loadSafeLocations() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
+        if (_uiState.value.isLoadingSafeLocations) return
+
+        _uiState.update {
+            it.copy(
                 isLoadingSafeLocations = true,
                 safeLocationsError = null
             )
+        }
 
-            safeLocationRepository.getSafeLocations()
-                .onSuccess { locations ->
-                    locations.forEach { location ->
-                        Log.d(
-                            "SafeLocationSource",
-                            "id=${location.id}, " +
-                                    "name=${location.name}, " +
-                                    "status=${location.status}, " +
-                                    "lat=${location.location.latitude}, " +
-                                    "lng=${location.location.longitude}"
-                        )
-                    }
-                    val validLocations = locations.filter { location ->
+        launchMapRequest(
+            request = {
+                safeLocationRepository.getSafeLocations()
+                    .getOrThrow()
+                    .filter { location ->
                         location.location.latitude.isFinite() &&
                                 location.location.longitude.isFinite() &&
                                 location.location.latitude in -90.0..90.0 &&
                                 location.location.longitude in -180.0..180.0
                     }
-
-                    _uiState.value = _uiState.value.copy(
-                        safeLocations = validLocations,
+            },
+            onSuccess = { locations ->
+                _uiState.update { state ->
+                    state.copy(
+                        safeLocations = locations,
+                        selectedSafeLocationId =
+                            state.selectedSafeLocationId?.takeIf { id ->
+                                locations.any {
+                                    it.id == id &&
+                                            it.status.equals(
+                                                "active",
+                                                ignoreCase = true
+                                            )
+                                }
+                            },
+                        safeLocationsLoadedAt = System.currentTimeMillis(),
                         isLoadingSafeLocations = false,
                         safeLocationsError = null
                     )
                 }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        safeLocations = emptyList(),
+            },
+            onFailure = { error ->
+                _uiState.update { state ->
+                    state.copy(
                         isLoadingSafeLocations = false,
-                        safeLocationsError = error.message
-                            ?: "Không thể tải điểm tránh trú"
+                        safeLocationsError = mapLoadError(
+                            sourceName = "điểm tránh trú",
+                            loadedAt = state.safeLocationsLoadedAt,
+                            error = error
+                        )
                     )
                 }
-        }
+            }
+        )
     }
 
 
@@ -197,45 +223,21 @@ class FloodMapViewModel(
             )
     }
     fun toggleFloodLayer() {
-        val currentState = _uiState.value
-        val enabled = !currentState.isFloodLayerEnabled
+        _uiState.update { state ->
+            val enabled = !state.isFloodLayerEnabled
 
-        _uiState.value = currentState.copy(
-            isFloodLayerEnabled = enabled,
-            isHistoryPointsLayerEnabled = enabled,
-            isHistoryBuffersLayerEnabled = enabled,
-            isHistoryRadarLayerEnabled = enabled
-        )
-
-        if (!enabled) {
-            return
-        }
-
-        if (
-            currentState.historyPointsLoadStatus !=
-            HistoricalLoadStatus.SUCCESS &&
-            currentState.historyPointsLoadStatus !=
-            HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryPoints()
-        }
-
-        if (
-            currentState.historyBuffersLoadStatus !=
-            HistoricalLoadStatus.SUCCESS &&
-            currentState.historyBuffersLoadStatus !=
-            HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryBuffers()
-        }
-
-        if (
-            currentState.historyRadarLoadStatus !=
-            HistoricalLoadStatus.SUCCESS &&
-            currentState.historyRadarLoadStatus !=
-            HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryRadar()
+            state.copy(
+                isFloodLayerEnabled = enabled,
+                isHistoryPointsLayerEnabled = enabled,
+                isHistoryBuffersLayerEnabled = false,
+                isHistoryRadarLayerEnabled = false,
+                selectedCitizenAreaId =
+                    state.selectedCitizenAreaId.takeIf { enabled },
+                selectedHistoryPoint =
+                    state.selectedHistoryPoint.takeIf { enabled },
+                selectedFloodAlertId =
+                    state.selectedFloodAlertId.takeIf { enabled }
+            )
         }
     }
 
@@ -263,7 +265,10 @@ class FloodMapViewModel(
     ) {
         _uiState.value =
             _uiState.value.copy(
-                selectedFloodAlertId = alertId
+                selectedFloodAlertId = alertId,
+                selectedCitizenAreaId = null,
+                selectedHistoryPoint = null,
+                selectedSafeLocationId = null,
             )
     }
 
@@ -285,107 +290,96 @@ class FloodMapViewModel(
             selectedSafeLocationId = selectedId,
             selectedFloodAlertId =
                 if (selectedId != null) null
-                else currentState.selectedFloodAlertId
+                else currentState.selectedFloodAlertId,
+            selectedCitizenAreaId = null,
+            selectedHistoryPoint = null
         )
     }
 
     fun toggleHistoryPointsLayer() {
-        val enabled =
-            !_uiState.value.isHistoryPointsLayerEnabled
+        _uiState.update { state ->
+            val enabled = !state.isHistoryPointsLayerEnabled
 
-        _uiState.value = _uiState.value.copy(
-            isHistoryPointsLayerEnabled = enabled
-        )
-
-        val loadStatus =
-            _uiState.value.historyPointsLoadStatus
-
-        if (
-            enabled &&
-            loadStatus != HistoricalLoadStatus.SUCCESS &&
-            loadStatus != HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryPoints()
+            state.copy(
+                isHistoryPointsLayerEnabled = enabled,
+                selectedHistoryPoint =
+                    state.selectedHistoryPoint.takeIf { enabled }
+            )
         }
     }
 
 
     fun loadHistoryPoints() {
+        if (_uiState.value.isLoadingHistoryPoints) return
 
-        if (
-            _uiState.value.historyPointsLoadStatus ==
-            HistoricalLoadStatus.LOADING
-        ) {
-            return
+        _uiState.update {
+            it.copy(
+                historyPointsLoadStatus = HistoricalLoadStatus.LOADING,
+                isLoadingHistoryPoints = true,
+                historyPointsError = null
+            )
         }
 
-        _uiState.value = _uiState.value.copy(
-            historyPointsLoadStatus =
-                HistoricalLoadStatus.LOADING,
-            isLoadingHistoryPoints = true,
-            historyPointsError = null,
-            historyPointsInvalidFeatureCount = 0
-        )
+        launchMapRequest(
+            request = {
+                val geojson = floodHistoryRepository.getPoints()
+                    .getOrThrow()
 
-        viewModelScope.launch {
-
-            try {
-                val geojson =
-                    floodHistoryRepository.getPoints()
-                        .getOrThrow()
-
-                val parsed = withContext(Dispatchers.Default) {
+                withContext(parsingDispatcher) {
                     parseHistoricalFloodPointsValidated(geojson)
                         .getOrThrow()
                 }
+            },
+            onSuccess = { parsed ->
+                _uiState.update { state ->
+                    val selectedPoint = state.selectedHistoryPoint
+                        ?.let { selected ->
+                            if (selected.id != null) {
+                                parsed.points.singleOrNull {
+                                    it.id == selected.id
+                                }
+                            } else {
+                                parsed.points.singleOrNull {
+                                    it == selected
+                                }
+                            }
+                        }
 
-                _uiState.value = _uiState.value.copy(
-                    historyPoints = parsed.points,
-                    historyPointsInvalidFeatureCount =
-                        parsed.invalidFeatureCount,
-                    historyPointsLoadStatus =
-                        HistoricalLoadStatus.SUCCESS,
-                    isLoadingHistoryPoints = false,
-                    historyPointsError = null
-                )
-
-            } catch (error: CancellationException) {
-                throw error
-
-            } catch (error: Exception) {
-
-                _uiState.value = _uiState.value.copy(
-                    historyPoints = emptyList(),
-                    historyPointsInvalidFeatureCount = 0,
-                    historyPointsLoadStatus =
-                        HistoricalLoadStatus.FAILED,
-                    isLoadingHistoryPoints = false,
-                    historyPointsError =
-                        error.message
-                            ?: "Không thể tải điểm ngập lịch sử."
-                )
+                    state.copy(
+                        historyPoints = parsed.points,
+                        selectedHistoryPoint = selectedPoint,
+                        historyPointsInvalidFeatureCount =
+                            parsed.invalidFeatureCount,
+                        historyPointsLoadedAt = System.currentTimeMillis(),
+                        historyPointsLoadStatus = HistoricalLoadStatus.SUCCESS,
+                        isLoadingHistoryPoints = false,
+                        historyPointsError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        historyPointsLoadStatus = HistoricalLoadStatus.FAILED,
+                        isLoadingHistoryPoints = false,
+                        historyPointsError = mapLoadError(
+                            sourceName = "điểm ngập lịch sử",
+                            loadedAt = state.historyPointsLoadedAt,
+                            error = error
+                        )
+                    )
+                }
             }
-        }
+        )
     }
 
 
     fun toggleHistoryBuffersLayer() {
-        val enabled =
-            !_uiState.value.isHistoryBuffersLayerEnabled
-
-        _uiState.value = _uiState.value.copy(
-            isHistoryBuffersLayerEnabled = enabled
-        )
-
-        val loadStatus =
-            _uiState.value.historyBuffersLoadStatus
-
-        if (
-            enabled &&
-            loadStatus != HistoricalLoadStatus.SUCCESS &&
-            loadStatus != HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryBuffers()
+        _uiState.update {
+            it.copy(
+                isHistoryBuffersLayerEnabled =
+                    !it.isHistoryBuffersLayerEnabled
+            )
         }
     }
 
@@ -415,7 +409,7 @@ class FloodMapViewModel(
 
 
                 val (featureCount, polygons, mapPolygons) =
-                    withContext(Dispatchers.Default) {
+                    withContext(parsingDispatcher) {
 
                         val featureGroups =
                             parseHistoricalFloodPolygonFeatures(
@@ -463,23 +457,11 @@ class FloodMapViewModel(
 
 
     fun toggleHistoryRadarLayer() {
-
-        val enabled =
-            !_uiState.value.isHistoryRadarLayerEnabled
-
-        _uiState.value = _uiState.value.copy(
-            isHistoryRadarLayerEnabled = enabled
-        )
-
-        val loadStatus =
-            _uiState.value.historyRadarLoadStatus
-
-        if (
-            enabled &&
-            loadStatus != HistoricalLoadStatus.SUCCESS &&
-            loadStatus != HistoricalLoadStatus.LOADING
-        ) {
-            loadHistoryRadar()
+        _uiState.update {
+            it.copy(
+                isHistoryRadarLayerEnabled =
+                    !it.isHistoryRadarLayerEnabled
+            )
         }
     }
 
@@ -509,7 +491,7 @@ class FloodMapViewModel(
 
 
                 val (featureCount, polygons, mapPolygons) =
-                    withContext(Dispatchers.Default) {
+                    withContext(parsingDispatcher) {
 
                         val featureGroups =
                             parseHistoricalFloodPolygonFeatures(
@@ -575,6 +557,105 @@ class FloodMapViewModel(
                         )
                     }
                 }
+            )
+        }
+    }
+    fun refreshMapData() {
+        val state = _uiState.value
+
+        if (
+            state.isLoadingFloodAreas ||
+            state.isLoadingFloodAlerts ||
+            state.isLoadingSafeLocations ||
+            state.isLoadingHistoryPoints ||
+            state.isLoadingHistoryBuffers ||
+            state.isLoadingHistoryRadar
+        ) {
+            return
+        }
+
+        loadFloodAreas()
+        loadFloodAlerts()
+        loadSafeLocations()
+        loadHistoryPoints()
+    }
+
+    private fun <T> launchMapRequest(
+        request: suspend () -> T,
+        onSuccess: (T) -> Unit,
+        onFailure: (Throwable) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                onSuccess(request())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                onFailure(error)
+            }
+        }
+    }
+
+    private fun mapLoadError(
+        sourceName: String,
+        loadedAt: Long?,
+        error: Throwable
+    ): String {
+        val detail = when (error) {
+            is SocketTimeoutException ->
+                "Máy chủ phản hồi chậm. Vui lòng thử lại."
+
+            is IOException ->
+                "Không thể kết nối. Vui lòng kiểm tra Internet và thử lại."
+
+            else ->
+                "Nguồn dữ liệu hiện chưa khả dụng. Vui lòng thử lại."
+        }
+
+        val previousData = if (loadedAt != null) {
+            " Đang giữ dữ liệu từ lần tải thành công trước."
+        } else {
+            ""
+        }
+
+        return "Không thể tải $sourceName. $detail$previousData"
+    }
+    fun selectCitizenArea(areaId: String?) {
+        _uiState.update { state ->
+            state.copy(
+                selectedCitizenAreaId = areaId?.takeIf { id ->
+                    state.isFloodLayerEnabled &&
+                            state.citizenAreas.any { it.id == id }
+                },
+                selectedHistoryPoint = null,
+                selectedSafeLocationId = null,
+                selectedFloodAlertId = null
+            )
+        }
+    }
+
+    fun selectHistoryPoint(point: HistoricalFloodPoint?) {
+        _uiState.update { state ->
+            state.copy(
+                selectedHistoryPoint = point?.takeIf {
+                    state.isFloodLayerEnabled &&
+                            state.isHistoryPointsLayerEnabled &&
+                            it in state.historyPoints
+                },
+                selectedCitizenAreaId = null,
+                selectedSafeLocationId = null,
+                selectedFloodAlertId = null
+            )
+        }
+    }
+
+    fun clearMapSelection() {
+        _uiState.update {
+            it.copy(
+                selectedCitizenAreaId = null,
+                selectedHistoryPoint = null,
+                selectedSafeLocationId = null,
+                selectedFloodAlertId = null
             )
         }
     }
