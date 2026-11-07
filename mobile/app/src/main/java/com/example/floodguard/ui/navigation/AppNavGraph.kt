@@ -493,6 +493,9 @@ fun AppNavGraph(
                 WarningViewModel(
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
+                    ),
+                    floodAreaRepository = FloodAreaRepository(
+                        floodAreaApi = ApiClient.floodAreaApi
                     )
                 )
             }
@@ -567,6 +570,9 @@ fun AppNavGraph(
                         savedStateHandle = createSavedStateHandle(),
                         floodAlertRepository = FloodAlertRepository(
                             floodAlertApi = ApiClient.floodAlertApi
+                        ),
+                        floodAreaRepository = FloodAreaRepository(
+                            floodAreaApi = ApiClient.floodAreaApi
                         )
                     )
                 }
