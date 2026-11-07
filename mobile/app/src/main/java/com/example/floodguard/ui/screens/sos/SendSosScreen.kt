@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -342,7 +344,7 @@ fun SendSosScreen(
 
             item {
                 SosSectionTitle(
-                    "LOẠI TÌNH HUỐNG (CHỌN NHIỀU)"
+                    "LOẠI TÌNH HUỐNG * (CHỌN NHIỀU)"
                 )
 
                 uiState.validationErrors.situations?.let {
@@ -367,7 +369,7 @@ fun SendSosScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SosSectionTitle("SỐ NGƯỜI CHÍNH XÁC")
+                    SosSectionTitle("SỐ NGƯỜI CẦN CỨU HỘ *")
 
 
                     OutlinedTextField(
@@ -418,7 +420,7 @@ fun SendSosScreen(
 
             item {
                 SosSectionTitle(
-                    "MỨC NƯỚC ƯỚC TÍNH"
+                    "MỨC NƯỚC ƯỚC TÍNH *"
                 )
 
                 uiState.validationErrors.waterLevel?.let {
@@ -454,7 +456,7 @@ fun SendSosScreen(
 
             item {
                 SosSectionTitle(
-                    "GHI CHÚ CHO ĐỘI CỨU HỘ"
+                    "GHI CHÚ (KHÔNG BẮT BUỘC)"
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -571,7 +573,7 @@ fun SendSosScreen(
                         Spacer(Modifier.height(5.dp))
 
                         Text(
-                            "Yêu cầu được gửi lên hệ thống",
+                            "Gửi thông tin và vị trí tới hệ thống",
                             fontSize = 10.sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Bold
@@ -630,7 +632,7 @@ fun SendSosScreen(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(
-                            "Xóa mẫu",
+                            "Xóa form chưa gửi",
                             color = Color(0xFF22D3A0)
                         )
                     }
@@ -650,45 +652,52 @@ fun SendSosScreen(
     }
 
 
-if (showSubmitConfirmation) {
-    AlertDialog(
-        onDismissRequest = {
-            showSubmitConfirmation = false
-        },
-        containerColor = SosCard,
-        titleContentColor = SosText,
-        textContentColor = SosText,
-        title = {
-            Text("Xác nhận gửi SOS")
-        },
-        text = {
-            Text(
-                "Bạn muốn gửi yêu cầu cứu hộ với thông tin " +
-                        "và vị trí GPS đã nhập lên hệ thống?"
-            )
-        },
-        confirmButton = {
-            TextButton(
-                enabled = formEnabled,
-                onClick = {
-                    showSubmitConfirmation = false
-                    viewModel.submitSos()
+    if (showSubmitConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                showSubmitConfirmation = false
+            },
+            containerColor = SosCard,
+            titleContentColor = SosText,
+            textContentColor = SosText,
+            title = {
+                Text("Kiểm tra thông tin SOS")
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = buildSosConfirmationSummary(uiState),
+                        color = SosText,
+                        fontSize = 14.sp
+                    )
                 }
-            ) {
-                Text("Gửi SOS", color = SosPink)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    showSubmitConfirmation = false
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = formEnabled,
+                    onClick = {
+                        showSubmitConfirmation = false
+                        viewModel.submitSos()
+                    }
+                ) {
+                    Text("Xác nhận gửi", color = SosPink)
                 }
-            ) {
-                Text("Quay lại", color = SosCyan)
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSubmitConfirmation = false
+                    }
+                ) {
+                    Text("Sửa thông tin", color = SosCyan)
+                }
             }
-        }
-    )
-}
+        )
+    }
 
 }
 
@@ -755,8 +764,9 @@ private fun SosEmergencyBanner() {
         Spacer(Modifier.height(10.dp))
 
         Text(
-            "Điền thông tin tình huống và kiểm tra vị trí GPS " +
-                    "trước khi gửi yêu cầu cứu hộ lên hệ thống.",
+            "Điền thông tin và kiểm tra vị trí GPS trước khi gửi. " +
+                    "Các mục có dấu * là bắt buộc. " +
+                    "Đóng hoặc quay lại màn hình không hủy SOS đã gửi.",
             color = SosText,
             fontSize = 14.sp,
             lineHeight = 21.sp
@@ -800,7 +810,7 @@ private fun SosLocationCard(
             Spacer(Modifier.width(6.dp))
 
             Text(
-                text = "VỊ TRÍ CỦA BẠN",
+                text = 	"VỊ TRÍ CỦA BẠN *",
                 color = SosCyan,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
@@ -1121,6 +1131,41 @@ private fun SosNoteField(
             fontSize = 11.sp,
             modifier = Modifier.align(Alignment.End)
         )
+    }
+}
+private fun buildSosConfirmationSummary(state: SendSosUiState): String {
+    val situations = SosSituation.entries
+        .filter { it in state.selectedSituations }
+        .joinToString(", ") { it.label }
+        .ifBlank { "Chưa chọn" }
+
+    val position =
+        if (state.latitude != null && state.longitude != null) {
+            "${state.latitude}, ${state.longitude}"
+        } else {
+            "Chưa có vị trí"
+        }
+
+    return buildString {
+        appendLine("Tình huống: $situations")
+        appendLine()
+        appendLine("Số người: ${state.exactPeopleCount.trim()}")
+        appendLine()
+        appendLine("Mức nước: ${state.waterLevel?.label ?: "Chưa chọn"}")
+        appendLine()
+        appendLine("Vị trí GPS: $position")
+
+        state.locationAccuracyMeters?.let { accuracy ->
+            appendLine("Độ chính xác ước tính: $accuracy m")
+        }
+
+        if (state.note.isNotBlank()) {
+            appendLine()
+            appendLine("Ghi chú: ${state.note.trim()}")
+        }
+
+        appendLine()
+        append("Xác nhận gửi thông tin và vị trí này tới hệ thống?")
     }
 }
 

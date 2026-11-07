@@ -4,5 +4,9 @@
         <activity
             android:name="com.example.floodguard.debug.CitizenMapFixtureActivity"
             android:exported="true" />
+
+        <activity
+            android:name="com.example.floodguard.debug.ResidentSosStatusFixtureActivity"
+            android:exported="true" />
     </application>
 </manifest>
