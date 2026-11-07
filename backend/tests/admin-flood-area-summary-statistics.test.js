@@ -117,19 +117,20 @@ function reset() {
   const createdAt = Timestamp.fromDate(new Date("2026-10-13T06:00:00.000Z"));
 
   const areas = [
-    ["area-low", "low", "active"],
-    ["area-medium", "medium", "inactive"],
-    ["area-high", "high", "active"],
-    ["area-critical", "critical", "inactive"],
-    ["area-high-2", "high", "active"],
+    ["area-1", "flood"],
+    ["area-2", "low_lying"],
+    ["area-3", "flood"],
+    ["area-4", "low_lying"],
+    ["area-legacy", undefined],
   ];
 
-  for (const [id, severity, status] of areas) {
+  for (const [id, areaType] of areas) {
     records.set(`flood_areas/${id}`, {
       name: `Private area ${id}`,
       description: "Private area description",
-      severity,
-      status,
+      areaType,
+      severity: "critical", // Ignore legacy fields in statistics.
+      status: "active",
       source: "test",
       geometry: {
         type: "polygon",
@@ -152,22 +153,8 @@ function tokenFor(id, role = "admin") {
   });
 }
 
-function expectedSummary(total, byStatus = {}, bySeverity = {}) {
-  return {
-    total,
-    byStatus: {
-      active: 0,
-      inactive: 0,
-      ...byStatus,
-    },
-    bySeverity: {
-      low: 0,
-      medium: 0,
-      high: 0,
-      critical: 0,
-      ...bySeverity,
-    },
-  };
+function expectedSummary(total, byAreaType = {}) {
+  return { total, byAreaType: { flood: 0, low_lying: 0, unclassified: 0, ...byAreaType } };
 }
 
 async function runTests() {
@@ -224,11 +211,7 @@ async function runTests() {
 
     assert.deepEqual(
       all.body.data,
-      expectedSummary(
-        5,
-        { active: 3, inactive: 2 },
-        { low: 1, medium: 1, high: 2, critical: 1 },
-      ),
+      expectedSummary(5, { flood: 2, low_lying: 2, unclassified: 1 }),
     );
 
     // No private details or polygon data in the response.
@@ -240,29 +223,16 @@ async function runTests() {
 
     assert.ok(readCollections.includes("flood_areas"));
 
-    // 2. CCF-161: Filter by status.
-    const active = await request("?status=active");
-    assert.equal(active.status, 200);
-    assert.deepEqual(
-      active.body.data,
-      expectedSummary(3, { active: 3 }, { low: 1, high: 2 }),
-    );
-
-    // 3. Filter by severity.
-    const high = await request("?severity=high");
-    assert.equal(high.status, 200);
-    assert.deepEqual(
-      high.body.data,
-      expectedSummary(2, { active: 2 }, { high: 2 }),
-    );
-
-    // 4. Combined filters.
-    const combined = await request("?status=inactive&severity=medium");
-    assert.equal(combined.status, 200);
-    assert.deepEqual(
-      combined.body.data,
-      expectedSummary(1, { inactive: 1 }, { medium: 1 }),
-    );
+    // Type filters include an explicit review bucket for old data.
+    const floods = await request("?areaType=flood");
+    assert.equal(floods.status, 200);
+    assert.deepEqual(floods.body.data, expectedSummary(2, { flood: 2 }));
+    const lowLying = await request("?areaType=low_lying");
+    assert.equal(lowLying.status, 200);
+    assert.deepEqual(lowLying.body.data, expectedSummary(2, { low_lying: 2 }));
+    const legacy = await request("?areaType=unclassified");
+    assert.equal(legacy.status, 200);
+    assert.deepEqual(legacy.body.data, expectedSummary(1, { unclassified: 1 }));
 
     // 5. Inclusive date range.
     const inclusive = await request(
@@ -271,11 +241,7 @@ async function runTests() {
     assert.equal(inclusive.status, 200);
     assert.deepEqual(
       inclusive.body.data,
-      expectedSummary(
-        5,
-        { active: 3, inactive: 2 },
-        { low: 1, medium: 1, high: 2, critical: 1 },
-      ),
+      expectedSummary(5, { flood: 2, low_lying: 2, unclassified: 1 }),
     );
 
     // 6. Date range excluding all records.
@@ -286,8 +252,10 @@ async function runTests() {
     // 7. Reject invalid query parameters.
     await expectRejected("?unexpected=value", 400);
     await expectRejected("?from=2026-10-13", 400);
-    await expectRejected("?status=unknown", 400);
-    await expectRejected("?severity=unknown", 400);
+    await expectRejected("?status=active", 400);
+    await expectRejected("?severity=high", 400);
+    await expectRejected("?areaType=unknown", 400);
+    await expectRejected("?areaType=flood&areaType=low_lying", 400);
     await expectRejected(
       "?from=2026-10-14T00:00:00Z&to=2026-10-13T00:00:00Z",
       400,

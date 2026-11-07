@@ -18,7 +18,7 @@ function loadService(fetch) {
   });
   return exports;
 }
-const area = { id: 'test', name: 'TEST ONLY', severity: 'high', status: 'active', source: null, description: null,
+const area = { id: 'test', name: 'TEST ONLY', areaType: 'flood', source: null, description: null,
   geometry: { type: 'polygon', points: [{ latitude: 16, longitude: 108 }, { latitude: 17, longitude: 108 }, { latitude: 16, longitude: 109 }] } };
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -61,5 +61,18 @@ test('rejects entire invalid geometry without deleting bad vertices or inventing
     assert.equal(isValidFloodArea({ ...area, geometry: { type: 'polygon', points: [point, ...area.geometry.points] } }), false);
   }
   assert.equal(isValidFloodArea({ ...area, geometry: { type: 'polygon', points: [area.geometry.points[0], area.geometry.points[0], area.geometry.points[1]] } }), false);
-  for (const bad of [null, {}, { ...area, severity: 'unknown' }, { ...area, status: 'unknown' }, { ...area, geometry: { type: 'Point', points: area.geometry.points } }]) assert.equal(isValidFloodArea(bad), false);
+  for (const bad of [null, {}, { ...area, areaType: 'unknown' }, { ...area, geometry: { type: 'Point', points: area.geometry.points } }]) assert.equal(isValidFloodArea(bad), false);
+});
+
+test('accepts live areaType contract including null and omitted legacy classification', () => {
+  const { isValidFloodArea } = loadService(() => {});
+  for (const areaType of ['flood', 'low_lying', null, undefined]) assert.equal(isValidFloodArea({ ...area, areaType }), true);
+});
+
+test('validates the captured live response when LIVE_FLOOD_AREAS is provided', { skip: !process.env.LIVE_FLOOD_AREAS }, async () => {
+  const body = JSON.parse(fs.readFileSync(process.env.LIVE_FLOOD_AREAS, 'utf8'));
+  const { floodAreaService: service } = loadService(async () => response(body));
+  const items = await service.getFloodAreas();
+  assert.equal(items.length, body.data.floodAreas.length);
+  assert(items.length > 0);
 });

@@ -382,8 +382,7 @@ function sampleArea() {
         { latitude: 16.04, longitude: 108.22 },
       ],
     },
-    severity: "low",
-    status: "inactive",
+    areaType: "flood",
     source: "test",
   };
 }
@@ -442,8 +441,7 @@ function assertPublicArea(area) {
     "name",
     "description",
     "geometry",
-    "severity",
-    "status",
+    "areaType",
     "source",
     "createdAt",
     "updatedAt",
@@ -509,7 +507,7 @@ async function runTests() {
       ["GET", "", undefined],
       ["GET", "/area-1", undefined],
       ["POST", "", sampleArea()],
-      ["PATCH", "/area-1", { severity: "high" }],
+      ["PATCH", "/area-1", { areaType: "low_lying" }],
       ["DELETE", "/area-1", undefined],
     ]) {
       await expectRejected(method, path, undefined, 401, body);
@@ -564,12 +562,12 @@ async function runTests() {
     for (const method of ["GET", "PATCH", "DELETE"]) {
       await expectRejected(
         method, "/missing", adminToken, 404,
-        method === "PATCH" ? { status: "inactive" } : undefined,
+        method === "PATCH" ? { areaType: "flood" } : undefined,
       );
 
       await expectRejected(
         method, "/bad%2Fid", adminToken, 400,
-        method === "PATCH" ? { status: "inactive" } : undefined,
+        method === "PATCH" ? { areaType: "flood" } : undefined,
       );
     }
 
@@ -592,7 +590,10 @@ async function runTests() {
       null,
       { ...sampleArea(), name: "   " },
       { ...sampleArea(), description: 123 },
-      { ...sampleArea(), severity: "unknown" },
+      { ...sampleArea(), areaType: "unknown" },
+      { ...sampleArea(), areaType: null },
+      { ...sampleArea(), areaType: undefined },
+      { ...sampleArea(), severity: "high" },
       { ...sampleArea(), status: "unknown" },
       { ...sampleArea(), source: "" },
       { ...sampleArea(), geometry: null },
@@ -692,11 +693,11 @@ async function runTests() {
     // Partial update preserves original timestamp and internal data.
     const updated = await request(
       "PATCH", "/area-1", adminToken,
-      { severity: "high", source: "  admin test  " },
+      { areaType: "low_lying", source: "  admin test  " },
     );
 
     assert.equal(updated.status, 200);
-    assert.equal(updated.body.data.floodArea.severity, "high");
+    assert.equal(updated.body.data.floodArea.areaType, "low_lying");
     assert.equal(updated.body.data.floodArea.source, "admin test");
 
     const savedArea = records.get("flood_areas/area-1");
@@ -706,13 +707,13 @@ async function runTests() {
     assert.equal(savedArea.updatedAt, fixedTime);
     assert.deepEqual(
       auditEvents[1].metadata.changedFields,
-      ["severity", "source"],
+      ["areaType", "source"],
     );
 
     // Repeating the same normalized values creates no extra audit.
     const repeated = await request(
       "PATCH", "/area-1", adminToken,
-      { severity: "high", source: "admin test" },
+      { areaType: "low_lying", source: "admin test" },
     );
 
     assert.equal(repeated.status, 200);
@@ -755,7 +756,7 @@ async function runTests() {
     // Transaction failures must not save changes or emit audit.
     for (const [method, path, body] of [
       ["POST", "", sampleArea()],
-      ["PATCH", "/area-1", { severity: "critical" }],
+      ["PATCH", "/area-1", { areaType: "low_lying" }],
       ["DELETE", "/area-1", undefined],
     ]) {
       reset();
@@ -778,11 +779,11 @@ async function runTests() {
     failAudit = true;
 
     const auditFailure = await request(
-      "PATCH", "/area-1", adminToken, { severity: "high" },
+      "PATCH", "/area-1", adminToken, { areaType: "low_lying" },
     );
 
     assert.equal(auditFailure.status, 200);
-    assert.equal(records.get("flood_areas/area-1").severity, "high");
+    assert.equal(records.get("flood_areas/area-1").areaType, "low_lying");
     assert.equal(auditEvents.length, 1);
 
     // Alert writes validate the area inside their transaction.
@@ -860,7 +861,7 @@ async function runTests() {
 
     await Promise.all([
       updateFloodAreaForAdmin(
-        "admin", "area-1", { severity: "high" },
+        "admin", "area-1", { areaType: "low_lying" },
       ),
       updateFloodAreaForAdmin(
         "admin", "area-1", { source: "updated-source" },
@@ -868,9 +869,33 @@ async function runTests() {
     ]);
 
     assert.ok(retryCount > 0);
-    assert.equal(records.get("flood_areas/area-1").severity, "high");
+    assert.equal(records.get("flood_areas/area-1").areaType, "low_lying");
     assert.equal(records.get("flood_areas/area-1").source, "updated-source");
     assert.equal(auditEvents.length, 2);
+
+    // Explicit legacy classification: no guessed type and no writes on failure.
+    reset();
+    const legacy = { ...records.get("flood_areas/area-1"), status: "active", severity: "high" };
+    delete legacy.areaType;
+    save("flood_areas/area-1", legacy);
+    const legacyRead = await request("GET", "/area-1", adminToken);
+    assert.equal(legacyRead.body.data.floodArea.areaType, null);
+    assert.equal(Object.hasOwn(legacyRead.body.data.floodArea, "status"), false);
+    assert.equal(Object.hasOwn(legacyRead.body.data.floodArea, "severity"), false);
+    await expectRejected("PATCH", "/area-1", adminToken, 400, { name: "Cannot guess type" });
+    const classified = await request("PATCH", "/area-1", adminToken, { areaType: "low_lying" });
+    assert.equal(classified.status, 200);
+    assert.equal(classified.body.data.floodArea.areaType, "low_lying");
+    const migrated = records.get("flood_areas/area-1");
+    assert.equal(Object.hasOwn(migrated, "status"), false);
+    assert.equal(Object.hasOwn(migrated, "severity"), false);
+    assert.equal(migrated.internalField, "preserve-me");
+    assert.equal(migrated.createdAt, originalTime);
+    await expectRejected("PATCH", "/area-1", adminToken, 400, { status: "active" });
+    await expectRejected("PATCH", "/area-1", adminToken, 400, { severity: "low" });
+    const lowLying = await request("POST", "", adminToken, { ...sampleArea(), areaType: "low_lying" });
+    assert.equal(lowLying.status, 201);
+    assert.equal(lowLying.body.data.floodArea.areaType, "low_lying");
 
     console.log("Admin flood area management API tests passed");
   } finally {

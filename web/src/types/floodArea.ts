@@ -1,4 +1,4 @@
-export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical';
+export type AreaType = 'flood' | 'low_lying';
 
 export interface LatLngPoint {
   latitude: number;
@@ -13,8 +13,7 @@ export interface FloodAreaGeometry {
 export interface FloodArea {
   id: string;
   name: string;
-  severity: SeverityLevel;
-  status: 'active' | 'inactive';
+  areaType?: AreaType | null;
   source?: string | null;
   description?: string | null;
   geometry: FloodAreaGeometry;

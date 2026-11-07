@@ -8,7 +8,7 @@ export const SEVERITY_LABEL: Record<Severity, string> = {
   low: "Thấp",
 };
 
-/** Used to rank flood areas: higher = more dangerous. */
+/** Severity weights apply to warnings, never to map area categories. */
 export const SEVERITY_WEIGHT: Record<Severity, number> = {
   critical: 4,
   high: 3,
@@ -91,25 +91,19 @@ export function countAlertsBySeverity(alerts: FloodAlert[]): Record<Severity, nu
 export interface RiskArea {
   id: string;
   name: string;
-  severity: Severity;
+  areaType: FloodArea["areaType"];
   alertCount: number;
 }
 
-/** Flood areas ranked by severity, then by number of active alerts. */
+/** Linked active warning counts only; this does not calculate flood risk. */
 export function rankRiskAreas(areas: FloodArea[], alerts: FloodAlert[], limit = 5): RiskArea[] {
-  return areas
-    .filter((area) => area.status === "active")
-    .map((area) => ({
-      id: area.id,
-      name: area.name,
-      severity: area.severity,
-      alertCount: alerts.filter((alert) => alert.areaId === area.id).length,
-    }))
-    .sort(
-      (a, b) =>
-        (SEVERITY_WEIGHT[b.severity] ?? 0) - (SEVERITY_WEIGHT[a.severity] ?? 0) ||
-        b.alertCount - a.alertCount,
-    )
+  return areas.map((area) => ({
+    id: area.id,
+    name: area.name,
+    areaType: area.areaType === "flood" || area.areaType === "low_lying" ? area.areaType : null,
+    alertCount: alerts.filter((alert) => alert.status === "active" && alert.areaId === area.id).length,
+  })).filter((area) => area.alertCount > 0)
+    .sort((a, b) => b.alertCount - a.alertCount || a.id.localeCompare(b.id))
     .slice(0, limit);
 }
 

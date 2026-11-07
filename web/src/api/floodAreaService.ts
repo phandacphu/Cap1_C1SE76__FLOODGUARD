@@ -9,8 +9,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export function isValidFloodArea(value: unknown): value is FloodArea {
   if (!record(value) || typeof value.id !== 'string' || !value.id.trim() ||
       typeof value.name !== 'string' || !value.name.trim() ||
-      !['low', 'medium', 'high', 'critical'].includes(String(value.severity)) ||
-      !['active', 'inactive'].includes(String(value.status)) ||
+      !(value.areaType == null || ['flood', 'low_lying'].includes(String(value.areaType))) ||
       ![value.source, value.description].every(v => v == null || typeof v === 'string')) return false;
   const geometry = value.geometry;
   if (!record(geometry) || geometry.type !== 'polygon' || !Array.isArray(geometry.points) || geometry.points.length < 3) return false;

@@ -7,7 +7,6 @@ import com.example.floodguard.data.model.FloodPointDto
 import com.google.gson.Gson
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,7 +23,7 @@ class RescueFloodMapLayersTest {
         assertEquals(triangle.map { RescueFloodVertex(it.latitude, it.longitude) }, mapped.vertices)
         assertEquals("Nguồn kiểm thử", mapped.source)
         assertEquals("Mô tả từ API", mapped.description)
-        assertEquals(RescueFloodSeverity.HIGH, mapped.severity)
+        assertEquals(RescueAreaType.FLOOD, mapped.areaType)
     }
 
     @Test
@@ -68,9 +67,9 @@ class RescueFloodMapLayersTest {
 
     @Test
     fun `malformed Gson records cannot crash map or replace missing source with invented data`() {
-        val missingGeometry = Gson().fromJson("""{"id":"broken"}""", FloodAreaDto::class.java)
+        val missingGeometry = Gson().fromJson("""{"id":"broken","areaType":"flood"}""", FloodAreaDto::class.java)
         val missingPoint = Gson().fromJson(
-            """{"id":"bad-point","geometry":{"type":"polygon","points":[null]}}""",
+            """{"id":"bad-point","areaType":"flood","geometry":{"type":"polygon","points":[null]}}""",
             FloodAreaDto::class.java
         )
         val result = buildRescueFloodMapLayers(listOf(null, missingGeometry, missingPoint, area().copy(source = " ", description = null)))
@@ -87,17 +86,87 @@ class RescueFloodMapLayersTest {
     }
 
     @Test
-    fun `inactive and unknown statuses remain distinguishable from active areas`() {
+    fun `area classification ignores legacy status and severity`() {
         val result = buildRescueFloodMapLayers(listOf(
-            area("off").copy(status = "inactive", severity = "critical"),
-            area("unknown").copy(status = "unexpected", severity = "future"),
-            area("low").copy(severity = "low"), area("critical").copy(severity = "critical")
+            area("flood").copy(status = "inactive", severity = "critical"),
+            area("low-lying", areaType = "low_lying").copy(status = "unexpected", severity = "low")
         ))
-        assertEquals(listOf("critical", "low"), result.areas.take(2).map { it.id })
-        assertFalse(result.areas.first { it.id == "off" }.isActive)
-        val unknown = result.areas.first { it.id == "unknown" }
-        assertEquals(RescueFloodSeverity.UNKNOWN, unknown.severity)
-        assertEquals("Chưa xác định trạng thái", unknown.statusLabel)
+        assertEquals(listOf("flood", "low-lying"), result.areas.map { it.id })
+        assertEquals(RescueAreaType.FLOOD, result.areas[0].areaType)
+        assertEquals(RescueAreaType.LOW_LYING, result.areas[1].areaType)
+    }
+
+    @Test
+    fun `new API JSON without status or severity maps to required categories and colors`() {
+        val regions = listOf("flood", "low_lying").map { type ->
+            Gson().fromJson("""{
+              "id":"$type","name":"Vùng từ API","description":"Mô tả thật","source":"Admin",
+              "areaType":"$type",
+              "geometry":{"type":"polygon","points":[
+                {"latitude":16.0,"longitude":108.0},
+                {"latitude":16.02,"longitude":108.0},
+                {"latitude":16.0,"longitude":108.03}
+              ]}
+            }""", FloodAreaDto::class.java)
+        }
+        val result = buildRescueFloodMapLayers(regions)
+        assertEquals(0, result.skippedCount)
+        assertEquals(0, result.unclassifiedCount)
+        assertEquals(0, result.legacyFormatCount)
+        val flood = result.areas[0]
+        val lowLying = result.areas[1]
+        assertEquals("Vùng ngập", flood.areaType.label)
+        assertEquals(0xFFFDD835L, flood.areaType.colorArgb)
+        assertEquals("Vùng trũng", lowLying.areaType.label)
+        assertEquals(0xFFE53935L, lowLying.areaType.colorArgb)
+        assertEquals(0.32f, lowLying.areaType.fillAlpha, 0.001f)
+        assertEquals("Mô tả thật", lowLying.description)
+    }
+
+    @Test
+    fun `unclassified records never get an inferred type from legacy fields`() {
+        val unknown = listOf(null, "", "future", "FLOOD", " flood ").mapIndexed { index, type ->
+            area("unknown-$index", areaType = type).copy(status = "active", severity = "high")
+        }
+        val result = buildRescueFloodMapLayers(unknown + area("valid"))
+        assertEquals(listOf("valid"), result.areas.map { it.id })
+        assertEquals(5, result.unclassifiedCount)
+        assertEquals(0, result.skippedCount)
+    }
+
+    @Test
+    fun `old JSON with no areaType is reported as unclassified`() {
+        val old = Gson().fromJson("""{
+          "id":"old","name":"Bản ghi cũ","source":"Admin","status":"active","severity":"high",
+          "geometry":{"type":"polygon","points":[
+            {"latitude":16.0,"longitude":108.0},
+            {"latitude":16.02,"longitude":108.0},
+            {"latitude":16.0,"longitude":108.03}
+          ]}
+        }""", FloodAreaDto::class.java)
+        val result = buildRescueFloodMapLayers(listOf(old))
+        assertTrue(result.areas.isEmpty())
+        assertEquals(1, result.unclassifiedCount)
+        assertEquals(0, result.skippedCount)
+        assertEquals(1, result.legacyFormatCount)
+    }
+
+    @Test
+    fun `new API unclassified records are distinct from legacy contract mismatches`() {
+        val current = Gson().fromJson("""{
+          "id":"current-unclassified","areaType":null,"name":"Vùng chờ phân loại",
+          "geometry":{"type":"polygon","points":[
+            {"latitude":16.0,"longitude":108.0},
+            {"latitude":16.02,"longitude":108.0},
+            {"latitude":16.0,"longitude":108.03}
+          ]}
+        }""", FloodAreaDto::class.java)
+        val legacy = area("legacy", areaType = null)
+        val result = buildRescueFloodMapLayers(listOf(current, legacy, area("valid")))
+        assertEquals(listOf("valid"), result.areas.map { it.id })
+        assertEquals(2, result.unclassifiedCount)
+        assertEquals(1, result.legacyFormatCount)
+        assertEquals(0, result.skippedCount)
     }
 
     @Test
@@ -127,9 +196,10 @@ class RescueFloodMapLayersTest {
         assertEquals("Thời gian không hợp lệ", formatRescueWarningTime("not-a-date"))
     }
 
-    private fun area(id: String = "a", points: List<FloodPointDto> = triangle) = FloodAreaDto(
+    private fun area(id: String = "a", points: List<FloodPointDto> = triangle, areaType: String? = "flood") = FloodAreaDto(
         id = id, name = "Vùng kiểm thử", description = "Mô tả từ API",
-        geometry = FloodGeometryDto("polygon", points), severity = "high", status = "active", source = "Nguồn kiểm thử"
+        geometry = FloodGeometryDto("polygon", points), severity = "high", status = "active", source = "Nguồn kiểm thử",
+        areaType = areaType
     )
 
     private fun warning(id: String, areaId: String, severity: String) = FloodAlertDto(

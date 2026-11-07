@@ -44,7 +44,7 @@ export function AdminDashboard() {
     const alertCounts = countAlertsBySeverity(alerts);
     const openShelters = safeLocations.filter((s) => s.status === "active");
     const totalCapacity = openShelters.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
-    const deepAreas = areas.filter((a) => a.severity === "high" || a.severity === "critical");
+
     const staff = users ? users.filter((u) => u.role === "rescue") : null;
     const weekAgo = now.getTime() - 7 * DAY_MS;
 
@@ -54,8 +54,9 @@ export function AdminDashboard() {
       alertCounts,
       affectedAreas: new Set(alerts.map((a) => a.areaId)).size,
       areaNames: new Map(areas.map((a) => [a.id, a.name])),
-      activeAreas: areas.filter((a) => a.status === "active"),
-      deepAreas,
+      floodAreas: areas.filter((a) => a.areaType === "flood"),
+      lowLyingAreas: areas.filter((a) => a.areaType === "low_lying"),
+      unclassifiedAreas: areas.filter((a) => a.areaType !== "flood" && a.areaType !== "low_lying"),
       openShelters,
       totalCapacity,
       sos,
@@ -180,11 +181,11 @@ export function AdminDashboard() {
                 footerValue={`${view.affectedAreas} khu vực`}
               />
               <KpiCard
-                label="Vùng ngập trọng điểm"
+                label="Vùng ngập Admin"
                 icon="flood"
                 tone="water"
-                value={String(view.activeAreas.length).padStart(2, "0")}
-                sub={`${view.deepAreas.length} vùng mức Cao / Khẩn cấp`}
+                value={String(view.floodAreas.length).padStart(2, "0")}
+                sub={`${view.lowLyingAreas.length} vùng trũng · ${view.unclassifiedAreas.length} chưa phân loại`}
                 footerLabel="Tổng số vùng"
                 footerValue={`${view.areaNames.size} vùng`}
               />
@@ -260,11 +261,11 @@ export function AdminDashboard() {
               </Panel>
 
               <Panel
-                title="Top khu vực rủi ro cao"
-                subtitle="Xếp theo mức độ nguy hiểm của vùng ngập"
+                title="Vùng có cảnh báo"
+                subtitle="Số cảnh báo liên kết theo lần tải gần nhất"
                 tag={
                   <span className="rounded bg-sos/15 px-2 py-1 font-mono text-[10px] text-sos">
-                    BÁO ĐỘNG ĐỎ
+                    CẢNH BÁO LIÊN KẾT
                   </span>
                 }
               >

@@ -1,43 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import './floodMap.css';
 import { floodAreaService, isValidFloodArea } from '../../api/floodAreaService';
 import { useAuth } from '../../context/AuthContext';
 import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { ADMIN_NAV } from '../../components/layout/navConfig';
-import type { FloodArea, SeverityLevel } from '../../types/floodArea';
+import type { FloodArea } from '../../types/floodArea';
 
-const SEVERITY_COLOR_MAP: Record<
-  SeverityLevel,
-  { stroke: string; fill: string; label: string; badge: string }
-> = {
-  critical: {
-    stroke: '#DC2626',
-    fill: '#991B1B',
-    label: 'Khẩn cấp',
-    badge: 'bg-red-950/60 border border-red-700/60 text-red-400',
-  },
-  high: {
-    stroke: '#EA580C',
-    fill: '#9A3412',
-    label: 'Cao',
-    badge: 'bg-orange-950/60 border border-orange-700/60 text-orange-400',
-  },
-  medium: {
-    stroke: '#D97706',
-    fill: '#92400E',
-    label: 'Trung bình',
-    badge: 'bg-amber-950/60 border border-amber-700/60 text-amber-400',
-  },
-  low: {
-    stroke: '#2563EB',
-    fill: '#1E40AF',
-    label: 'Thấp',
-    badge: 'bg-blue-950/60 border border-blue-700/60 text-blue-400',
-  },
+const AREA_STYLES = {
+  flood: { stroke: '#ea580c', fill: '#9a3412', label: 'Vùng ngập', badge: 'bg-orange-950 text-orange-300' },
+  low_lying: { stroke: '#2563eb', fill: '#1e40af', label: 'Vùng trũng', badge: 'bg-blue-950 text-blue-300' },
+  unknown: { stroke: '#94a3b8', fill: '#475569', label: 'Chưa phân loại', badge: 'bg-slate-800 text-slate-300' },
 };
+const areaStyle = (area: FloodArea) => AREA_STYLES[area.areaType ?? 'unknown'];
 
 const escapeHtml = (unsafe?: string | null): string => {
   if (!unsafe) return '';
@@ -49,7 +27,7 @@ const escapeHtml = (unsafe?: string | null): string => {
     .replace(/'/g, '&#039;');
 };
 
-type FilterStatus = 'active_only' | 'all' | 'inactive_only';
+type FilterStatus = 'all' | 'flood' | 'low_lying' | 'unknown';
 
 export const FloodMapView: React.FC = () => {
   const { user } = useAuth();
@@ -68,7 +46,7 @@ export const FloodMapView: React.FC = () => {
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const isStaleData = lastUpdated !== null && dataError !== null;
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>('active_only');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [tileErrorCount, setTileErrorCount] = useState<number>(0);
 
   const [adminAlertCount, setAdminAlertCount] = useState<number | undefined>(undefined);
@@ -137,12 +115,25 @@ export const FloodMapView: React.FC = () => {
     const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       maxZoom: 19,
+      referrerPolicy: 'strict-origin-when-cross-origin',
     });
 
     tileLayerRef.current = tileLayer;
-    tileLayer.on('tileerror', () => {
-      setTileErrorCount((prev) => prev + 1);
+    const failedTiles = new Set<HTMLImageElement>();
+    tileLayer.on('tileerror', event => {
+      failedTiles.add(event.tile as HTMLImageElement);
+      setTileErrorCount(failedTiles.size);
     });
+    tileLayer.on('tileload', event => {
+      failedTiles.delete(event.tile as HTMLImageElement);
+      setTileErrorCount(failedTiles.size);
+    });
+    tileLayer.on('tileunload', event => {
+      failedTiles.delete(event.tile as HTMLImageElement);
+      setTileErrorCount(failedTiles.size);
+    });
+    const retryTiles = () => { map.invalidateSize(); tileLayer.redraw(); };
+    window.addEventListener('online', retryTiles);
 
     tileLayer.addTo(map);
 
@@ -153,6 +144,7 @@ export const FloodMapView: React.FC = () => {
     observer.observe(mapContainerRef.current);
 
     return () => {
+      window.removeEventListener('online', retryTiles);
       observer.disconnect();
       tileLayer.off();
       tileLayerRef.current = null;
@@ -162,14 +154,10 @@ export const FloodMapView: React.FC = () => {
     };
   }, []);
 
-  // Lọc dữ liệu theo trạng thái active / inactive (A.2)
+  // Filter current areaType classification, independently of warning severity.
   const filteredAreas = useMemo(() => {
-    if (statusFilter === 'active_only') {
-      return floodAreas.filter((a) => a.status === 'active');
-    }
-    if (statusFilter === 'inactive_only') {
-      return floodAreas.filter((a) => a.status !== 'active');
-    }
+    if (statusFilter === 'unknown') return floodAreas.filter(area => area.areaType == null);
+    if (statusFilter !== 'all') return floodAreas.filter(area => area.areaType === statusFilter);
     return floodAreas;
   }, [floodAreas, statusFilter]);
 
@@ -190,30 +178,27 @@ export const FloodMapView: React.FC = () => {
           return point;
         });
 
-        const colorCfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
-        const isAreaActive = area.status === 'active';
+        const colorCfg = areaStyle(area);
+        const isAreaActive = area.areaType != null;
 
         const polygon = L.polygon(latLngs, {
-          color: isAreaActive ? colorCfg.stroke : '#64748B',
+          color: colorCfg.stroke,
           weight: isAreaActive ? 2.5 : 1.5,
           dashArray: isAreaActive ? undefined : '5, 5',
           opacity: isAreaActive ? 0.95 : 0.4,
-          fillColor: isAreaActive ? colorCfg.fill : '#475569',
+          fillColor: colorCfg.fill,
           fillOpacity: isAreaActive ? 0.4 : 0.12,
         });
 
         const safeName = escapeHtml(area.name);
-        const safeStatus = isAreaActive
-          ? '<span style="color: #10B981; font-weight: bold;">● ĐANG HOẠT ĐỘNG (ACTIVE)</span>'
-          : '<span style="color: #94A3B8; font-weight: bold;">○ NGỪNG HOẠT ĐỘNG (INACTIVE)</span>';
         const safeSource = escapeHtml(area.source || 'Hệ thống FloodGuard');
         const safeDesc = escapeHtml(area.description || 'Không có mô tả chi tiết');
 
         const popupContent = `
           <div style="color: #0f172a; font-family: ui-monospace, monospace; padding: 4px; font-size: 11px; line-height: 1.5;">
             <b style="font-size: 12px; color: ${isAreaActive ? '#0284c7' : '#64748B'};">${safeName}</b><br/>
-            <b>Mức độ:</b> ${colorCfg.label} (${escapeHtml(area.severity)})<br/>
-            <b>Trạng thái:</b> ${safeStatus}<br/>
+            <b>Loại vùng:</b> ${colorCfg.label} (${escapeHtml(area.areaType ?? 'unknown')})<br/>
+            <span>Dữ liệu tham khảo, không xác nhận ngập hiện tại.</span><br/>
             <b>Nguồn tin:</b> ${safeSource}<br/>
             <p style="margin: 4px 0 0 0; color: #475569;">${safeDesc}</p>
           </div>
@@ -226,7 +211,9 @@ export const FloodMapView: React.FC = () => {
     });
 
     if (bounds.length > 0 && mapInstanceRef.current) {
-      mapInstanceRef.current.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [24, 24] });
+      // Avoid letting a remote test polygon zoom the initial view out to the whole world.
+      const first = filteredAreas[0];
+      if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
   }, [filteredAreas]);
 
@@ -236,8 +223,8 @@ export const FloodMapView: React.FC = () => {
     }
   }, [renderPolygons]);
 
-  const activeCount = floodAreas.filter((a) => a.status === 'active').length;
-  const inactiveCount = floodAreas.filter((a) => a.status !== 'active').length;
+  const floodCount = floodAreas.filter(a => a.areaType === 'flood').length;
+  const lowLyingCount = floodAreas.filter(a => a.areaType === 'low_lying').length;
 
   const mapContent = (
     <div className="w-full space-y-4 font-sans text-slate-100 pb-6">
@@ -249,12 +236,12 @@ export const FloodMapView: React.FC = () => {
             </h1>
             {isStaleData && (
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 border border-amber-600 text-amber-300">
-                ⚠️ Dữ liệu lưu tạm (Mất kết nối máy chủ)
+                ⚠️ Dữ liệu lưu tạm (Tải lại chưa thành công)
               </span>
             )}
           </div>
           <p className="text-xs font-mono text-slate-400 mt-0.5">
-            Vùng ngập tham khảo từ hệ thống. Trạng thái hoạt động không xác nhận ngập theo thời gian thực.
+            Vùng ngập tham khảo từ hệ thống. Phân loại vùng không xác nhận ngập theo thời gian thực.
           </p>
         </div>
 
@@ -262,12 +249,12 @@ export const FloodMapView: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center bg-[#081B30] border border-[#1E3A5F] rounded-lg p-0.5 text-xs font-mono">
             <button
-              onClick={() => setStatusFilter('active_only')}
+              onClick={() => setStatusFilter('flood')}
               className={`px-2.5 py-1 rounded-md transition-colors ${
-                statusFilter === 'active_only' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                statusFilter === 'flood' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Hoạt động ({activeCount})
+              Vùng ngập ({floodCount})
             </button>
             <button
               onClick={() => setStatusFilter('all')}
@@ -278,32 +265,20 @@ export const FloodMapView: React.FC = () => {
               Tất cả ({floodAreas.length})
             </button>
             <button
-              onClick={() => setStatusFilter('inactive_only')}
+              onClick={() => setStatusFilter('low_lying')}
               className={`px-2.5 py-1 rounded-md transition-colors ${
-                statusFilter === 'inactive_only' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
+                statusFilter === 'low_lying' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Đã ngưng ({inactiveCount})
+              Vùng trũng ({lowLyingCount})
+            </button>
+            <button onClick={() => setStatusFilter('unknown')} className={`px-2.5 py-1 rounded-md ${statusFilter === 'unknown' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}>
+              Chưa phân loại ({floodAreas.filter(area => area.areaType == null).length})
             </button>
           </div>
 
-          <div className="flex items-center space-x-2 text-[11px] font-mono bg-[#081B30] border border-[#1E3A5F] px-3 py-1.5 rounded-lg">
-            <span className="flex items-center space-x-1">
-              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-              <span className="text-slate-300">Khẩn cấp</span>
-            </span>
-            <span className="flex items-center space-x-1">
-              <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-              <span className="text-slate-300">Cao</span>
-            </span>
-            <span className="flex items-center space-x-1">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span className="text-slate-300">Vừa</span>
-            </span>
-            <span className="flex items-center space-x-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              <span className="text-slate-300">Thấp</span>
-            </span>
+          <div className="flex gap-3 text-xs text-slate-300" aria-label="Chú giải">
+            <span>🟠 Vùng ngập</span><span>🔵 Vùng trũng</span><span>⚪ Chưa phân loại</span>
           </div>
         </div>
       </div>
@@ -341,7 +316,7 @@ export const FloodMapView: React.FC = () => {
               if (mapInstanceRef.current) {
                 mapInstanceRef.current.invalidateSize();
                 tileLayerRef.current?.redraw();
-                setTileErrorCount(0);
+                // Failed tiles stay flagged until replaced or successfully loaded.
               }
             }}
             className="px-2 py-0.5 bg-amber-900 rounded border border-amber-500 text-[11px]"
@@ -359,7 +334,7 @@ export const FloodMapView: React.FC = () => {
               <span>Đang tải dữ liệu vùng ngập và khởi tạo bản đồ OpenStreetMap...</span>
             </div>
           )}
-          <div ref={mapContainerRef} className="w-full h-[560px] z-0" />
+          <div ref={mapContainerRef} className="floodguard-map w-full h-[560px] z-0" />
         </div>
 
         <div className="bg-[#081B30] border border-[#1E3A5F] rounded-xl p-4 flex flex-col justify-between shadow-lg">
@@ -367,7 +342,7 @@ export const FloodMapView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#1E3A5F]/40 pb-2">
               <span className="text-xs font-bold font-mono text-cyan-300 uppercase">Danh sách vùng ({filteredAreas.length})</span>
               <span className="text-[10px] font-mono text-slate-400">
-                {statusFilter === 'active_only' ? 'Chỉ hoạt động' : statusFilter === 'inactive_only' ? 'Đã ngưng' : 'Tất cả'}
+                {statusFilter === 'flood' ? 'Vùng ngập' : statusFilter === 'low_lying' ? 'Vùng trũng' : statusFilter === 'unknown' ? 'Chưa phân loại' : 'Tất cả'}
               </span>
             </div>
 
@@ -378,14 +353,17 @@ export const FloodMapView: React.FC = () => {
                 </div>
               )}
               {filteredAreas.map((area) => {
-                const cfg = SEVERITY_COLOR_MAP[area.severity] || SEVERITY_COLOR_MAP.low;
+                const cfg = areaStyle(area);
                 const isSelected = selectedArea?.id === area.id;
-                const isAreaActive = area.status === 'active';
+                const isAreaActive = area.areaType != null;
 
                 return (
                   <div
                     key={area.id}
-                    onClick={() => setSelectedArea(area)}
+                    onClick={() => {
+                      setSelectedArea(area);
+                      mapInstanceRef.current?.fitBounds(area.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 15 });
+                    }}
                     className={`p-2.5 rounded-lg border text-xs font-mono cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-[#122B48] border-cyan-400 text-white shadow-md'
@@ -402,7 +380,7 @@ export const FloodMapView: React.FC = () => {
                     </div>
                     <div className="text-[10px] font-mono mt-1 flex items-center justify-between">
                       <span className={isAreaActive ? 'text-emerald-400' : 'text-slate-500'}>
-                        {isAreaActive ? '● Đang hoạt động' : '○ Đã ngừng'}
+                        {cfg.label}
                       </span>
                       <span className="text-slate-500 truncate max-w-[100px]">{area.source || 'Chưa rõ nguồn'}</span>
                     </div>

@@ -1,12 +1,14 @@
-✔ reads real nested envelope, shares in-flight requests and cache; explicit refresh bypasses cache (90.461906ms)
-✔ empty array is valid; malformed envelope, success=false and invalid JSON fail explicitly (70.435656ms)
-✔ propagates HTTP 401/403/500 and network failures; failed refresh can recover (37.730784ms)
-✔ rejects entire invalid geometry without deleting bad vertices or inventing a polygon (8.05851ms)
-ℹ tests 4
+✔ reads real nested envelope, shares in-flight requests and cache; explicit refresh bypasses cache (66.339635ms)
+✔ empty array is valid; malformed envelope, success=false and invalid JSON fail explicitly (72.829155ms)
+✔ propagates HTTP 401/403/500 and network failures; failed refresh can recover (35.495207ms)
+✔ rejects entire invalid geometry without deleting bad vertices or inventing a polygon (8.113402ms)
+✔ accepts live areaType contract including null and omitted legacy classification (8.442809ms)
+✔ validates the captured live response when LIVE_FLOOD_AREAS is provided (7.16571ms)
+ℹ tests 6
 ℹ suites 0
-ℹ pass 4
+ℹ pass 6
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 473.541696
+ℹ duration_ms 430.653059

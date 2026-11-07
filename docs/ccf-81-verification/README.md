@@ -1,35 +1,28 @@
-# CCF-56 and CCF-57 verification
+# CCF-56/57 verification update 2026-11-07
 
-Checked on 2026-11-06 after merging develop bdf64a68 into the existing PR branch.
+Supersedes the previous status/severity-based area implementation and checklist.
 
-## Implemented
+## Confirmed backend contract change
 
-- Keep existing Admin user/flood-area and Rescue list/detail routes when resolving App.tsx.
-- Shared /map allows ADMIN and RESCUE_STAFF. /admin/map allows ADMIN only. Resident/anonymous are handled by the existing ProtectedRoute.
-- Use configured API_URL and the exact success/data.floodAreas and data.floodAlerts envelopes. Invalid payloads fail explicitly; empty arrays are valid.
-- Validate all vertices (finite numbers, coordinate ranges, at least three distinct points); reject invalid geometry as a whole.
-- Default to active areas, distinguish inactive areas using dashed gray polygons, escape popup content.
-- Keep stale labels and last successful load time through failed refresh and retry; remove labels only on successful refresh. Area active status is not a real-time flood confirmation.
-- Only request flood areas and, for Admin, active alerts. Public requests do not send tokens. 60-second in-memory cache and in-flight deduplication; no polling. Manual refresh bypasses cache.
-- Standard OSM tile URL, visible tile failure state, actual tile redraw on retry, ResizeObserver and lifecycle cleanup.
+Merged origin/develop 12f20f1. backend/src/services/flood-area.service.js explicitly rejects status/severity for areas and uses areaType: flood or low_lying; legacy areaType may be null. Warning severity remains independent. The public demo returned six areas, all accepted by the updated validator.
 
-## Executed
+## Changes
 
-From web/: npm ci; npm run lint; npm run build; node --test tests/floodAreaService.test.cjs.
+- Area model, filters, legend, popup and list now use flood/low_lying/unclassified. Missing classification is never silently assigned active/low. Default shows all areas, including legacy records.
+- Keep finite numeric coordinate validation and reject malformed polygons as a whole.
+- Select a listed area to fit its bounds. Initial view focuses the first area rather than fitting unrelated global test records into one world view.
+- Explicit referrer policy on OSM tile images, scoped Leaflet image sizing, failed-tile tracking with load/unload recovery, redraw on manual retry and browser online event. ResizeObserver remains enabled.
+- Preserve the newly integrated /admin/historical-map route and give it a separate sidebar entry. No changes to Backend implementation beyond merging develop.
+- Public data cache/dedup, correct data.floodAreas parsing, active alert count and stale labels remain intact.
 
-Lint passed. Build passed with a bundle-size warning (>500 kB), not zero warnings. Four service test groups passed, covering correct envelope, empty and invalid payload/JSON, HTTP 401/403/500, offline/recovery, cache/concurrent requests, active alert count and invalid geometry.
-Full command output is stored beside this file.
+## Validation
 
-## Blocked and not claimed as PASS
+npm ci; npm run lint; npm run build: PASS. Build warns about JS chunk >500 kB.
+node --test tests/floodAreaService.test.cjs: five offline groups pass; live test is skipped unless LIVE_FLOOD_AREAS points to a captured JSON file.
+Executed six groups with LIVE_FLOOD_AREAS=/tmp/ccf81-evidence/live-areas.json; all passed, none skipped. JSON was captured from https://floodguard-backend-demo.onrender.com/api/flood-areas on 2026-11-07. See service-tests.txt for output.
 
-Browser test launch failed before any page could be opened: Chromium reported socket() failed: Operation not permitted (1). Therefore no UI, tile, Network screenshot/video or browser route regression evidence was produced. No real Admin/Rescue credentials were available. Service tests mock HTTP responses and do not establish real authentication or production tile availability.
+## Remaining acceptance on the user's Mac
 
-## Required browser acceptance before merge
+The actual tile error on that machine is still unidentified (no browser request status supplied). The changes improve CSS/lifecycle/recovery; they cannot guarantee delivery through network/provider failures. No UI screenshot or real Admin/Rescue login is claimed as tested here.
 
-- Sign in separately as Admin and Rescue; open map via sidebar, inspect header and navigate back. Check /admin/users, /admin/flood-areas, /rescue/sos and /rescue/sos/:id still work.
-- Inspect Network on map: /flood-areas, plus /flood-alerts/active only for Admin; no overview/users/SOS/health fan-out. Pan/zoom and filters must not fetch data.
-- Verify OSM tiles, polygon position, popup name/severity/status/source and inactive dashed styling.
-- Test empty, 401/403/500, invalid JSON/schema/geometry and offline. After prior success, stale label/time remains visible until successful retry.
-- Block OSM tiles, verify tile warning and retry when unblocked.
-- Check anonymous redirects to login, Resident denied, Rescue denied /admin/map, both web roles allowed /map.
-- Attach actual map + Network screenshots/video and logs for the tested head commit. Leader reviews and merges; leave Jira completion pending until acceptance.
+Run npm ci, npm run lint, npm run build, node --test tests/floodAreaService.test.cjs, npm run dev -- --port 5173 --strictPort. Open Admin/Rescue map. Confirm areas/filters/popups and /admin/historical-map plus old routes. Inspect Network tile requests if basemap still fails. Record exact HTTP/net error. Check offline/stale/retry and no overview API fan-out. Attach genuine screenshots before leader merge.

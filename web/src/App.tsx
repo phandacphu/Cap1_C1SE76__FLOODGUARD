@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Unauthorized } from './pages/Unauthorized';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import FloodAreaManagementScreen from './pages/admin/flood-area/FloodAreaManagementScreen';
+import HistoricalMapScreen from './pages/admin/flood-area/components/HistoricalMapScreen';
 import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
@@ -49,6 +50,7 @@ export const App: React.FC = () => {
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<UserManagementScreen />} />
             <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
+            <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
           </Route>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
