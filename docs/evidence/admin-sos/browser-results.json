@@ -1,0 +1,62 @@
+{
+  "apiMode": "HTTP fixtures, not live backend",
+  "results": [
+    {
+      "name": "mock list, consistent statistics and two business labels",
+      "result": "PASS"
+    },
+    {
+      "name": "mock no matches and invalid dates",
+      "result": "PASS"
+    },
+    {
+      "name": "API loading, summary total, disabled unsupported filters and detail location refresh",
+      "result": "PASS"
+    },
+    {
+      "name": "API empty is distinct from load error; retry recovers",
+      "result": "PASS"
+    },
+    {
+      "name": "summary-only failure keeps rows and exposes a separate retryable statistics error",
+      "result": "PASS"
+    },
+    {
+      "name": "401, 403 and 404 have distinct states and hide cached protected data",
+      "result": "PASS"
+    },
+    {
+      "name": "an invalid location retains the SOS and shows a safe map fallback",
+      "result": "PASS"
+    },
+    {
+      "name": "basemap failure keeps the marker and coordinates and has a separate retry",
+      "result": "PASS"
+    },
+    {
+      "name": "obsolete sort responses cannot overwrite the latest request",
+      "result": "PASS"
+    },
+    {
+      "name": "Admin route guards reject signed-out and Rescue sessions",
+      "result": "PASS"
+    },
+    {
+      "name": "mobile list and detail remain within the viewport",
+      "result": "PASS"
+    },
+    {
+      "name": "dashboard SOS errors show a retry and no sample statistics",
+      "result": "PASS"
+    },
+    {
+      "name": "dashboard mock statistics are explicitly labelled and do not request real SOS data",
+      "result": "PASS"
+    },
+    {
+      "name": "production ignores the mock opt-in used during its build",
+      "result": "PASS"
+    }
+  ],
+  "browserErrors": []
+}
