@@ -25,7 +25,7 @@ const response = (body, status = 200) => new Response(JSON.stringify(body), { st
 test('reads real nested envelope, shares in-flight requests and cache; explicit refresh bypasses cache', async () => {
   const calls = [];
   const { floodAreaService: s } = loadService(async url => {
-    calls.push(url); return response({ success: true, data: { floodAreas: [area], floodAlerts: [{ id: 'a' }, { id: 'b' }] } });
+    calls.push(url); return response({ success: true, data: { floodAreas: [area], floodAlerts: ['a', 'b'].map(id => ({ id, title: 'TEST ONLY', content: 'Simulated', areaId: 'test', severity: 'low', status: 'active', startAt: '2026-01-01T00:00:00Z', endAt: '2027-01-01T00:00:00Z' })) } });
   });
   const [first, second] = await Promise.all([s.getFloodAreas(), s.getFloodAreas()]);
   assert.equal(first[0].id, 'test'); assert.equal(first, second); assert.equal(calls.length, 1);
@@ -75,4 +75,16 @@ test('validates the captured live response when LIVE_FLOOD_AREAS is provided', {
   const items = await service.getFloodAreas();
   assert.equal(items.length, body.data.floodAreas.length);
   assert(items.length > 0);
+});
+
+test('shares alert list and count; rejects invalid warning fields', async () => {
+  let calls = 0;
+  const alert = { id: 'a', title: 'TEST ONLY', content: 'Simulated', areaId: 'test', severity: 'high', status: 'active', startAt: '2026-01-01T00:00:00Z', endAt: '2027-01-01T00:00:00Z' };
+  const { floodAreaService: s } = loadService(async () => { calls++; return response({ success: true, data: { floodAlerts: [alert] } }); });
+  const [items, count] = await Promise.all([s.getActiveAlerts(), s.getActiveAlertCount()]);
+  assert.equal(items[0].areaId, 'test'); assert.equal(count, 1); assert.equal(calls, 1);
+  for (const invalid of [{ ...alert, severity: 'extreme' }, { ...alert, status: 'inactive' }, { ...alert, startAt: 'bad date' }]) {
+    const { floodAreaService: bad } = loadService(async () => response({ success: true, data: { floodAlerts: [invalid] } }));
+    await assert.rejects(bad.getActiveAlerts());
+  }
 });

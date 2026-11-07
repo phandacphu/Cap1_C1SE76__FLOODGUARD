@@ -20,3 +20,14 @@ export interface FloodArea {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface FloodAlert {
+  id: string;
+  title: string;
+  content: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'active' | 'inactive';
+  areaId: string;
+  startAt: string;
+  endAt: string;
+}

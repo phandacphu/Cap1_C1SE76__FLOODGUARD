@@ -8,7 +8,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { ADMIN_NAV } from '../../components/layout/navConfig';
-import type { FloodArea } from '../../types/floodArea';
+import type { FloodArea, FloodAlert } from '../../types/floodArea';
 
 const AREA_STYLES = {
   flood: { stroke: '#ea580c', fill: '#9a3412', label: 'Vùng ngập', badge: 'bg-orange-950 text-orange-300' },
@@ -28,10 +28,14 @@ const escapeHtml = (unsafe?: string | null): string => {
 };
 
 type FilterStatus = 'all' | 'flood' | 'low_lying' | 'unknown';
+const SEVERITY_LABELS = { low: 'Thấp', medium: 'Vừa', high: 'Cao', critical: 'Khẩn cấp' };
+const SEVERITY_COLORS = { low: '#2563eb', medium: '#eab308', high: '#f97316', critical: '#ef4444' };
+const PRIORITY = { low: 1, medium: 2, high: 3, critical: 4 };
 
 export const FloodMapView: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -49,18 +53,26 @@ export const FloodMapView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [tileErrorCount, setTileErrorCount] = useState<number>(0);
 
-  const [adminAlertCount, setAdminAlertCount] = useState<number | undefined>(undefined);
+  const [activeAlerts, setActiveAlerts] = useState<FloodAlert[]>([]);
+  const [alertsUpdatedAt, setAlertsUpdatedAt] = useState<Date | null>(null);
+  const [onlyWithAlerts, setOnlyWithAlerts] = useState(false);
+  const adminAlertCount = alertsUpdatedAt ? activeAlerts.length : undefined;
+  const alertsByArea = useMemo(() => {
+    const groups = new Map<string, FloodAlert[]>();
+    activeAlerts.forEach(alert => groups.set(alert.areaId, [...(groups.get(alert.areaId) ?? []), alert]));
+    groups.forEach(items => items.sort((a, b) => PRIORITY[b.severity] - PRIORITY[a.severity]));
+    return groups;
+  }, [activeAlerts]);
   const [alertCountError, setAlertCountError] = useState<string | null>(null);
   useEffect(() => {
-    if (!isAdmin) return;
     let ignore = false;
-    void floodAreaService.getActiveAlertCount(reloadTrigger > 0).then(count => {
-      if (!ignore) { setAdminAlertCount(count); setAlertCountError(null); }
+    void floodAreaService.getActiveAlerts(reloadTrigger > 0).then(alerts => {
+      if (!ignore) { setActiveAlerts(alerts); setAlertsUpdatedAt(new Date()); setAlertCountError(null); }
     }).catch(() => {
-      if (!ignore) setAlertCountError('Không tải được số cảnh báo hiện hành; số trên thanh đầu trang có thể chưa cập nhật.');
+      if (!ignore) setAlertCountError('Không tải được cảnh báo hiệu lực. Trạng thái cảnh báo của từng vùng chưa được xác nhận; thông tin cũ nếu có chỉ để tham khảo.');
     });
     return () => { ignore = true; };
-  }, [isAdmin, reloadTrigger]);
+  }, [reloadTrigger]);
 
   // Fetch API vùng ngập và quản lý trạng thái dữ liệu cũ (A.3, A.5)
   useEffect(() => {
@@ -112,30 +124,36 @@ export const FloodMapView: React.FC = () => {
       zoomControl: true,
     });
 
-    const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
-      maxZoom: 19,
-      referrerPolicy: 'strict-origin-when-cross-origin',
-    });
+    const tileLayer = mapTilerKey ? L.tileLayer(
+      `https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=${encodeURIComponent(mapTilerKey)}`,
+      {
+        tileSize: 512,
+        zoomOffset: -1,
+        minZoom: 1,
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>',
+        referrerPolicy: 'strict-origin-when-cross-origin',
+      },
+    ) : null;
 
     tileLayerRef.current = tileLayer;
     const failedTiles = new Set<HTMLImageElement>();
-    tileLayer.on('tileerror', event => {
+    tileLayer?.on('tileerror', event => {
       failedTiles.add(event.tile as HTMLImageElement);
       setTileErrorCount(failedTiles.size);
     });
-    tileLayer.on('tileload', event => {
+    tileLayer?.on('tileload', event => {
       failedTiles.delete(event.tile as HTMLImageElement);
       setTileErrorCount(failedTiles.size);
     });
-    tileLayer.on('tileunload', event => {
+    tileLayer?.on('tileunload', event => {
       failedTiles.delete(event.tile as HTMLImageElement);
       setTileErrorCount(failedTiles.size);
     });
-    const retryTiles = () => { map.invalidateSize(); tileLayer.redraw(); };
+    const retryTiles = () => { map.invalidateSize(); tileLayer?.redraw(); };
     window.addEventListener('online', retryTiles);
 
-    tileLayer.addTo(map);
+    tileLayer?.addTo(map);
 
     polygonLayerGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
@@ -146,20 +164,20 @@ export const FloodMapView: React.FC = () => {
     return () => {
       window.removeEventListener('online', retryTiles);
       observer.disconnect();
-      tileLayer.off();
+      tileLayer?.off();
       tileLayerRef.current = null;
       polygonLayerGroupRef.current = null;
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []);
+  }, [mapTilerKey]);
 
   // Filter current areaType classification, independently of warning severity.
   const filteredAreas = useMemo(() => {
-    if (statusFilter === 'unknown') return floodAreas.filter(area => area.areaType == null);
-    if (statusFilter !== 'all') return floodAreas.filter(area => area.areaType === statusFilter);
-    return floodAreas;
-  }, [floodAreas, statusFilter]);
+    const classified = floodAreas.filter(area => statusFilter === 'all' ||
+      (statusFilter === 'unknown' ? area.areaType == null : area.areaType === statusFilter));
+    return onlyWithAlerts ? classified.filter(area => alertsByArea.has(area.id)) : classified;
+  }, [floodAreas, statusFilter, onlyWithAlerts, alertsByArea]);
 
   // Vẽ Polygons kiểm tra chặt chẽ geometry (A.2, A.5)
   const renderPolygons = useCallback(() => {
@@ -180,9 +198,19 @@ export const FloodMapView: React.FC = () => {
 
         const colorCfg = areaStyle(area);
         const isAreaActive = area.areaType != null;
+        const areaAlerts = alertsByArea.get(area.id) ?? [];
+        const highestAlert = areaAlerts[0];
+        const alertMarkup = areaAlerts.length ? areaAlerts.map(alert => `
+          <hr/><b>${escapeHtml(alert.title)}</b><br/>
+          <b>Mức độ:</b> ${SEVERITY_LABELS[alert.severity]}<br/>
+          <b>Trạng thái:</b> ${alertCountError ? 'Dữ liệu cảnh báo cũ, chưa xác nhận' : 'Có hiệu lực tại lần tải'}<br/>
+          <b>Từ:</b> ${escapeHtml(new Date(alert.startAt).toLocaleString('vi-VN'))}<br/>
+          <b>Đến:</b> ${escapeHtml(new Date(alert.endAt).toLocaleString('vi-VN'))}<br/>
+          <p>${escapeHtml(alert.content)}</p>`).join('') :
+          `<p>${alertCountError ? 'Chưa xác nhận được cảnh báo của vùng.' : 'Không có cảnh báo hiệu lực tại lần tải.'}</p>`;
 
         const polygon = L.polygon(latLngs, {
-          color: colorCfg.stroke,
+          color: highestAlert && !alertCountError ? SEVERITY_COLORS[highestAlert.severity] : colorCfg.stroke,
           weight: isAreaActive ? 2.5 : 1.5,
           dashArray: isAreaActive ? undefined : '5, 5',
           opacity: isAreaActive ? 0.95 : 0.4,
@@ -201,6 +229,7 @@ export const FloodMapView: React.FC = () => {
             <span>Dữ liệu tham khảo, không xác nhận ngập hiện tại.</span><br/>
             <b>Nguồn tin:</b> ${safeSource}<br/>
             <p style="margin: 4px 0 0 0; color: #475569;">${safeDesc}</p>
+            ${alertMarkup}
           </div>
         `;
 
@@ -215,7 +244,7 @@ export const FloodMapView: React.FC = () => {
       const first = filteredAreas[0];
       if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
-  }, [filteredAreas]);
+  }, [filteredAreas, alertsByArea, alertCountError]);
 
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -232,7 +261,7 @@ export const FloodMapView: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
-              Bản Đồ Vùng Ngập (OpenStreetMap)
+              Bản Đồ Vùng Ngập (MapTiler)
             </h1>
             {isStaleData && (
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 border border-amber-600 text-amber-300">
@@ -283,7 +312,12 @@ export const FloodMapView: React.FC = () => {
         </div>
       </div>
 
+      {alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Viền màu thể hiện mức độ cảnh báo khi tải thành công; màu nền thể hiện loại vùng.</p>}
       {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
+      <label className="flex items-center gap-2 text-xs text-cyan-200">
+        <input type="checkbox" checked={onlyWithAlerts} onChange={event => setOnlyWithAlerts(event.target.checked)} />
+        {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
+      </label>
       {lastUpdated && <p className="text-xs text-slate-400">Dữ liệu tải lúc: {lastUpdated.toLocaleString('vi-VN')}</p>}
       {/* Thông báo lỗi API và cảnh báo dữ liệu cũ (A.3) */}
       {dataError && (
@@ -308,9 +342,9 @@ export const FloodMapView: React.FC = () => {
       )}
 
       {/* Cảnh báo khi Tile OpenStreetMap không tải được (A.4) */}
-      {tileErrorCount > 0 && (
+      {(!mapTilerKey || tileErrorCount > 0) && (
         <div className="bg-amber-950/50 border border-amber-600/70 p-2.5 rounded-lg text-amber-200 text-xs font-mono flex items-center justify-between">
-          <span>⚠️ Một số mảnh bản đồ nền OpenStreetMap tải chậm hoặc mất kết nối mạng. Vui lòng kiểm tra kết nối và thử tải lại.</span>
+          <span>{!mapTilerKey ? '⚠️ Chưa cấu hình VITE_MAPTILER_KEY trong web/.env.local. Hãy thêm key và khởi động lại npm run dev.' : '⚠️ Một số mảnh bản đồ nền MapTiler không tải được. Vui lòng kiểm tra mạng, API key và hạn mức sử dụng.'}</span>
           <button
             onClick={() => {
               if (mapInstanceRef.current) {
@@ -331,7 +365,7 @@ export const FloodMapView: React.FC = () => {
           {dataLoading && (
             <div className="absolute inset-0 bg-[#081B30]/90 z-20 flex flex-col items-center justify-center space-y-2 font-mono text-xs text-cyan-400">
               <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-              <span>Đang tải dữ liệu vùng ngập và khởi tạo bản đồ OpenStreetMap...</span>
+              <span>Đang tải dữ liệu vùng ngập và khởi tạo bản đồ MapTiler...</span>
             </div>
           )}
           <div ref={mapContainerRef} className="floodguard-map w-full h-[560px] z-0" />
@@ -378,6 +412,9 @@ export const FloodMapView: React.FC = () => {
                         {cfg.label}
                       </span>
                     </div>
+                    <p className="mt-1 text-[10px] text-amber-200">
+                      {alertCountError ? 'Cảnh báo: chưa xác nhận' : `${alertsByArea.get(area.id)?.length ?? 0} cảnh báo hiệu lực tại lần tải`}
+                    </p>
                     <div className="text-[10px] font-mono mt-1 flex items-center justify-between">
                       <span className={isAreaActive ? 'text-emerald-400' : 'text-slate-500'}>
                         {cfg.label}

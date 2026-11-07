@@ -1,6 +1,6 @@
 import { API_URL } from './authApi';
 import { ApiError } from './http';
-import type { FloodArea } from '../types/floodArea';
+import type { FloodArea, FloodAlert } from '../types/floodArea';
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,8 +37,8 @@ async function publicGet(path: string): Promise<Record<string, unknown>> {
 const CACHE_MS = 60_000;
 let areaCache: { value: FloodArea[]; expires: number } | null = null;
 let areaPending: Promise<FloodArea[]> | null = null;
-let alertCache: { count: number; expires: number } | null = null;
-let alertPending: Promise<number> | null = null;
+let alertCache: { value: FloodAlert[]; expires: number } | null = null;
+let alertPending: Promise<FloodAlert[]> | null = null;
 
 export const floodAreaService = {
   getFloodAreas(force = false): Promise<FloodArea[]> {
@@ -54,15 +54,25 @@ export const floodAreaService = {
     }).finally(() => { areaPending = null; });
     return areaPending;
   },
-  getActiveAlertCount(force = false): Promise<number> {
+  getActiveAlerts(force = false): Promise<FloodAlert[]> {
     if (alertPending) return alertPending;
-    if (!force && alertCache && alertCache.expires > Date.now()) return Promise.resolve(alertCache.count);
+    if (!force && alertCache && alertCache.expires > Date.now()) return Promise.resolve(alertCache.value);
     alertPending = publicGet('/flood-alerts/active').then(data => {
-      if (!Array.isArray(data.floodAlerts)) throw new ApiError('Dữ liệu cảnh báo không hợp lệ.', 200);
-      const count = data.floodAlerts.length;
-      alertCache = { count, expires: Date.now() + CACHE_MS };
-      return count;
+      if (!Array.isArray(data.floodAlerts) || !data.floodAlerts.every(alert =>
+        record(alert) && ['id', 'title', 'content', 'areaId'].every(key => typeof alert[key] === 'string') &&
+        ['low', 'medium', 'high', 'critical'].includes(String(alert.severity)) && alert.status === 'active' &&
+        typeof alert.startAt === 'string' && Number.isFinite(Date.parse(alert.startAt)) &&
+        typeof alert.endAt === 'string' && Number.isFinite(Date.parse(alert.endAt)) &&
+        Date.parse(alert.startAt) <= Date.parse(alert.endAt))) {
+        throw new ApiError('Dữ liệu cảnh báo không hợp lệ.', 200);
+      }
+      const value = data.floodAlerts as FloodAlert[];
+      alertCache = { value, expires: Date.now() + CACHE_MS };
+      return value;
     }).finally(() => { alertPending = null; });
     return alertPending;
+  },
+  async getActiveAlertCount(force = false): Promise<number> {
+    return (await floodAreaService.getActiveAlerts(force)).length;
   },
 };
