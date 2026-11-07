@@ -38,7 +38,8 @@ fun ProfileScreen(
 
     onBackClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
-    onMenuClick: (String) -> Unit = {}
+    onMenuClick: (String) -> Unit = {},
+    onSosStatusClick: (String) -> Unit = {}
 ) {
     var floodAlerts by remember { mutableStateOf(true) }
     var sosAlerts by remember { mutableStateOf(true) }
@@ -253,6 +254,21 @@ fun ProfileScreen(
                                     label = "Ghi chú",
                                     value = request.note
                                 )
+                            }
+
+                            val requestId = request.id
+
+                            if (!requestId.isNullOrBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        onSosStatusClick(requestId)
+                                    }
+                                ) {
+                                    Text(
+                                        text = "Xem trạng thái yêu cầu",
+                                        color = Cyan
+                                    )
+                                }
                             }
 
                             if (index < sosState.requests.lastIndex) {
