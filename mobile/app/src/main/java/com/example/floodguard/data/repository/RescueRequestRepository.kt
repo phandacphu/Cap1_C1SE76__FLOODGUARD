@@ -23,9 +23,16 @@ class RescueRequestRepository(
                 val body = response.body()
 
                 if (body?.success == true) {
-                    Result.success(
-                        body.data?.rescueRequests ?: emptyList()
-                    )
+                    val data = body.data
+                    if (data == null) {
+                        Result.failure(
+                            IllegalStateException(
+                                "Máy chủ trả về dữ liệu lịch sử SOS không hợp lệ."
+                            )
+                        )
+                    } else {
+                        Result.success(data.rescueRequests)
+                    }
                 } else {
                     Result.failure(
                         Exception(
@@ -44,9 +51,11 @@ class RescueRequestRepository(
                 Result.failure(Exception(message))
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(
-                Exception(e.message ?: "Không thể kết nối máy chủ.")
+                Exception("Không thể tải lịch sử SOS. Vui lòng thử lại.", e)
             )
         }
     }

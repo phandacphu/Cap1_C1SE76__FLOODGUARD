@@ -19,7 +19,8 @@ data class SosStatusUiState(
 
 class SosStatusViewModel(
     private val repository: RescueRequestRepository,
-    private val sosId: String
+    private val sosId: String,
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SosStatusUiState())
@@ -55,7 +56,7 @@ class SosStatusViewModel(
                                     isLoading = false,
                                     request = matches.single(),
                                     error = null,
-                                    loadedAtMillis = System.currentTimeMillis()
+                                    loadedAtMillis = nowMillis()
                                 )
                             }
 
