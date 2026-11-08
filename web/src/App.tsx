@@ -13,6 +13,8 @@ import FloodWarningManagementScreen from './pages/admin/flood-warning/FloodWarni
 import { createFloodWarningDemo } from './pages/admin/flood-warning/floodWarningDemo';
 import SafeLocationManagementScreen from './pages/admin/safe-location/SafeLocationManagementScreen';
 import { createSafeLocationDemo } from './pages/admin/safe-location/safeLocationDemo';
+import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
+import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -51,6 +53,8 @@ export const App: React.FC = () => {
             {warningDemo && <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={warningDemo} />} />}
             {safeLocationDemo && <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationDemo} />} />}
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
+            <Route path="/admin/sos" element={<SosMonitoringScreen />} />
+            <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
