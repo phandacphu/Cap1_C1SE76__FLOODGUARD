@@ -101,7 +101,17 @@ fun SosStatusScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         SosStatusField("Mã yêu cầu", request.id)
-                        SosStatusField("Trạng thái từ hệ thống", request.status)
+                        SosStatusField(
+                            "Tình trạng",
+                            "Chưa xác định"
+                        )
+
+                        Text(
+                            text = "Chưa có dữ liệu xác nhận tình trạng cứu hộ. " +
+                                    "Vui lòng làm mới để kiểm tra lại.",
+                            color = StatusMuted,
+                            fontSize = 12.sp
+                        )
                         SosStatusField(
                             "Số người cần hỗ trợ",
                             request.numberOfPeople?.toString()

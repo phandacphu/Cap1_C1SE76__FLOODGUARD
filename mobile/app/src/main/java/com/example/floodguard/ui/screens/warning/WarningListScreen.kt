@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.floodguard.domain.model.Warning
 import com.example.floodguard.domain.model.WarningTimeStatus
+import com.example.floodguard.domain.model.filterWarnings
 import com.example.floodguard.ui.components.FloodGuardBottomBar
 import com.example.floodguard.ui.components.WarningAccent
 import com.example.floodguard.ui.components.WarningBackground
@@ -101,26 +102,10 @@ fun WarningListScreen(
 
             else -> {
                 val stateWarnings = (state as? WarningUiState.Success)?.warnings.orEmpty()
-                val filteredWarnings = stateWarnings.filter { warning ->
-                    val matchesStatus = when (selectedStatus) {
-                        "effective" -> warning.timeStatus == WarningTimeStatus.EFFECTIVE
-                        "upcoming" -> warning.timeStatus == WarningTimeStatus.UPCOMING
-                        "expired" -> warning.timeStatus == WarningTimeStatus.EXPIRED
-                        "disabled" -> warning.timeStatus == WarningTimeStatus.DISABLED
-                        else -> true
-                    }
-                    matchesStatus && (selectedSeverity == "all" ||
-                        warning.severity.equals(selectedSeverity, ignoreCase = true))
-                }.sortedWith(
-                    compareByDescending<Warning> {
-                        when (it.severity.lowercase()) {
-                            "critical" -> 4
-                            "high" -> 3
-                            "medium" -> 2
-                            "low" -> 1
-                            else -> 0
-                        }
-                    }.thenByDescending { runCatching { Instant.parse(it.startTime) }.getOrDefault(Instant.MIN) }
+                val filteredWarnings = filterWarnings(
+                    warnings = stateWarnings,
+                    selectedStatus = selectedStatus,
+                    selectedSeverity = selectedSeverity
                 )
                 LazyColumn(
                     Modifier.fillMaxSize().padding(padding),

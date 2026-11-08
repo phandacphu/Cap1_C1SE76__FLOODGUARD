@@ -498,7 +498,7 @@ fun SendSosScreen(
 
                 uiState.submittedSosId?.let { sosId ->
                     Text(
-                        text = "Yêu cầu SOS đã được hệ thống ghi nhận. Mã: $sosId",
+                        text = "Đã gửi SOS – chờ cứu hộ. Mã: $sosId",
                         color = Color(0xFF22D3A0),
                         fontSize = 13.sp
                     )
@@ -563,10 +563,11 @@ fun SendSosScreen(
                         Text(
                             text = when {
                                 uiState.isSubmitting -> "ĐANG GỬI SOS..."
-                                uiState.submittedSosId != null -> "ĐÃ TIẾP NHẬN SOS"
+                                uiState.submittedSosId != null -> "ĐÃ GỬI SOS – CHỜ CỨU HỘ"
                                 else -> "GỬI TÍN HIỆU SOS"
                             },
-                            fontSize = 23.sp,
+                            fontSize = if (uiState.submittedSosId != null) 16.sp else 23.sp,
+                            textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Black
                         )
 

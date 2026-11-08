@@ -225,15 +225,9 @@ fun ProfileScreen(
                             Spacer(Modifier.height(6.dp))
 
                             ProfileInfo(
-                                label = "Trạng thái",
-                                value = request.status
-                                    ?: "Chưa cập nhật"
-                            )
+                                label = "Tình trạng",
+                                value = "Chưa xác định"
 
-                            ProfileInfo(
-                                label = "Mức độ khẩn cấp",
-                                value = request.urgency
-                                    ?: "Chưa cập nhật"
                             )
 
                             ProfileInfo(
