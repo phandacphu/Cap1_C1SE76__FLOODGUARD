@@ -11,7 +11,7 @@ export interface NavItem {
 export const ADMIN_NAV: NavItem[] = [
   { label: "Tổng quan", icon: "dashboard", to: "/admin/dashboard" },
   { label: "Bản đồ trực quan", icon: "map", to: "/admin/historical-map" },
-  { label: "Theo dõi SOS", icon: "sos" },
+  { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
   { label: "Quản lý địa điểm an toàn", icon: "shield" },
