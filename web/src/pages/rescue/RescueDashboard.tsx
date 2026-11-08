@@ -11,7 +11,7 @@ import { SEVERITY_WEIGHT, formatNumber } from "../admin/adminStats";
 import { FloodAlertBanner } from "./components/FloodAlertBanner";
 import { SosActionButtons } from "./components/SosActionButtons";
 import { SosPriorityBadge } from "./components/SosPriorityBadge";
-import { SosScatterMap } from "./components/SosScatterMap";
+import { RescueOperationsMap } from "./components/RescueOperationsMap";
 import { SosStatusBadge } from "./components/SosStatusBadge";
 import {
   computeKpis,
@@ -163,25 +163,19 @@ export function RescueDashboard() {
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
           <Panel
             title="Bản đồ tác chiến"
-            subtitle="Sơ đồ vị trí SOS đang mở · Google Maps sẽ thay thế ở CCF-105"
+            subtitle="Vị trí SOS đang mở và dữ liệu ngập lịch sử"
             icon="map"
             className="xl:col-span-2"
           >
-            {error ? (
-              <div className="flex h-72 items-center justify-center font-mono text-xs text-warn">
-                Lỗi kết nối: Không thể tải dữ liệu bản đồ SOS.
-              </div>
-            ) : !requests || loading ? (
-              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
-                Đang tải dữ liệu SOS...
-              </div>
-            ) : requests.length === 0 ? (
-              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
-                Chưa có dữ liệu SOS.
-              </div>
-            ) : (
-              <SosScatterMap requests={requests} />
+            {error && (
+              <p role="status" className="mb-3 text-xs text-warn">
+                Không thể cập nhật SOS. Vị trí còn hiển thị có thể là dữ liệu từ lần tải trước.
+              </p>
             )}
+            {!requests && loading && (
+              <p role="status" className="mb-3 text-xs text-muted">Đang tải dữ liệu SOS…</p>
+            )}
+            <RescueOperationsMap requests={requests ?? []} />
           </Panel>
 
           <Panel

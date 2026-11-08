@@ -1,3 +1,8 @@
+import {
+  fetchHistoricalBuffers,
+  fetchHistoricalPoints,
+  fetchHistoricalRadar,
+} from '../admin/flood-area/historicalMapService';
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -35,11 +40,16 @@ const PRIORITY = { low: 1, medium: 2, high: 3, critical: 4 };
 export const FloodMapView: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const isRescue = user?.role === 'RESCUE_STAFF';
+  const [showHistory, setShowHistory] = useState(true);
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const [historyStatus, setHistoryStatus] = useState('');
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const polygonLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const historyLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const [floodAreas, setFloodAreas] = useState<FloodArea[]>([]);
@@ -120,7 +130,7 @@ export const FloodMapView: React.FC = () => {
     const daNangCenter: L.LatLngExpression = [16.0544, 108.2022];
     const map = L.map(mapContainerRef.current, {
       center: daNangCenter,
-      zoom: 12,
+      zoom: isRescue ? 13 : 12,
       zoomControl: true,
     });
 
@@ -135,6 +145,12 @@ export const FloodMapView: React.FC = () => {
         referrerPolicy: 'strict-origin-when-cross-origin',
       },
     ) : null;
+
+    if (isRescue) {
+      const pane = map.createPane('flood-history');
+      pane.style.zIndex = '390';
+      pane.style.pointerEvents = 'none';
+    }
 
     tileLayerRef.current = tileLayer;
     const failedTiles = new Set<HTMLImageElement>();
@@ -170,7 +186,67 @@ export const FloodMapView: React.FC = () => {
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, [mapTilerKey]);
+  }, [mapTilerKey, isRescue]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isRescue) return;
+
+    const group = L.layerGroup();
+    let cancelled = false;
+    const layers = [
+      ['Radar', fetchHistoricalRadar],
+      ['Vùng đệm', fetchHistoricalBuffers],
+      ['Điểm ngập', fetchHistoricalPoints],
+    ] as const;
+
+    void Promise.allSettled(layers.map(async ([, load]) => load())).then(results => {
+      if (cancelled) return;
+
+      const failed: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          failed.push(layers[index][0]);
+          return;
+        }
+
+        L.geoJSON(result.value as unknown as GeoJSON.FeatureCollection, {
+          pane: 'flood-history',
+          interactive: false,
+          style: { color: '#ef4444', weight: 1.5, fillOpacity: 0.15 },
+          pointToLayer: (_feature, position) => L.circleMarker(position, {
+            pane: 'flood-history',
+            interactive: false,
+            radius: 7,
+            color: '#fff',
+            weight: 3,
+            fillColor: '#ef4444',
+            fillOpacity: 1,
+          }),
+        }).addTo(group);
+      });
+
+      setHistoryStatus(failed.length ? `Không tải được lớp: ${failed.join(', ')}.` : 'Đã tải dữ liệu lịch sử.');
+    });
+
+    // Keep the fetched layers when the user toggles their visibility.
+    map.addLayer(group);
+    historyLayerRef.current = group;
+    return () => {
+      cancelled = true;
+      map.removeLayer(group);
+      historyLayerRef.current = null;
+    };
+  }, [isRescue, historyRetry, mapTilerKey]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const group = historyLayerRef.current;
+    if (!map || !group) return;
+
+    if (showHistory) map.addLayer(group);
+    else map.removeLayer(group);
+  }, [showHistory, historyRetry, isRescue, mapTilerKey]);
 
   // Filter current areaType classification, independently of warning severity.
   const filteredAreas = useMemo(() => {
@@ -239,12 +315,12 @@ export const FloodMapView: React.FC = () => {
       }
     });
 
-    if (bounds.length > 0 && mapInstanceRef.current) {
+    if (!(isRescue && showHistory) && bounds.length > 0 && mapInstanceRef.current) {
       // Avoid letting a remote test polygon zoom the initial view out to the whole world.
       const first = filteredAreas[0];
       if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
-  }, [filteredAreas, alertsByArea, alertCountError]);
+  }, [filteredAreas, alertsByArea, alertCountError, isRescue, showHistory]);
 
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -318,6 +394,26 @@ export const FloodMapView: React.FC = () => {
         <input type="checkbox" checked={onlyWithAlerts} onChange={event => setOnlyWithAlerts(event.target.checked)} />
         {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
       </label>
+      {isRescue && (
+        <div className="space-y-1 rounded-lg border border-slate-700 p-3 text-xs">
+          <label className="flex items-center gap-2 font-semibold text-rose-300">
+            <input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />
+            Hiện bản đồ ngập lịch sử
+          </label>
+          {showHistory && (
+            <>
+              <p className="text-slate-300">Lớp đỏ: điểm ngập, vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
+              <p role="status" className="text-slate-400">{historyStatus || 'Đang tải lớp ngập lịch sử…'}</p>
+              {historyStatus.startsWith('Không tải') && (
+                <button type="button" className="underline" onClick={() => {
+                  setHistoryStatus('');
+                  setHistoryRetry(value => value + 1);
+                }}>Tải lại lớp lịch sử</button>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {lastUpdated && <p className="text-xs text-slate-400">Dữ liệu tải lúc: {lastUpdated.toLocaleString('vi-VN')}</p>}
       {/* Thông báo lỗi API và cảnh báo dữ liệu cũ (A.3) */}
       {dataError && (
