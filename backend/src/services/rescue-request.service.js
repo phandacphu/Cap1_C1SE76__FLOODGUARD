@@ -1,6 +1,8 @@
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
 
+const { normalizeSosFilters, matchesSosFilters } = require("./sos-contract");
+
 const RESCUE_REQUESTS_COLLECTION = "rescue_requests";
 
 const ALLOWED_URGENCY_LEVELS = [
@@ -18,18 +20,7 @@ const ALLOWED_RESCUE_REQUEST_STATUSES = [
   "cancelled",
 ];
 
-const RESCUE_REQUEST_PRIORITY_SCORES = {
-  low: 1,
-  medium: 2,
-  high: 3,
-  critical: 4,
-};
-
-const ALLOWED_RESCUE_REQUEST_SORTS = [
-  "newest",
-  "oldest",
-  "priority",
-];
+const ALLOWED_RESCUE_REQUEST_SORTS = ["newest", "oldest"];
 
 function normalizeOptionalString(value, fieldName) {
   if (value === undefined || value === null) {
@@ -111,110 +102,8 @@ function normalizeRescueRequestData(requestData) {
   };
 }
 
-function createInvalidFilterError(message) {
-  const error = new Error(message);
-  error.code = "INVALID_RESCUE_REQUEST_FILTER";
-  return error;
-}
-
-function normalizeFilterValue(value, fieldName) {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  if (typeof value !== "string") {
-    throw createInvalidFilterError(
-      `${fieldName} filter must be a string`,
-    );
-  }
-
-  return value.trim() || null;
-}
-
 function normalizeRescueRequestFilters(filters) {
-  if (filters === undefined || filters === null) {
-    return {
-      status: null,
-      urgency: null,
-      sort: "newest",
-    };
-  }
-
-  if (
-    typeof filters !== "object" ||
-    Array.isArray(filters)
-  ) {
-    throw createInvalidFilterError(
-      "Rescue request filters must be an object",
-    );
-  }
-
-  const status = normalizeFilterValue(
-    filters.status,
-    "Rescue request status",
-  );
-
-  const urgency = normalizeFilterValue(
-    filters.urgency,
-    "Rescue request urgency",
-  );
-
-  const severity = normalizeFilterValue(
-    filters.severity,
-    "Rescue request severity",
-  );
-
-  const sort = normalizeFilterValue(
-    filters.sort,
-    "Rescue request sort",
-  );
-
-  if (
-    urgency &&
-    severity &&
-    urgency !== severity
-  ) {
-    throw createInvalidFilterError(
-      "Rescue request urgency and severity filters must match",
-    );
-  }
-
-  const normalizedUrgency = urgency || severity;
-
-  if (
-    status &&
-    !ALLOWED_RESCUE_REQUEST_STATUSES.includes(status)
-  ) {
-    throw createInvalidFilterError(
-      "Invalid rescue request status filter",
-    );
-  }
-
-  if (
-    normalizedUrgency &&
-    !ALLOWED_URGENCY_LEVELS.includes(
-      normalizedUrgency,
-    )
-  ) {
-    throw createInvalidFilterError(
-      "Invalid rescue request urgency filter",
-    );
-  }
-
-  if (
-    sort &&
-    !ALLOWED_RESCUE_REQUEST_SORTS.includes(sort)
-  ) {
-    throw createInvalidFilterError(
-      "Invalid rescue request sort filter",
-    );
-  }
-
-  return {
-    status,
-    urgency: normalizedUrgency,
-    sort: sort || "newest",
-  };
+  return normalizeSosFilters(filters ?? {});
 }
 
 async function getRescueRequestById(requestId) {
@@ -228,8 +117,8 @@ async function getRescueRequestById(requestId) {
   }
 
   return {
-    id: requestDoc.id,
     ...requestDoc.data(),
+    id: requestDoc.id,
   };
 }
 
@@ -309,20 +198,6 @@ function compareRescueRequests(
   secondRequest,
   sort,
 ) {
-  if (sort === "priority") {
-    const priorityDifference =
-      RESCUE_REQUEST_PRIORITY_SCORES[
-        secondRequest.urgency
-      ] -
-      RESCUE_REQUEST_PRIORITY_SCORES[
-        firstRequest.urgency
-      ];
-
-    if (priorityDifference !== 0) {
-      return priorityDifference;
-    }
-  }
-
   const createdAtDifference =
     getTimestampMillis(secondRequest.createdAt) -
     getTimestampMillis(firstRequest.createdAt);
@@ -359,24 +234,15 @@ async function getRescueRequestsForUser(
 
   return snapshot.docs
     .map((requestDoc) => ({
-      id: requestDoc.id,
       ...requestDoc.data(),
+      id: requestDoc.id,
     }))
     .filter(
       (request) =>
         user.role !== "resident" ||
         request.residentId === user.id,
     )
-    .filter(
-      (request) =>
-        !normalizedFilters.status ||
-        request.status === normalizedFilters.status,
-    )
-    .filter(
-      (request) =>
-        !normalizedFilters.urgency ||
-        request.urgency === normalizedFilters.urgency,
-    )
+    .filter((request) => matchesSosFilters(request, normalizedFilters))
     .sort((firstRequest, secondRequest) =>
       compareRescueRequests(
         firstRequest,
@@ -390,7 +256,6 @@ module.exports = {
   RESCUE_REQUESTS_COLLECTION,
   ALLOWED_URGENCY_LEVELS,
   ALLOWED_RESCUE_REQUEST_STATUSES,
-  RESCUE_REQUEST_PRIORITY_SCORES,
   ALLOWED_RESCUE_REQUEST_SORTS,
   createRescueRequest,
   setRescueRequestById,

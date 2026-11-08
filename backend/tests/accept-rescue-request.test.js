@@ -403,7 +403,7 @@ async function runTests() {
     assert.equal(rescueRequest.id, "request-1");
     assert.equal(rescueRequest.status, "received");
     assert.equal(rescueRequest.residentId, "resident");
-    assert.equal(rescueRequest.urgency, "high");
+    assert.equal(Object.hasOwn(rescueRequest, "urgency"), false);
     assert.equal(rescueRequest.numberOfPeople, 3);
 
     assert.deepEqual(rescueRequest.location, {

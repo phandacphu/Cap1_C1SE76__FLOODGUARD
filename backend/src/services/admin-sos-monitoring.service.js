@@ -13,7 +13,8 @@ const {
   getRescueRequestStatusHistoryByRequestId,
 } = require("./rescue-request-status-history.service");
 
-const ALLOWED_QUERY_FIELDS = ["status", "urgency", "severity", "sort"];
+const { toClientSos, sosState } = require("./sos-contract");
+const ALLOWED_QUERY_FIELDS = ["status", "state", "sort", "from", "to"];
 
 function monitoringError(code, message, statusCode) {
   const error = new Error(message);
@@ -115,19 +116,7 @@ function toIsoString(value) {
     : null;
 }
 
-function toClientRequest(request) {
-  return {
-    id: request.id,
-    residentId: request.residentId,
-    location: request.location,
-    urgency: request.urgency,
-    numberOfPeople: request.numberOfPeople,
-    note: request.note ?? null,
-    status: request.status,
-    createdAt: toIsoString(request.createdAt),
-    updatedAt: toIsoString(request.updatedAt),
-  };
-}
+const toClientRequest = toClientSos;
 
 function toClientAssignment(assignment) {
   if (!assignment) return null;
@@ -154,202 +143,20 @@ function toClientHistory(history) {
   };
 }
 
-// CCF-158: Validate ISO 8601 datetime filters.
-function parseDateFilter(value, fieldName) {
-  if (value === undefined) {
-    return null;
-  }
-
-  const pattern =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/;
-
-  const match = typeof value === "string" ? value.match(pattern) : null;
-
-  if (!match) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      `${fieldName} must be an ISO 8601 datetime with timezone`,
-      400,
-    );
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6]);
-
-  const offsetHour = match[10] ? Number(match[10]) : 0;
-  const offsetMinute = match[11] ? Number(match[11]) : 0;
-
-  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-
-  const daysInMonth = [
-    31,
-    leapYear ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31,
-  ];
-
-  const validDate =
-    year >= 1 &&
-    month >= 1 &&
-    month <= 12 &&
-    day >= 1 &&
-    day <= (daysInMonth[month - 1] || 0) &&
-    hour <= 23 &&
-    minute <= 59 &&
-    second <= 59 &&
-    offsetHour <= 23 &&
-    offsetMinute <= 59;
-
-  if (!validDate) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      `Invalid ${fieldName} datetime`,
-      400,
-    );
-  }
-
-  const milliseconds = Date.parse(value);
-
-  if (!Number.isFinite(milliseconds)) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      `Invalid ${fieldName} datetime`,
-      400,
-    );
-  }
-
-  return milliseconds;
-}
-
-// CCF-158: Get summary statistics for Admin dashboard.
-// CCF-161: Support date range, status and urgency filters.
+// The same server-side filters define both list and summary scope.
 async function getSosSummaryStatisticsForAdmin(actorId, query = {}) {
   const admin = await authorizeAdmin(actorId);
-
-  // CCF-161: Allow supported report query parameters.
-  validateQuery(query, ["from", "to", "status", "urgency"]);
-
-  const from = parseDateFilter(query.from, "from");
-  const to = parseDateFilter(query.to, "to");
-
-  if (from !== null && to !== null && from > to) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      "from must be earlier than or equal to to",
-      400,
-    );
-  }
-
-  // CCF-161: Validate report filters.
-  const allowedStatuses = [
-    "submitted",
-    "received",
-    "in_progress",
-    "assisted",
-    "cancelled",
-  ];
-
-  const allowedUrgencies = ["low", "medium", "high", "critical"];
-
-  const { status, urgency } = query;
-
-  if (
-    status !== undefined &&
-    (typeof status !== "string" || !allowedStatuses.includes(status))
-  ) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      "Invalid status filter",
-      400,
-    );
-  }
-
-  if (
-    urgency !== undefined &&
-    (typeof urgency !== "string" || !allowedUrgencies.includes(urgency))
-  ) {
-    throw monitoringError(
-      "INVALID_ADMIN_SOS_QUERY",
-      "Invalid urgency filter",
-      400,
-    );
-  }
-
-  // Reuse the existing Admin-authorized SOS retrieval.
-  const requests = await getRescueRequestsForUser(admin, {});
-
+  validateQuery(query, ALLOWED_QUERY_FIELDS);
+  const requests = await getRescueRequestsForUser(admin, query);
   const summary = {
-    total: 0,
-    byStatus: {
-      submitted: 0,
-      received: 0,
-      in_progress: 0,
-      assisted: 0,
-      cancelled: 0,
-    },
-    byUrgency: {
-      low: 0,
-      medium: 0,
-      high: 0,
-      critical: 0,
-    },
+    total: requests.length, active: 0, rescued: 0, legacyOther: 0,
+    byStatus: { submitted: 0, received: 0, in_progress: 0, assisted: 0, cancelled: 0 },
   };
-
   for (const request of requests) {
-    // CCF-161: Filter by SOS status.
-    if (status !== undefined && request.status !== status) {
-      continue;
-    }
-
-    // CCF-161: Filter by SOS urgency.
-    if (urgency !== undefined && request.urgency !== urgency) {
-      continue;
-    }
-
-    // CCF-158: Keep existing inclusive date-range filtering.
-    if (from !== null || to !== null) {
-      const createdAt =
-        request.createdAt && typeof request.createdAt.toMillis === "function"
-          ? request.createdAt.toMillis()
-          : NaN;
-
-      if (!Number.isFinite(createdAt)) {
-        continue;
-      }
-
-      if (from !== null && createdAt < from) {
-        continue;
-      }
-
-      if (to !== null && createdAt > to) {
-        continue;
-      }
-    }
-
-    // Count only requests matching all supplied filters.
-    summary.total++;
-
-    if (Object.hasOwn(summary.byStatus, request.status)) {
-      summary.byStatus[request.status]++;
-    }
-
-    if (Object.hasOwn(summary.byUrgency, request.urgency)) {
-      summary.byUrgency[request.urgency]++;
-    }
+    const state = sosState(request.status);
+    summary[state === "legacy_other" ? "legacyOther" : state]++;
+    if (Object.hasOwn(summary.byStatus, request.status)) summary.byStatus[request.status]++;
   }
-
   return summary;
 }
 

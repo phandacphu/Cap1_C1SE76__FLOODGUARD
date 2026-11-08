@@ -65,25 +65,6 @@ const requests = [
   },
 ];
 
-const prioritySorted = [...requests].sort(
-  (firstRequest, secondRequest) =>
-    compareRescueRequests(
-      firstRequest,
-      secondRequest,
-      "priority",
-    ),
-);
-
-assert.deepEqual(
-  prioritySorted.map((request) => request.id),
-  [
-    "request-critical",
-    "request-high",
-    "request-medium",
-    "request-low",
-  ],
-);
-
 const newestSorted = [...requests].sort(
   (firstRequest, secondRequest) =>
     compareRescueRequests(
@@ -122,25 +103,11 @@ assert.deepEqual(
   ],
 );
 
-assert.deepEqual(
-  normalizeRescueRequestFilters({
-    sort: "priority",
-  }),
-  {
-    status: null,
-    urgency: null,
-    sort: "priority",
-  },
-);
-
-assert.deepEqual(
-  normalizeRescueRequestFilters({}),
-  {
-    status: null,
-    urgency: null,
-    sort: "newest",
-  },
-);
+assert.throws(() => normalizeRescueRequestFilters({ sort: "priority" }),
+  { code: "INVALID_RESCUE_REQUEST_FILTER" });
+assert.deepEqual(normalizeRescueRequestFilters({}), {
+  status: null, state: null, sort: "newest", from: null, to: null,
+});
 
 assert.throws(
   () =>
@@ -153,5 +120,5 @@ assert.throws(
 );
 
 console.log(
-  "Rescue request priority tests passed",
+  "Rescue request chronological sorting and obsolete priority rejection tests passed",
 );

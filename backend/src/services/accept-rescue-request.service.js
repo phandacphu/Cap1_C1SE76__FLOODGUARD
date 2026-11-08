@@ -121,6 +121,14 @@ async function acceptRescueRequestWithHistory(requestId, rescueStaffId) {
 
     const request = requestDoc.data();
 
+    if (request.schemaVersion === 2) {
+      throw createAcceptError(
+        "ACCEPT_REQUEST_UNAVAILABLE",
+        "New SOS requests use direct rescue confirmation; acceptance is not supported",
+        409,
+      );
+    }
+
     if (request.status !== "submitted" || assignmentDoc.exists) {
       throw createAcceptError(
         "ACCEPT_REQUEST_UNAVAILABLE",

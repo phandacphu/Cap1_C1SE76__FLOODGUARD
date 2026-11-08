@@ -22,6 +22,7 @@ function handleError(res, error, operation) {
     return res.status(statusCode).json({
       success: false,
       message: error.message,
+      code: error.code,
     });
   }
 
