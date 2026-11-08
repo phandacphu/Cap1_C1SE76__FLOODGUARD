@@ -1,3 +1,4 @@
+import { historicalFloodIcon } from "../../map/historicalFloodIcon";
 import { formatDashboardSosCount } from "../../admin/sos/sosFormat";
 import { useEffect, useState } from "react";
 import L from "leaflet";
@@ -95,10 +96,8 @@ export function RescueOperationsMap({ requests }: { requests: RescueRequest[] | 
                 key={layers[index].label}
                 data={result.value as unknown as GeoJSON.FeatureCollection}
                 interactive={false}
-                style={{ color: "#ef4444", weight: 1.5, fillOpacity: 0.14 }}
-                pointToLayer={(_feature, latlng) => L.circleMarker(latlng, {
-                  radius: 7, color: "#fff", weight: 3, fillColor: "#ef4444", fillOpacity: 1,
-                })}
+                style={{ color: "#64748b", weight: 1.5, dashArray: "5 4", fillOpacity: 0.06 }}
+                pointToLayer={(_feature, latlng) => L.marker(latlng, { icon: historicalFloodIcon, interactive: false })}
               />
             ) : null,
           )}

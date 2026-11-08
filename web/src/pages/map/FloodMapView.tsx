@@ -1,3 +1,5 @@
+import { AREA_TYPE_COLOR, AREA_TYPE_LABEL } from '../admin/flood-area/floodAreaTypes';
+import { historicalFloodIcon } from './historicalFloodIcon';
 import { formatAreaAlertCount } from './mapAlertStatus';
 import {
   fetchHistoricalBuffers,
@@ -17,8 +19,8 @@ import { ADMIN_NAV } from '../../components/layout/navConfig';
 import type { FloodArea, FloodAlert } from '../../types/floodArea';
 
 const AREA_STYLES = {
-  flood: { stroke: '#ea580c', fill: '#9a3412', label: 'Vùng ngập', badge: 'bg-orange-950 text-orange-300' },
-  low_lying: { stroke: '#2563eb', fill: '#1e40af', label: 'Vùng trũng', badge: 'bg-blue-950 text-blue-300' },
+  flood: { stroke: AREA_TYPE_COLOR.flood, fill: AREA_TYPE_COLOR.flood, label: AREA_TYPE_LABEL.flood, badge: 'bg-yellow-950 text-yellow-300' },
+  low_lying: { stroke: AREA_TYPE_COLOR.low_lying, fill: AREA_TYPE_COLOR.low_lying, label: AREA_TYPE_LABEL.low_lying, badge: 'bg-red-950 text-red-300' },
   unknown: { stroke: '#94a3b8', fill: '#475569', label: 'Chưa phân loại', badge: 'bg-slate-800 text-slate-300' },
 };
 const areaStyle = (area: FloodArea) => AREA_STYLES[area.areaType ?? 'unknown'];
@@ -35,7 +37,6 @@ const escapeHtml = (unsafe?: string | null): string => {
 
 type FilterStatus = 'all' | 'flood' | 'low_lying' | 'unknown';
 const SEVERITY_LABELS = { low: 'Thấp', medium: 'Vừa', high: 'Cao', critical: 'Khẩn cấp' };
-const SEVERITY_COLORS = { low: '#2563eb', medium: '#eab308', high: '#f97316', critical: '#ef4444' };
 const PRIORITY = { low: 1, medium: 2, high: 3, critical: 4 };
 
 export const FloodMapView: React.FC = () => {
@@ -218,15 +219,11 @@ export const FloodMapView: React.FC = () => {
         L.geoJSON(result.value as unknown as GeoJSON.FeatureCollection, {
           pane: 'flood-history',
           interactive: false,
-          style: { color: '#ef4444', weight: 1.5, fillOpacity: 0.15 },
-          pointToLayer: (_feature, position) => L.circleMarker(position, {
+          style: { color: '#64748b', weight: 1.5, dashArray: '5 4', fillOpacity: 0.06 },
+          pointToLayer: (_feature, position) => L.marker(position, {
             pane: 'flood-history',
             interactive: false,
-            radius: 7,
-            color: '#fff',
-            weight: 3,
-            fillColor: '#ef4444',
-            fillOpacity: 1,
+            icon: historicalFloodIcon,
           }),
         }).addTo(group);
       });
@@ -280,7 +277,6 @@ export const FloodMapView: React.FC = () => {
         const colorCfg = areaStyle(area);
         const isAreaActive = area.areaType != null;
         const areaAlerts = alertsByArea.get(area.id) ?? [];
-        const highestAlert = areaAlerts[0];
         const alertMarkup = alertsLoading ? '<p>Đang tải cảnh báo</p>' : areaAlerts.length ? areaAlerts.map(alert => `
           <hr/><b>${escapeHtml(alert.title)}</b><br/>
           <b>Mức độ:</b> ${SEVERITY_LABELS[alert.severity]}<br/>
@@ -291,7 +287,7 @@ export const FloodMapView: React.FC = () => {
           `<p>${alertCountError ? 'Chưa xác nhận được cảnh báo của vùng.' : 'Không có cảnh báo hiệu lực tại lần tải.'}</p>`;
 
         const polygon = L.polygon(latLngs, {
-          color: highestAlert && !alertCountError && !alertsLoading ? SEVERITY_COLORS[highestAlert.severity] : colorCfg.stroke,
+          color: colorCfg.stroke,
           weight: isAreaActive ? 2.5 : 1.5,
           dashArray: isAreaActive ? undefined : '5, 5',
           opacity: isAreaActive ? 0.95 : 0.4,
@@ -388,13 +384,15 @@ export const FloodMapView: React.FC = () => {
           </div>
 
           <div className="flex gap-3 text-xs text-slate-300" aria-label="Chú giải">
-            <span>🟠 Vùng ngập</span><span>🔵 Vùng trũng</span><span>⚪ Chưa phân loại</span>
+            <span>🟡 Vùng ngập</span><span>🔴 Vùng trũng</span>
+            {isRescue && <span><svg width="12" height="16" viewBox="0 0 24 32" aria-hidden="true" className="inline"><path d="M12 30C9 25 2 17 2 11a10 10 0 0 1 20 0c0 6-7 14-10 19Z" fill="#6d28d9" stroke="white" strokeWidth="2"/><circle cx="12" cy="11" r="3.5" fill="white"/></svg> Ngập lịch sử</span>}
+            <span>⚪ Chưa phân loại</span>
           </div>
         </div>
       </div>
 
       {alertsLoading && <p role="status" className="text-xs text-slate-400">Đang tải cảnh báo</p>}
-      {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Viền màu thể hiện mức độ cảnh báo khi tải thành công; màu nền thể hiện loại vùng.</p>}
+      {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Xem mức độ cảnh báo trong popup của vùng.</p>}
       {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
       <label className="flex items-center gap-2 text-xs text-cyan-200">
         <input type="checkbox" checked={onlyWithAlerts} disabled={alertsLoading} onChange={event => setOnlyWithAlerts(event.target.checked)} />
@@ -408,7 +406,7 @@ export const FloodMapView: React.FC = () => {
           </label>
           {showHistory && (
             <>
-              <p className="text-slate-300">Lớp đỏ: điểm ngập, vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
+              <p className="text-slate-300">Ghim: điểm ngập lịch sử. Viền xám nét đứt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
               <p role="status" className="text-slate-400">{historyStatus || 'Đang tải lớp ngập lịch sử…'}</p>
               {historyStatus.startsWith('Không tải') && (
                 <button type="button" className="underline" onClick={() => {
