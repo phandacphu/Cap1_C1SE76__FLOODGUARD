@@ -30,18 +30,18 @@ class ProfileViewModel(
     }
 
     fun loadSosHistory() {
-        viewModelScope.launch {
-            _sosState.value = ProfileSosUiState(
-                isLoading = true
-            )
+        if (_sosState.value.isLoading) return
 
+        // Đặt trước launch để chặn cả những lần gọi liên tiếp
+        // khi coroutine chưa bắt đầu chạy.
+        _sosState.value = ProfileSosUiState(isLoading = true)
+
+        viewModelScope.launch {
             val result = repository.getRescueRequests()
 
             _sosState.value = result.fold(
                 onSuccess = { requests ->
-                    ProfileSosUiState(
-                        requests = requests
-                    )
+                    ProfileSosUiState(requests = requests)
                 },
                 onFailure = { error ->
                     ProfileSosUiState(

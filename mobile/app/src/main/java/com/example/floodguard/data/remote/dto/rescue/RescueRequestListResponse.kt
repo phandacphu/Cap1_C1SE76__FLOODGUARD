@@ -8,7 +8,7 @@ data class RescueRequestListResponse(
 )
 
 data class RescueRequestListData(
-    val rescueRequests: List<RescueRequestDto> = emptyList()
+    val rescueRequests: List<RescueRequestDto?>? = null
 )
 
 data class RescueRequestDto(
