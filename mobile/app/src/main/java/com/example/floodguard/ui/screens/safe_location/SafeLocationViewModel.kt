@@ -65,9 +65,7 @@ class SafeLocationViewModel(
                     _uiState.update { state ->
                         state.copy(
                             isLoading = false,
-                            locations = filterLocations(
-                                state.selectedFilter
-                            ),
+                            locations = locations,
                             errorMessage = null
                         )
                     }
