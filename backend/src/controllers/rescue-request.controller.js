@@ -27,19 +27,9 @@ const {
   getRescueAssignmentByRequestId,
 } = require("../services/rescue-assignment.service");
 
-function toClientRescueRequest(request) {
-  return {
-    id: request.id,
-    residentId: request.residentId,
-    location: request.location,
-    urgency: request.urgency,
-    numberOfPeople: request.numberOfPeople,
-    note: request.note,
-    status: request.status,
-    createdAt: request.createdAt.toDate().toISOString(),
-    updatedAt: request.updatedAt.toDate().toISOString(),
-  };
-}
+const { toClientSos, isoTimestamp, validDocumentId } = require("../services/sos-contract");
+const { updateSosLocation } = require("../services/sos-location.service");
+const toClientRescueRequest = toClientSos;
 
 function toClientStatusHistory(history) {
   return {
@@ -48,7 +38,7 @@ function toClientStatusHistory(history) {
     newStatus: history.newStatus,
     changedBy: history.changedBy,
     note: history.note,
-    changedAt: history.changedAt.toDate().toISOString(),
+    changedAt: isoTimestamp(history.changedAt),
   };
 }
 
@@ -63,8 +53,8 @@ function toClientRescueAssignment(assignment) {
     rescueStaffId: assignment.rescueStaffId,
     status: assignment.status,
     note: assignment.note,
-    assignedAt: assignment.assignedAt.toDate().toISOString(),
-    updatedAt: assignment.updatedAt.toDate().toISOString(),
+    assignedAt: isoTimestamp(assignment.assignedAt),
+    updatedAt: isoTimestamp(assignment.updatedAt),
   };
 }
 
@@ -97,6 +87,10 @@ async function listRescueRequests(req, res) {
       });
     }
 
+    if (!["resident", "rescue", "admin"].includes(user.role)) {
+      return res.status(403).json({ success: false, message: "Invalid account role" });
+    }
+
     const rescueRequests = await getRescueRequestsForUser(
       {
         id: req.user.id,
@@ -119,6 +113,7 @@ async function listRescueRequests(req, res) {
       return res.status(400).json({
         success: false,
         message: error.message,
+        code: error.code,
       });
     }
 
@@ -160,11 +155,14 @@ async function getRescueRequestDetail(req, res) {
       });
     }
 
+    if (!["resident", "rescue", "admin"].includes(user.role)) {
+      return res.status(403).json({ success: false, message: "Invalid account role" });
+    }
+
     const requestId = req.params.requestId;
 
     if (
-      typeof requestId !== "string" ||
-      !requestId.trim()
+      !validDocumentId(requestId)
     ) {
       return res.status(400).json({
         success: false,
@@ -285,13 +283,20 @@ async function createSos(req, res) {
       return res.status(409).json({
         success: false,
         message: error.message,
+        code: error.code,
+        data: { activeRequestId: error.requestId },
       });
+    }
+
+    if (["SOS_USER_NOT_FOUND", "SOS_ROLE_FORBIDDEN"].includes(error.code)) {
+      return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
     }
 
     if (error.code === "INVALID_SOS_INPUT") {
       return res.status(400).json({
         success: false,
         message: error.message,
+        code: error.code,
       });
     }
 
@@ -368,6 +373,7 @@ async function acceptRescueRequest(req, res) {
       return res.status(statusCode).json({
         success: false,
         message: error.message,
+        code: error.code,
       });
     }
 
@@ -534,6 +540,7 @@ async function updateRescueRequestStatus(req, res) {
       return res.status(statusCode).json({
         success: false,
         message: error.message,
+        code: error.code,
       });
     }
 
@@ -546,7 +553,32 @@ async function updateRescueRequestStatus(req, res) {
   }
 }
 
+async function updateRescueRequestLocation(req, res) {
+  try {
+    if (!req.user || !validDocumentId(req.user.id)) {
+      return res.status(401).json({ success: false, message: "Authentication is required" });
+    }
+    const request = await updateSosLocation(req.params.requestId, req.user.id, req.body);
+    return res.status(200).json({
+      success: true, message: "SOS location updated successfully",
+      data: { rescueRequest: toClientSos(request) },
+    });
+  } catch (error) {
+    const codes = [
+      "SOS_AUTH_REQUIRED", "INVALID_SOS_REQUEST_ID", "INVALID_SOS_LOCATION",
+      "SOS_USER_NOT_FOUND", "SOS_ROLE_FORBIDDEN", "SOS_REQUEST_NOT_FOUND",
+      "SOS_OWNER_FORBIDDEN", "SOS_NOT_ACTIVE", "STALE_SOS_LOCATION", "SOS_LOCATION_TIME_UNAVAILABLE",
+    ];
+    if (codes.includes(error.code)) {
+      return res.status(error.statusCode).json({ success: false, message: error.message, code: error.code });
+    }
+    console.error("Update SOS location failed");
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+}
+
 module.exports = {
+  updateRescueRequestLocation,
   createSos,
   listRescueRequests,
   getRescueRequestDetail,

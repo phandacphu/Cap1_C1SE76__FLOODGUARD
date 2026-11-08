@@ -227,44 +227,15 @@ async function runTests() {
       ["request-progress"],
     );
 
-    const filteredByUrgency = await get(
-      "?urgency=critical",
-      rescueToken,
-    );
-
-    assert.equal(filteredByUrgency.status, 200);
-    assert.deepEqual(
-      filteredByUrgency.body.data.rescueRequests.map(
-        (request) => request.id,
-      ),
-      ["request-progress"],
-    );
-
-    const filteredBySeverity = await get(
-      "?severity=critical",
-      rescueToken,
-    );
-
-    assert.equal(filteredBySeverity.status, 200);
-    assert.deepEqual(
-      filteredBySeverity.body.data.rescueRequests.map(
-        (request) => request.id,
-      ),
-      ["request-progress"],
-    );
-
-    const filteredByBoth = await get(
-      "?status=in_progress&urgency=critical",
-      rescueToken,
-    );
-
-    assert.equal(filteredByBoth.status, 200);
-    assert.deepEqual(
-      filteredByBoth.body.data.rescueRequests.map(
-        (request) => request.id,
-      ),
-      ["request-progress"],
-    );
+    for (const query of ["?urgency=critical", "?severity=critical", "?status=in_progress&urgency=critical", "?sort=priority"]) {
+      assert.equal((await get(query, rescueToken)).status, 400);
+    }
+    const active = await get("?state=active", rescueToken);
+    assert.equal(active.status, 200);
+    assert.equal(active.body.data.rescueRequests.length, 2);
+    assert.ok(active.body.data.rescueRequests.every((r) => r.state === "active"));
+    const rescued = await get("?state=rescued", rescueToken);
+    assert.deepEqual(rescued.body.data.rescueRequests.map((r) => r.id), ["request-assisted"]);
 
     const residentRequests = await get(
       "?status=submitted",

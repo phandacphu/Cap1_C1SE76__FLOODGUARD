@@ -1,448 +1,223 @@
 const assert = require("node:assert/strict");
-const express = require("express");
-const jwt = require("jsonwebtoken");
-const { Timestamp } = require("firebase-admin/firestore");
-
-process.env.JWT_SECRET = "ccf100-local-test-secret-only";
-
-const records = new Map();
-const originalTime = Timestamp.fromDate(
-  new Date("2026-10-09T08:00:00.000Z"),
-);
-
-let sequence = 0;
-let version = 0;
-let commits = 0;
-let failCommit = false;
-let failRead = false;
-let beforeCommit = null;
-
-function snapshot(ref) {
-  if (failRead) {
-    throw new Error("Simulated read failure");
-  }
-
-  const stored = records.get(ref.key);
-  const data = stored === undefined ? undefined : { ...stored };
-
-  return {
-    id: ref.id,
-    exists: data !== undefined,
-    data: () => data,
-  };
-}
-
-const db = {
-  collection(collectionName) {
-    return {
-      doc(id = `history-${++sequence}`) {
-        return {
-          id,
-          key: `${collectionName}/${id}`,
-          async get() {
-            return snapshot(this);
-          },
-        };
-      },
-    };
-  },
-
-  async runTransaction(callback) {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const readVersion = version;
-      const writes = [];
-
-      const result = await callback({
-        async get(ref) {
-          assert.equal(writes.length, 0, "Reads must precede writes");
-          return snapshot(ref);
-        },
-
-        update(ref, data) {
-          writes.push({ type: "update", ref, data });
-        },
-
-        create(ref, data) {
-          writes.push({ type: "create", ref, data });
-        },
-      });
-
-      if (beforeCommit) {
-        const hook = beforeCommit;
-        beforeCommit = null;
-        hook();
-      }
-
-      if (version !== readVersion) {
-        continue;
-      }
-
-      if (failCommit) {
-        throw new Error("Simulated commit failure");
-      }
-
-      // Validate every write before applying any write.
-      for (const write of writes) {
-        if (write.type === "create") {
-          assert.equal(records.has(write.ref.key), false);
-        } else {
-          assert.equal(records.has(write.ref.key), true);
-        }
-      }
-
-      const commitTime = Timestamp.fromMillis(
-        originalTime.toMillis() + (commits + 1) * 1000,
-      );
-
-      for (const write of writes) {
-        const saved = write.type === "update"
-          ? { ...records.get(write.ref.key), ...write.data }
-          : { ...write.data };
-
-        for (const field of ["updatedAt", "changedAt"]) {
-          if (Object.hasOwn(write.data, field)) {
-            saved[field] = commitTime;
-          }
-        }
-
-        records.set(write.ref.key, saved);
-      }
-
-      commits += 1;
-      version += 1;
-      return result;
-    }
-
-    throw new Error("Simulated transaction retry limit");
-  },
-};
-
-const firebasePath = require.resolve("../src/config/firebase");
-
-require.cache[firebasePath] = {
-  id: firebasePath,
-  filename: firebasePath,
-  loaded: true,
-  exports: { db },
-};
-
-const routes = require("../src/routes/rescue-request.routes");
+const { test, beforeEach } = require("node:test");
+const h = require("./helpers/sos-test-app");
 const {
-  updateRescueStatusWithHistory,
+  createSosWithHistory: create,
+} = require("../src/services/create-sos.service");
+const {
+  updateRescueStatusWithHistory: complete,
 } = require("../src/services/update-rescue-status.service");
-
-const app = express();
-app.set("env", "test");
-app.use(express.json());
-app.use("/api/rescue-requests", routes);
-
-// Return JSON for body-parser failures in this test app.
-app.use((error, req, res, next) => {
-  if (error.type === "entity.parse.failed") {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid JSON body",
-    });
-  }
-  next(error);
+const {
+  ACTIVE_SOS_COLLECTION,
+  activeSosLockId,
+} = require("../src/services/sos-contract");
+beforeEach(h.reset);
+for (const status of ["submitted", "received", "in_progress"]) {
+  test(`any active Rescue directly completes ${status} without assignment`, async () => {
+    h.seedRequest("sos", { status });
+    const original = h.records.get("rescue_requests/sos");
+    const result = await complete("sos", "rescue2", { status: "assisted" });
+    assert.equal(result.rescueRequest.status, "assisted");
+    assert.equal(result.rescueRequest.completedBy, "rescue2");
+    assert.ok(result.rescueRequest.completedAt instanceof h.Timestamp);
+    assert.deepEqual(result.rescueRequest.location, original.location);
+    assert.equal(h.count("rescue_assignments"), 0);
+    for (const name of [
+      "rescue_request_status_history",
+      "audit_logs",
+      "notifications",
+      "notification_delivery_logs",
+    ])
+      assert.equal(h.count(name), 1);
+    const event = [...h.records.entries()].find(([key]) =>
+      key.startsWith("notifications/"),
+    )[1];
+    assert.equal(event.recipientId, "resident");
+    assert.equal(event.statusEvent.oldStatus, status);
+    assert.equal(event.statusEvent.newStatus, "assisted");
+  });
+}
+test("completion releases lock and permits next SOS", async () => {
+  const first = await create("resident", h.validBody());
+  await complete(first.id, "rescue", { status: "assisted" });
+  assert.equal(h.count(ACTIVE_SOS_COLLECTION), 0);
+  const second = await create("resident", h.validBody());
+  assert.notEqual(first.id, second.id);
+  assert.equal(h.count("rescue_requests"), 2);
 });
-
-function reset() {
-  records.clear();
-  version += 1;
-  commits = 0;
-  failCommit = false;
-  failRead = false;
-  beforeCommit = null;
-
-  for (const [id, role, isActive] of [
-    ["rescue-1", "rescue", true],
-    ["rescue-2", "rescue", true],
-    ["resident", "resident", true],
-    ["admin", "admin", true],
-    ["inactive", "rescue", false],
-  ]) {
-    records.set(`users/${id}`, { role, isActive });
-  }
-
-  records.set("rescue_requests/request-1", {
-    residentId: "resident",
-    location: { latitude: 16.0544, longitude: 108.2022 },
-    urgency: "high",
-    numberOfPeople: 1,
-    note: "TEST ONLY",
-    status: "received",
-    createdAt: originalTime,
-    updatedAt: originalTime,
-  });
-
-  records.set("rescue_assignments/request-1", {
-    requestId: "request-1",
-    rescueStaffId: "rescue-1",
-    status: "accepted",
-    note: "Original assignment note",
-    assignedAt: originalTime,
-    updatedAt: originalTime,
-    auditField: "keep",
-  });
-}
-
-function tokenFor(id, role = "rescue", expiresIn = "5m") {
-  return jwt.sign(
-    { sub: id, role },
-    process.env.JWT_SECRET,
-    { algorithm: "HS256", expiresIn },
+test("concurrent rescuers complete once with one history/notification/audit", async () => {
+  const request = await create("resident", h.validBody());
+  const results = await Promise.allSettled([
+    complete(request.id, "rescue", { status: "assisted" }),
+    complete(request.id, "rescue2", { status: "assisted" }),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(
+    results.find((r) => r.status === "rejected").reason.code,
+    "STATUS_TRANSITION_CONFLICT",
   );
-}
-
-function historyEntries() {
-  return [...records.entries()]
-    .filter(([key]) =>
-      key.startsWith("rescue_request_status_history/"),
-    )
-    .map(([, data]) => data);
-}
-
-async function runTests() {
-  const server = app.listen(0, "127.0.0.1");
-
-  try {
-    await new Promise((resolve, reject) => {
-      server.once("listening", resolve);
-      server.once("error", reject);
+  const notification = [...h.records.entries()].find(([key]) => key.startsWith("notifications/"))[1];
+  assert.equal(notification.statusEvent.sequence, 1);
+  assert.equal(h.count("rescue_request_status_history"), 2);
+  for (const name of [
+    "audit_logs",
+    "notifications",
+    "notification_delivery_logs",
+  ])
+    assert.equal(h.count(name), 1);
+  const winner = results.find((r) => r.status === "fulfilled").value
+    .rescueRequest.completedBy;
+  assert.equal(
+    h.records.get(`rescue_requests/${request.id}`).completedBy,
+    winner,
+  );
+  await assert.rejects(complete(request.id, winner, { status: "assisted" }), {
+    code: "STATUS_TRANSITION_CONFLICT",
+  });
+});
+test("failed completion rolls back all writes and lock release", async () => {
+  const request = await create("resident", h.validBody());
+  h.failCommit();
+  await assert.rejects(
+    complete(request.id, "rescue", { status: "assisted" }),
+    /commit failure/,
+  );
+  assert.equal(
+    h.records.get(`rescue_requests/${request.id}`).status,
+    "submitted",
+  );
+  assert.equal(h.count(ACTIVE_SOS_COLLECTION), 1);
+  assert.equal(h.count("rescue_request_status_history"), 1);
+  for (const name of [
+    "audit_logs",
+    "notifications",
+    "notification_delivery_logs",
+  ])
+    assert.equal(h.count(name), 0);
+});
+test("terminal/unknown records cannot be completed", async () => {
+  for (const status of ["cancelled", "unknown", "assisted"]) {
+    h.seedRequest(status, { status });
+    await assert.rejects(complete(status, "rescue", { status: "assisted" }), {
+      code: "STATUS_TRANSITION_CONFLICT",
     });
-
-    const baseUrl =
-      `http://127.0.0.1:${server.address().port}` +
-      "/api/rescue-requests";
-
-    async function patch(body, token, requestId = "request-1") {
-      const headers = { "Content-Type": "application/json" };
-      if (token !== undefined) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      const response = await fetch(
-        `${baseUrl}/${encodeURIComponent(requestId)}/status`,
-        {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify(body),
-        },
+  }
+});
+test("legacy assignment preserved; other request lock never deleted", async () => {
+  h.seedRequest("old", { status: "received" });
+  const assignment = {
+    requestId: "old",
+    rescueStaffId: "someone-else",
+    status: "accepted",
+  };
+  h.records.set("rescue_assignments/old", assignment);
+  const key = `${ACTIVE_SOS_COLLECTION}/${activeSosLockId("resident")}`;
+  h.records.set(key, { requestId: "other-request" });
+  await complete("old", "rescue", { status: "assisted" });
+  assert.deepEqual(h.records.get("rescue_assignments/old"), assignment);
+  assert.equal(h.records.get(key).requestId, "other-request");
+});
+test("unavailable owner does not prevent rescue or notify another user", async () => {
+  h.seedRequest("old");
+  h.records.delete("users/resident");
+  await complete("old", "rescue", { status: "assisted" });
+  assert.equal(h.count("notifications"), 0);
+  assert.equal(h.count("audit_logs"), 1);
+});
+test("HTTP completion uses live Rescue permission and JWT actor; validates body", async () => {
+  h.seedRequest("sos");
+  await h.withApi(async (api) => {
+    const path = "/api/rescue-requests/sos/status";
+    for (const [actor, tokenRole, status] of [
+      [null, null, 401],
+      ["resident", "resident", 403],
+      ["admin", "admin", 403],
+      ["admin", "rescue", 403],
+      ["missing", "rescue", 401],
+    ]) {
+      assert.equal(
+        (
+          await api(path, {
+            method: "PATCH",
+            actor,
+            tokenRole,
+            body: { status: "assisted" },
+          })
+        ).status,
+        status,
       );
-
-      return {
-        status: response.status,
-        body: await response.json(),
-      };
     }
-
-    async function reject(body, token, status, requestId) {
-      const before = [...records.entries()];
-      const beforeCommits = commits;
-      const result = await patch(body, token, requestId);
-
-      assert.equal(result.status, status);
-      assert.equal(result.body.success, false);
-      assert.deepEqual([...records.entries()], before);
-      assert.equal(commits, beforeCommits);
-    }
-
-    reset();
-    const progress = { status: "in_progress" };
-    const ownerToken = tokenFor("rescue-1");
-
-    await reject(progress, undefined, 401);
-    await reject(progress, "invalid-token", 401);
-    await reject(progress, tokenFor("rescue-1", "rescue", "-1s"), 401);
-    await reject(progress, tokenFor("missing"), 401);
-    await reject(progress, tokenFor("inactive"), 403);
-    await reject(progress, tokenFor("resident", "resident"), 403);
-    await reject(progress, tokenFor("admin", "admin"), 403);
-    await reject(progress, tokenFor("rescue-2"), 403);
-    await reject(progress, ownerToken, 404, "missing-request");
-    await reject(progress, ownerToken, 400, "invalid/id");
-
-    // A JWT role cannot override the current Firestore role.
-    records.get("users/rescue-1").role = "resident";
-    await reject(progress, ownerToken, 403);
-    reset();
-
+    h.records.get("users/rescue").isActive = false;
+    assert.equal(
+      (
+        await api(path, {
+          method: "PATCH",
+          actor: "rescue",
+          body: { status: "assisted" },
+        })
+      ).status,
+      403,
+    );
+    h.records.get("users/rescue").isActive = true;
     for (const body of [
+      { status: "in_progress" },
+      { status: "received" },
+      { status: "assisted", completedBy: "spoof" },
+      { status: "assisted", note: "x".repeat(201) },
       null,
       [],
-      "invalid",
-      {},
-      { status: "received" },
-      { status: "cancelled" },
-      { status: "completed" },
-      { status: 123 },
-      { status: "in_progress", note: 123 },
-      { status: "in_progress", rescueStaffId: "rescue-2" },
-      { status: "in_progress", changedBy: "admin" },
-      { status: "in_progress", updatedAt: "forged" },
     ]) {
-      await reject(body, ownerToken, 400);
+      assert.equal(
+        (await api(path, { method: "PATCH", actor: "rescue", body })).status,
+        400,
+      );
     }
-
-    // Cannot skip the progress step.
-    await reject({ status: "assisted" }, ownerToken, 409);
-
-    records.delete("rescue_assignments/request-1");
-    await reject(progress, ownerToken, 409);
-    reset();
-
-    records.get("rescue_assignments/request-1").requestId = "other";
-    await reject(progress, ownerToken, 409);
-    reset();
-
-    records.get("rescue_assignments/request-1").status = "completed";
-    await reject(progress, ownerToken, 409);
-    reset();
-
-    for (const status of ["submitted", "assisted", "cancelled"]) {
-      records.get("rescue_requests/request-1").status = status;
-      await reject(progress, ownerToken, 409);
-      reset();
-    }
-
-    // Successful progress update.
-    const first = await patch(
-      { status: "in_progress", note: "  Team is on the way  " },
-      ownerToken,
-    );
-
-    assert.equal(first.status, 200);
-    assert.equal(first.body.success, true);
-    assert.equal(first.body.data.rescueRequest.status, "in_progress");
-    assert.equal(first.body.data.assignment.status, "in_progress");
-    assert.equal(
-      first.body.data.assignment.assignedAt,
-      originalTime.toDate().toISOString(),
-    );
-
-    const savedAssignment = records.get(
-      "rescue_assignments/request-1",
-    );
-
-    assert.equal(savedAssignment.rescueStaffId, "rescue-1");
-    assert.equal(savedAssignment.auditField, "keep");
-    assert.equal(savedAssignment.note, "Original assignment note");
-    assert.equal(savedAssignment.assignedAt, originalTime);
-    assert.equal(
-      records.get("rescue_requests/request-1").note,
-      "TEST ONLY",
-    );
-
-    let entries = historyEntries();
-    assert.equal(entries.length, 1);
-    assert.equal(entries[0].requestId, "request-1");
-    assert.equal(entries[0].oldStatus, "received");
-    assert.equal(entries[0].newStatus, "in_progress");
-    assert.equal(entries[0].changedBy, "rescue-1");
-    assert.equal(entries[0].note, "Team is on the way");
-    assert.equal(
-      entries[0].changedAt.toMillis(),
-      savedAssignment.updatedAt.toMillis(),
-    );
-
-    await reject(progress, ownerToken, 409);
-
-    // Successful completion.
-    const second = await patch(
-      { status: "assisted", note: "   " },
-      ownerToken,
-    );
-
-    assert.equal(second.status, 200);
-    assert.equal(second.body.data.rescueRequest.status, "assisted");
-    assert.equal(second.body.data.assignment.status, "completed");
-
-    entries = historyEntries();
-    assert.equal(entries.length, 2);
-    assert.equal(entries[1].oldStatus, "in_progress");
-    assert.equal(entries[1].newStatus, "assisted");
-    assert.equal(entries[1].note, null);
-
-    await reject({ status: "assisted" }, ownerToken, 409);
-    await reject(progress, ownerToken, 409);
-
-    // Read/commit failures must not partially save changes.
-    const originalConsoleError = console.error;
-    console.error = () => {};
-
-    try {
-      reset();
-      failRead = true;
-      await reject(progress, ownerToken, 500);
-      failRead = false;
-
-      failCommit = true;
-      await reject(progress, ownerToken, 500);
-    } finally {
-      failRead = false;
-      failCommit = false;
-      console.error = originalConsoleError;
-    }
-
-    // Two competing identical updates: only one history entry.
-    reset();
-    const results = await Promise.allSettled([
-      updateRescueStatusWithHistory("request-1", "rescue-1", progress),
-      updateRescueStatusWithHistory("request-1", "rescue-1", progress),
-    ]);
-
-    assert.equal(
-      results.filter((result) => result.status === "fulfilled").length,
-      1,
-    );
-    const rejected = results.find(
-      (result) => result.status === "rejected",
-    );
-    assert.equal(rejected.reason.code, "STATUS_TRANSITION_CONFLICT");
-    assert.equal(commits, 1);
-    assert.equal(historyEntries().length, 1);
-
-    // A concurrent reassignment triggers a retry and access rejection.
-    reset();
-    beforeCommit = () => {
-      records.set("rescue_assignments/request-1", {
-        ...records.get("rescue_assignments/request-1"),
-        rescueStaffId: "rescue-2",
-      });
-      version += 1;
-    };
-
-    await assert.rejects(
-      () => updateRescueStatusWithHistory(
-        "request-1",
-        "rescue-1",
-        progress,
-      ),
-      (error) => error.code === "STATUS_STAFF_FORBIDDEN",
-    );
-
-    assert.equal(commits, 0);
-    assert.equal(historyEntries().length, 0);
-    assert.equal(
-      records.get("rescue_requests/request-1").status,
-      "received",
-    );
-
-    console.log("Update rescue status API tests passed");
-  } finally {
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-      server.closeAllConnections();
+    const result = await api(path, {
+      method: "PATCH",
+      actor: "rescue2",
+      body: { status: "assisted" },
     });
-  }
-}
-
-runTests().catch((error) => {
-  console.error("Update rescue status API tests failed");
-  console.error(error);
-  process.exitCode = 1;
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.rescueRequest.completedBy, "rescue2");
+    assert.equal(
+      (
+        await api(path, {
+          method: "PATCH",
+          actor: "rescue",
+          body: { status: "assisted" },
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await api("/api/rescue-requests/missing/status", {
+          method: "PATCH",
+          actor: "rescue",
+          body: { status: "assisted" },
+        })
+      ).status,
+      404,
+    );
+  });
+});
+test("old acceptance cannot move a new SOS into old workflow", async () => {
+  const request = await create("resident", h.validBody());
+  await h.withApi(async (api) =>
+    assert.equal(
+      (
+        await api(`/api/rescue-requests/${request.id}/accept`, {
+          method: "POST",
+          actor: "rescue",
+          body: {},
+        })
+      ).status,
+      409,
+    ),
+  );
+  assert.equal(
+    h.records.get(`rescue_requests/${request.id}`).status,
+    "submitted",
+  );
+  assert.equal(h.count("rescue_assignments"), 0);
 });

@@ -12,6 +12,8 @@ const {
   stageNotificationDeliveryLog,
 } = require("./notification-delivery-log.service");
 
+const { ACTIVE_SOS_STATUSES } = require("./sos-contract");
+
 const STATUS_EVENTS = {
   received: {
     previousStatus: "submitted",
@@ -26,7 +28,7 @@ const STATUS_EVENTS = {
   assisted: {
     previousStatus: "in_progress",
     sequence: 3,
-    body: "Yêu cầu SOS của bạn đã được đánh dấu hỗ trợ hoàn tất.",
+    body: "Yêu cầu SOS của bạn đã được cứu hộ xác nhận đã cứu.",
   },
 };
 
@@ -65,7 +67,10 @@ async function prepareSosStatusNotification(
     ? STATUS_EVENTS[newStatus]
     : null;
 
-  if (!definition || request.status !== definition.previousStatus) {
+  const validPrevious = newStatus === "assisted"
+    ? ACTIVE_SOS_STATUSES.includes(request.status)
+    : request.schemaVersion !== 2 && request.status === definition?.previousStatus;
+  if (!definition || !validPrevious) {
     throw new Error("Invalid SOS notification transition");
   }
 
@@ -116,7 +121,7 @@ async function prepareSosStatusNotification(
         historyId,
         oldStatus: request.status,
         newStatus,
-        sequence: definition.sequence,
+        sequence: request.schemaVersion === 2 ? 1 : definition.sequence,
       },
     },
   };

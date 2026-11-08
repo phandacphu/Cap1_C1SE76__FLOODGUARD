@@ -421,50 +421,17 @@ async function runTests() {
       );
     }
 
-    // Urgency, severity alias and combined filters.
-    const high = await request("?urgency=high");
-    assert.equal(high.status, 200);
-    assert.equal(
-      high.body.data.rescueRequests[0].id,
-      "request-high",
-    );
-
-    const alias = await request("?severity=critical");
-    assert.equal(alias.status, 200);
-    assert.equal(
-      alias.body.data.rescueRequests[0].id,
-      "request-critical",
-    );
-
-    const combined = await request(
-      "?status=received&urgency=high&severity=high",
-    );
-
-    assert.equal(combined.status, 200);
-    assert.equal(
-      combined.body.data.rescueRequests.length,
-      1,
-    );
-
-    const noMatches = await request(
-      "?status=submitted&urgency=critical",
-    );
-
-    assert.equal(noMatches.status, 200);
-    assert.deepEqual(
-      noMatches.body.data.rescueRequests,
-      [],
-    );
-
-    // Preserve priority and chronological sorting.
-    const priority = await request("?sort=priority");
-    assert.equal(priority.status, 200);
-    assert.deepEqual(
-      priority.body.data.rescueRequests.map(
-        (item) => item.urgency,
-      ),
-      ["critical", "high", "medium", "low", "low"],
-    );
+    // SOS no longer accepts urgency filters or priority ordering.
+    for (const query of ["?urgency=high", "?severity=critical", "?sort=priority"]) {
+      await expectRejected(query, 400);
+    }
+    const active = await request("?state=active");
+    assert.equal(active.status, 200);
+    assert.equal(active.body.data.rescueRequests.length, 3);
+    assert.ok(active.body.data.rescueRequests.every((item) => item.state === "active"));
+    const rescued = await request("?state=rescued");
+    assert.equal(rescued.status, 200);
+    assert.equal(rescued.body.data.rescueRequests.length, 1);
 
     const oldest = await request("?sort=oldest");
     assert.equal(oldest.status, 200);
