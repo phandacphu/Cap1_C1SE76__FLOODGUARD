@@ -1,3 +1,4 @@
+import { formatAreaAlertCount } from './mapAlertStatus';
 import {
   fetchHistoricalBuffers,
   fetchHistoricalPoints,
@@ -73,6 +74,8 @@ export const FloodMapView: React.FC = () => {
     groups.forEach(items => items.sort((a, b) => PRIORITY[b.severity] - PRIORITY[a.severity]));
     return groups;
   }, [activeAlerts]);
+  const [settledAlertRequest, setSettledAlertRequest] = useState<number | null>(null);
+  const alertsLoading = settledAlertRequest !== reloadTrigger;
   const [alertCountError, setAlertCountError] = useState<string | null>(null);
   useEffect(() => {
     let ignore = false;
@@ -80,6 +83,8 @@ export const FloodMapView: React.FC = () => {
       if (!ignore) { setActiveAlerts(alerts); setAlertsUpdatedAt(new Date()); setAlertCountError(null); }
     }).catch(() => {
       if (!ignore) setAlertCountError('Không tải được cảnh báo hiệu lực. Trạng thái cảnh báo của từng vùng chưa được xác nhận; thông tin cũ nếu có chỉ để tham khảo.');
+    }).finally(() => {
+      if (!ignore) setSettledAlertRequest(reloadTrigger);
     });
     return () => { ignore = true; };
   }, [reloadTrigger]);
@@ -252,8 +257,8 @@ export const FloodMapView: React.FC = () => {
   const filteredAreas = useMemo(() => {
     const classified = floodAreas.filter(area => statusFilter === 'all' ||
       (statusFilter === 'unknown' ? area.areaType == null : area.areaType === statusFilter));
-    return onlyWithAlerts ? classified.filter(area => alertsByArea.has(area.id)) : classified;
-  }, [floodAreas, statusFilter, onlyWithAlerts, alertsByArea]);
+    return onlyWithAlerts && !alertsLoading ? classified.filter(area => alertsByArea.has(area.id)) : classified;
+  }, [floodAreas, statusFilter, onlyWithAlerts, alertsByArea, alertsLoading]);
 
   // Vẽ Polygons kiểm tra chặt chẽ geometry (A.2, A.5)
   const renderPolygons = useCallback(() => {
@@ -276,7 +281,7 @@ export const FloodMapView: React.FC = () => {
         const isAreaActive = area.areaType != null;
         const areaAlerts = alertsByArea.get(area.id) ?? [];
         const highestAlert = areaAlerts[0];
-        const alertMarkup = areaAlerts.length ? areaAlerts.map(alert => `
+        const alertMarkup = alertsLoading ? '<p>Đang tải cảnh báo</p>' : areaAlerts.length ? areaAlerts.map(alert => `
           <hr/><b>${escapeHtml(alert.title)}</b><br/>
           <b>Mức độ:</b> ${SEVERITY_LABELS[alert.severity]}<br/>
           <b>Trạng thái:</b> ${alertCountError ? 'Dữ liệu cảnh báo cũ, chưa xác nhận' : 'Có hiệu lực tại lần tải'}<br/>
@@ -286,7 +291,7 @@ export const FloodMapView: React.FC = () => {
           `<p>${alertCountError ? 'Chưa xác nhận được cảnh báo của vùng.' : 'Không có cảnh báo hiệu lực tại lần tải.'}</p>`;
 
         const polygon = L.polygon(latLngs, {
-          color: highestAlert && !alertCountError ? SEVERITY_COLORS[highestAlert.severity] : colorCfg.stroke,
+          color: highestAlert && !alertCountError && !alertsLoading ? SEVERITY_COLORS[highestAlert.severity] : colorCfg.stroke,
           weight: isAreaActive ? 2.5 : 1.5,
           dashArray: isAreaActive ? undefined : '5, 5',
           opacity: isAreaActive ? 0.95 : 0.4,
@@ -320,7 +325,7 @@ export const FloodMapView: React.FC = () => {
       const first = filteredAreas[0];
       if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
-  }, [filteredAreas, alertsByArea, alertCountError, isRescue, showHistory]);
+  }, [filteredAreas, alertsByArea, alertCountError, alertsLoading, isRescue, showHistory]);
 
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -388,10 +393,11 @@ export const FloodMapView: React.FC = () => {
         </div>
       </div>
 
-      {alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Viền màu thể hiện mức độ cảnh báo khi tải thành công; màu nền thể hiện loại vùng.</p>}
+      {alertsLoading && <p role="status" className="text-xs text-slate-400">Đang tải cảnh báo</p>}
+      {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Viền màu thể hiện mức độ cảnh báo khi tải thành công; màu nền thể hiện loại vùng.</p>}
       {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
       <label className="flex items-center gap-2 text-xs text-cyan-200">
-        <input type="checkbox" checked={onlyWithAlerts} onChange={event => setOnlyWithAlerts(event.target.checked)} />
+        <input type="checkbox" checked={onlyWithAlerts} disabled={alertsLoading} onChange={event => setOnlyWithAlerts(event.target.checked)} />
         {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
       </label>
       {isRescue && (
@@ -509,7 +515,7 @@ export const FloodMapView: React.FC = () => {
                       </span>
                     </div>
                     <p className="mt-1 text-[10px] text-amber-200">
-                      {alertCountError ? 'Cảnh báo: chưa xác nhận' : `${alertsByArea.get(area.id)?.length ?? 0} cảnh báo hiệu lực tại lần tải`}
+                      {formatAreaAlertCount(alertsLoading, alertCountError ? null : (alertsByArea.get(area.id)?.length ?? 0))}
                     </p>
                     <div className="text-[10px] font-mono mt-1 flex items-center justify-between">
                       <span className={isAreaActive ? 'text-emerald-400' : 'text-slate-500'}>
@@ -557,7 +563,7 @@ export const FloodMapView: React.FC = () => {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={alertCountError ? undefined : adminAlertCount} title="Bản đồ trực quan" />}
+      header={<AdminHeader alertCount={alertsLoading || alertCountError ? undefined : adminAlertCount} title="Bản đồ trực quan" />}
     >
       {mapContent}
     </AppShell>

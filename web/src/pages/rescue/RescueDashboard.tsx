@@ -1,3 +1,4 @@
+import { formatDashboardSosCount } from "../admin/sos/sosFormat";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet } from "../../api/http";
@@ -126,7 +127,7 @@ export function RescueDashboard() {
             label="SOS mới"
             icon="sos"
             tone="sos"
-            value={kpis ? String(kpis.waiting).padStart(2, "0") : "—"}
+            value={formatDashboardSosCount(kpis?.waiting)}
             sub={kpis ? `+${kpis.waitingLast15Min} trong 15 phút qua` : undefined}
             footerLabel="Khẩn cấp chưa nhận"
             footerValue={kpis ? String(kpis.criticalWaiting) : "—"}
@@ -135,7 +136,7 @@ export function RescueDashboard() {
             label="Đang xử lý"
             icon="pulse"
             tone="warn"
-            value={kpis ? String(kpis.inProgress).padStart(2, "0") : "—"}
+            value={formatDashboardSosCount(kpis?.inProgress)}
             sub="Ca đang cứu hộ ngoài hiện trường"
             footerLabel="Phân công cho tôi"
             footerValue={view ? String(view.mine.length) : "—"}
@@ -144,7 +145,7 @@ export function RescueDashboard() {
             label="Đã hỗ trợ hôm nay"
             icon="shield"
             tone="safe"
-            value={kpis ? formatNumber(kpis.assistedToday) : "—"}
+            value={formatDashboardSosCount(kpis?.assistedToday)}
             sub={kpis?.successRate != null ? `${kpis.successRate.toFixed(1)}% tổng ca đã hoàn tất` : undefined}
             footerLabel="Tổng yêu cầu"
             footerValue={kpis ? formatNumber(kpis.total) : "—"}
@@ -175,7 +176,7 @@ export function RescueDashboard() {
             {!requests && loading && (
               <p role="status" className="mb-3 text-xs text-muted">Đang tải dữ liệu SOS…</p>
             )}
-            <RescueOperationsMap requests={requests ?? []} />
+            <RescueOperationsMap requests={requests} />
           </Panel>
 
           <Panel

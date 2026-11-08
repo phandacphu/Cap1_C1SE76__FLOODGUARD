@@ -1,3 +1,4 @@
+import { formatDashboardSosCount } from "../../admin/sos/sosFormat";
 import { useEffect, useState } from "react";
 import L from "leaflet";
 import { CircleMarker, GeoJSON, MapContainer, Popup, TileLayer } from "react-leaflet";
@@ -25,7 +26,7 @@ const sosColors: Record<UrgencyLevel, string> = {
   low: "#16a34a",
 };
 
-export function RescueOperationsMap({ requests }: { requests: RescueRequest[] }) {
+export function RescueOperationsMap({ requests }: { requests: RescueRequest[] | null }) {
   const [history, setHistory] = useState<PromiseSettledResult<HistoricalFeatureCollection>[] | null>(null);
   const [showHistory, setShowHistory] = useState(true);
   const [retry, setRetry] = useState(0);
@@ -40,7 +41,7 @@ export function RescueOperationsMap({ requests }: { requests: RescueRequest[] })
     return () => { cancelled = true; };
   }, [retry]);
 
-  const openRequests = requests.filter(({ status, location }) =>
+  const openRequests = (requests ?? []).filter(({ status, location }) =>
     isOpen(status) && location &&
     Number.isFinite(location.latitude) && Math.abs(location.latitude) <= 90 &&
     Number.isFinite(location.longitude) && Math.abs(location.longitude) <= 180,
@@ -118,7 +119,7 @@ export function RescueOperationsMap({ requests }: { requests: RescueRequest[] })
         </MapContainer>
       </div>
       <p className="text-xs text-muted">
-        {openRequests.length} SOS đang mở có tọa độ hợp lệ. Dữ liệu ngập lịch sử chỉ dùng để tham khảo.
+        {requests ? `${formatDashboardSosCount(openRequests.length)} SOS đang mở có tọa độ hợp lệ.` : formatDashboardSosCount(null)} Dữ liệu ngập lịch sử chỉ dùng để tham khảo.
       </p>
     </div>
   );
