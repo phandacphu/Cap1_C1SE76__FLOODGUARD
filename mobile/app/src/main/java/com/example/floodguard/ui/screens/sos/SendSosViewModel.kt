@@ -15,12 +15,29 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class SendSosViewModel(
-    private val repository: RescueRequestRepository,
-    // Injected in tests; production uses the same Repository as before.
-    private val createSosRequest: suspend (CreateSosRequest) -> Result<CreatedSosDto> =
-        { request -> repository.createSos(request) },
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    repository: RescueRequestRepository? = null,
+    createSosRequest:
+    (suspend (CreateSosRequest) -> Result<CreatedSosDto>)? = null,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val submitValidatedSos:
+    (suspend (
+        CreateSosRequest,
+        () -> Boolean
+    ) -> Result<CreatedSosDto>)? = null
 ) : ViewModel() {
+
+    private val createSosRequest:
+            (suspend (CreateSosRequest) -> Result<CreatedSosDto>)? =
+        createSosRequest ?: repository?.let { it::createSos }
+
+    init {
+        require(
+            this.createSosRequest != null ||
+                    submitValidatedSos != null
+        ) {
+            "Cần cung cấp Repository hoặc hàm gửi SOS."
+        }
+    }
 
     private val _uiState = MutableStateFlow(SendSosUiState())
     val uiState: StateFlow<SendSosUiState> = _uiState.asStateFlow()
@@ -226,7 +243,15 @@ class SendSosViewModel(
                     return@launch
                 }
 
-                createSosRequest(request).fold(
+                val result = if (submitValidatedSos != null) {
+                    submitValidatedSos.invoke(request) {
+                        hasFreshLocation(validated, nowMillis())
+                    }
+                } else {
+                    requireNotNull(createSosRequest).invoke(request)
+                }
+
+                result.fold(
                     onSuccess = { created ->
                         _uiState.update { state ->
                             if (created.id.isBlank()) {

@@ -82,4 +82,14 @@ object ApiClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
+    fun createResidentSosRetrofit(
+        sessionManager: SessionManager
+    ): Retrofit {
+        return createAuthenticatedRetrofit(sessionManager)
+            .newBuilder()
+            .baseUrl(
+                AppConfig.BASE_URL.trimEnd('/') + "/api/"
+            )
+            .build()
+    }
 }
