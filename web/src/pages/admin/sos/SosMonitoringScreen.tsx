@@ -22,6 +22,14 @@ export function SosMonitoringScreen() {
   const filtered = filters.condition !== "all" || Boolean(filters.from || filters.to || filters.search.trim());
   const data = resource.data;
   const update = <K extends keyof SosFilters>(key: K, value: SosFilters[K]) => setDraft(previous => ({ ...previous, [key]: value }));
+  const applyFilters = (next: SosFilters) => {
+    setFilters(current => {
+      const unchanged = current.condition === next.condition &&
+        current.from === next.from && current.to === next.to &&
+        current.search === next.search && current.sort === next.sort;
+      return unchanged ? current : next;
+    });
+  };
   return (
     <SosFrame>
       <section className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-border bg-card/80 p-5">
@@ -42,7 +50,7 @@ export function SosMonitoringScreen() {
       <SosSummaryCards summary={data?.summary ?? null} loading={resource.loading} />
       {data?.summaryError && <SosErrorPanel error={{ ...data.summaryError, message: `Không tải được thống kê SOS. ${data.summaryError.message}` }} retry={resource.refresh} />}
       <section className="rounded-2xl border border-border bg-card/80 p-4" aria-label="Bộ lọc SOS">
-        <form onSubmit={event => { event.preventDefault(); if (!invalidDates) setFilters({ ...draft }); }}>
+        <form onSubmit={event => { event.preventDefault(); if (!invalidDates) applyFilters(draft); }}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <label className="text-xs text-muted">Tình trạng SOS
               <select aria-label="Tình trạng SOS" className={INPUT} disabled={!SOS_MOCK_ENABLED} value={draft.condition} aria-describedby="sos-filter-support"
@@ -71,7 +79,7 @@ export function SosMonitoringScreen() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="submit" disabled={invalidDates} className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg disabled:opacity-50">Áp dụng</button>
             <button type="button" className="rounded-lg border border-border px-4 py-2 text-sm" onClick={() => {
-              setDraft({ ...DEFAULT_FILTERS }); setFilters({ ...DEFAULT_FILTERS });
+              setDraft({ ...DEFAULT_FILTERS }); applyFilters(DEFAULT_FILTERS);
             }}>Xóa bộ lọc</button>
             {invalidDates && <p role="alert" className="text-sm text-sos">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}
           </div>

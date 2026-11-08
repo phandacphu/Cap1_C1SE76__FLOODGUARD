@@ -195,6 +195,31 @@ try {
     await visible(page.getByRole("button", { name: "Thử lại nền bản đồ", exact: true }));
     await context.close();
   });
+  await run("applying unchanged filters skips duplicate reads and preserves explicit refresh", async () => {
+    const { context, page, calls } = await open(5175, "/admin/sos", { listDelay: 400 });
+    await visible(page.getByText("API-SOS-01", { exact: true }));
+    const initialCount = calls.length;
+    const apply = page.getByRole("button", { name: "Áp dụng", exact: true });
+    const refresh = page.getByRole("button", { name: "Làm mới", exact: true });
+    await apply.click();
+    await apply.click();
+    await page.getByRole("button", { name: "Xóa bộ lọc", exact: true }).click();
+    await visible(refresh);
+    assert.equal(calls.length, initialCount, "unchanged apply and clear should not refetch");
+
+    await page.getByLabel("Thời gian gửi", { exact: true }).selectOption("oldest");
+    await apply.click();
+    await apply.click();
+    await visible(refresh);
+    const expected = ["/api/admin/rescue-requests/summary", "/api/admin/rescue-requests?sort=oldest"].sort();
+    assert.deepEqual(calls.slice(initialCount).map(call => call.path).sort(), expected);
+
+    const countBeforeRefresh = calls.length;
+    await refresh.click();
+    await visible(refresh);
+    assert.deepEqual(calls.slice(countBeforeRefresh).map(call => call.path).sort(), expected);
+    await context.close();
+  });
   await run("obsolete sort responses cannot overwrite the latest request", async () => {
     const { context, page } = await open(5175, "/admin/sos", {
       bySort: { newest: [item("NEWEST-RESULT")], oldest: [item("OLDEST-RESULT")] }, bySortDelay: { newest: 300, oldest: 1000 },

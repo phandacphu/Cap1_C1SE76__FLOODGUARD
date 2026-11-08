@@ -6,7 +6,7 @@
 - Branch: `feature/CCF-122-127-admin-sos-monitoring`.
 - Nền: `develop` tại `12f20f14dd77b72d9ee67ea6843111c584909e02`.
 - CCF-122: đã triển khai giao diện danh sách, ba thẻ thống kê và chi tiết chỉ đọc.
-- CCF-127: đã nối các endpoint hiện có để đọc thông tin tương thích; **chưa nghiệm thu hợp đồng SOS mới hoặc luồng có đăng nhập với API thật**.
+- CCF-127 đã nối phần hợp đồng hiện có. Trên máy Huy, API danh sách đã trả HTTP 200. Cần hợp đồng SOS mới và dữ liệu thật để nghiệm thu đầy đủ.
 - Giữ layout, token màu và component Admin hiện có. Figma `18:9440` được dùng làm tham khảo bố cục; nghiệp vụ mới trong yêu cầu của Phú được ưu tiên hơn các trạng thái trung gian, heatmap, phân công và xuất CSV còn có trong bản thiết kế.
 - Không có thay đổi Backend, Resident Mobile, Rescue Mobile, Rescue Web, phân quyền dùng chung, cấu hình hay khóa trong commit.
 
@@ -22,6 +22,7 @@
 - Không thêm phân trang giả hoặc lọc cục bộ một trang dữ liệu API.
 - Đang tải, không có SOS, không có kết quả lọc, lỗi/Thử lại, 401 và 403 được xử lý riêng.
 - Đổi bộ lọc nhanh không cho phản hồi cũ ghi đè phản hồi mới.
+- Bấm Áp dụng hoặc Xóa bộ lọc khi tiêu chí đang dùng giữ nguyên không gửi thêm request. Nút Làm mới vẫn đọc lại danh sách và thống kê theo tiêu chí đang áp dụng.
 
 ### Chi tiết `/admin/sos/:id`
 
@@ -122,7 +123,8 @@ npm run dev
 - Lint: **PASS**.
 - TypeScript và production build: **PASS**; Vite còn cảnh báo bundle JS lớn hơn 500 kB, không làm build thất bại.
 - Node tests: **48/48 PASS**, gồm 17 kiểm tra SOS và 31 kiểm tra hồi quy vùng/bản đồ hiện có.
-- Browser QA: **14/14 nhóm PASS**; dữ liệu mẫu hoặc HTTP fixture, không dùng dữ liệu đăng nhập thật.
+- Browser QA: **15/15 nhóm PASS**, gồm kiểm tra bấm lặp bộ lọc và làm mới chủ động. Dữ liệu mẫu hoặc HTTP fixture, không dùng dữ liệu đăng nhập thật.
+- Hai bộ test Backend `admin-sos-monitoring.test.js` và `admin-sos-summary-statistics.test.js` đạt với dữ liệu giả lập trong bộ nhớ. Các test kiểm tra request HTTP cục bộ, xác thực, phân quyền và hợp đồng API hiện có.
 - Trong bộ ảnh QA chuẩn, nền OpenStreetMap không tải được từ trình duyệt của môi trường này; thông báo lỗi nền, ghim và tọa độ vẫn được kiểm tra. Cần xác nhận tải đủ nền bản đồ trên máy chạy thật; không coi ảnh nền xám là bằng chứng bản đồ nền đã hoạt động.
 - Ảnh Huy cung cấp ngày 07/11/2026 đã cho thấy trên máy Windows: lint/build đạt; bộ lọc Đã cứu khớp ba số liệu 1/0/1; chi tiết DEMO-SOS-002 hiển thị nền bản đồ, tọa độ, thời điểm GPS, người xác nhận, giờ hoàn tất và lịch sử. Đây vẫn là kiểm tra bằng dữ liệu mẫu, chưa phải tích hợp API thật. Qua đối chiếu giờ gửi giữa hai ảnh, đã sửa việc nguồn mẫu tự tạo lại timestamp khi đổi màn hình và bổ sung kiểm tra hồi quy.
 - Production đã được build với biến mock đặt `true` để kiểm tra: vẫn sử dụng API, không hiển thị fixture mẫu; bundle không chứa các mã/danh tính mẫu.
@@ -144,14 +146,15 @@ node scripts/test-admin-sos-browser.mjs
 
 Kết quả chính xác của browser được lưu tại [browser-results.json](evidence/admin-sos/browser-results.json). Bao gồm dữ liệu mẫu, API giả lập lỗi/thành công, không dữ liệu, summary lỗi riêng, 401/403/404, đổi bộ lọc nhanh, giữ tọa độ khi làm mới lỗi, lỗi nền bản đồ, phân quyền Admin, viewport nhỏ và production không bật mock.
 
-### API thật: chỉ smoke check không đăng nhập
+### Kiểm tra với API thật
 
 Ngày 07/11/2026:
 
 - `GET https://floodguard-backend-demo.onrender.com/api/health`: **200**, `success: true`.
 - `GET https://floodguard-backend-demo.onrender.com/api/admin/rescue-requests` không có token: **401**, `Authentication token is required`.
-- Không gửi thông tin đăng nhập, không tạo/sửa dữ liệu thật trong lượt kiểm tra này.
-- **Chưa kiểm thử** danh sách/summary/chi tiết với Admin thật, trạng thái mới, cập nhật GPS và xác nhận đã cứu trên Backend mới.
+- DevTools trên máy Huy ghi nhận `GET http://localhost:5000/api/admin/rescue-requests?sort=newest` trả **200** sau khi đăng nhập Admin. Giao diện hiển thị 0 SOS.
+- Cần đối chiếu JSON response của danh sách và summary, kiểm tra chi tiết với SOS thật và nghiệm thu trạng thái mới, GPS, xác nhận đã cứu khi Phú cung cấp hợp đồng và dữ liệu test.
+- DevTools trên máy Huy từng hiển thị một lỗi Console. Cần nội dung lỗi để xác định nguồn và ảnh hưởng.
 - Ảnh mang nhãn API trong bộ browser evidence sử dụng **HTTP fixture**, không phải bằng chứng dữ liệu thật hoặc nghiệm thu tích hợp.
 
 ### Ảnh giao diện
