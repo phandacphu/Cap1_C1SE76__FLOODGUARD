@@ -1,5 +1,6 @@
 import { apiGet, ApiError } from "../../api/http";
-import type { RescueRequest } from "../../types/rescue";
+import { fetchSosSummary } from "./sos/sosApi";
+import type { SosSummary } from "./sos/sosTypes";
 import type { AdminUser, FloodAlert, FloodArea, SafeLocation } from "../../types/admin";
 
 /** A section of the dashboard that either loaded from the API or did not. */
@@ -10,7 +11,7 @@ export interface AdminOverview {
   areas: Section<FloodArea[]>;
   safeLocations: Section<SafeLocation[]>;
   /** Admin-only endpoint (CCF-116). */
-  sos: Section<RescueRequest[]>;
+  sos: Section<SosSummary>;
   /** Admin-only endpoint (CCF-113). */
   users: Section<AdminUser[]>;
   /** Round-trip time of GET /health in ms, or null when the API is unreachable. */
@@ -55,11 +56,7 @@ export async function fetchAdminOverview(token: string): Promise<AdminOverview> 
         (data) => data.safeLocations ?? [],
       ),
     ),
-    settle(
-      apiGet<{ rescueRequests: RescueRequest[] }>("/admin/rescue-requests?sort=newest", token).then(
-        (data) => data.rescueRequests ?? [],
-      ),
-    ),
+    settle(fetchSosSummary(token)),
     settle(
       apiGet<{ users: AdminUser[] }>("/admin/users", token).then((data) => data.users ?? []),
     ),

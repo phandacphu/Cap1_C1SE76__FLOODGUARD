@@ -11,16 +11,12 @@ import { InfraPanel } from "./components/InfraPanel";
 import { KpiCard } from "./components/KpiCard";
 import { Panel } from "./components/Panel";
 import { RiskAreasPanel } from "./components/RiskAreasPanel";
-import { SosStatusDonut } from "./components/SosStatusDonut";
-import { SosTimelineChart } from "./components/SosTimelineChart";
-import { MOCK_SERIES, MOCK_STATUS_COUNTS } from "./adminMock";
+import { SosDashboardPanel } from "./sos/SosDashboardPanel";
+import { formatSosCount } from "./sos/sosFormat";
 import {
   SEVERITY_LABEL,
   countAlertsBySeverity,
-  countByStatus,
-  countSince,
   formatNumber,
-  hourlySeries,
   rankRiskAreas,
 } from "./adminStats";
 import { useAdminOverview } from "./useAdminOverview";
@@ -60,9 +56,6 @@ export function AdminDashboard() {
       openShelters,
       totalCapacity,
       sos,
-      statusCounts: sos ? countByStatus(sos) : MOCK_STATUS_COUNTS,
-      series: sos ? hourlySeries(sos, now) : MOCK_SERIES,
-      newIn24h: sos ? countSince(sos, 24, now) : null,
       users,
       activeUsers: users ? users.filter((u) => u.isActive).length : null,
       newUsersThisWeek: users
@@ -74,14 +67,9 @@ export function AdminDashboard() {
     };
   }, [overview]);
 
-  const sosMock = !view?.sos;
+  const sosMock = view?.sos?.source === "mock";
   const usersMock = !view?.users;
-  const counts = view?.statusCounts ?? MOCK_STATUS_COUNTS;
-  const sosTotal =
-    counts.submitted + counts.received + counts.in_progress + counts.assisted + counts.cancelled;
   const anyMock = sosMock || usersMock;
-  const seriesCreated = (view?.series ?? MOCK_SERIES).reduce((sum, p) => sum + p.created, 0);
-  const seriesAssisted = (view?.series ?? MOCK_SERIES).reduce((sum, p) => sum + p.assisted, 0);
 
   return (
     <AppShell
@@ -158,11 +146,11 @@ export function AdminDashboard() {
                 label="Tổng SOS toàn hệ thống"
                 icon="sos"
                 tone="text"
-                value={formatNumber(sosTotal)}
+                value={formatSosCount(view.sos?.total)}
                 mock={sosMock}
-                sub={view.newIn24h !== null ? `+${view.newIn24h} ca mới trong 24h` : undefined}
-                footerLabel="Đang xử lý"
-                footerValue={`${formatNumber(counts.received + counts.in_progress)} ca`}
+                sub={view.sos ? "Từ thống kê tổng hợp SOS" : "Chưa tải được thống kê SOS"}
+                footerLabel="Chờ cứu hộ"
+                footerValue={formatSosCount(view.sos?.active)}
               />
               <KpiCard
                 label="Cảnh báo đang hiệu lực"
@@ -227,38 +215,9 @@ export function AdminDashboard() {
             </section>
 
             {/* Charts row */}
-            <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr_1fr]">
-              <Panel
-                title="SOS theo thời gian (24h)"
-                subtitle="Tần suất tiếp nhận & xử lý ca khẩn cấp"
-                tag={
-                  <span className="rounded bg-water/10 px-2 py-1 font-mono text-[10px] text-water">
-                    THEO GIỜ
-                  </span>
-                }
-                mock={sosMock}
-              >
-                <SosTimelineChart points={view.series} />
-                <div className="mt-auto flex flex-wrap items-center gap-x-5 gap-y-1 pt-4 font-mono text-[11px] text-muted">
-                  <span className="flex items-center gap-2">
-                    <span className="h-0.5 w-4 bg-water" /> Ca mới ({formatNumber(seriesCreated)})
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="h-0.5 w-4 bg-safe" /> Đã hỗ trợ ({formatNumber(seriesAssisted)})
-                  </span>
-                  <span className="ml-auto">
-                    Tỷ lệ: {seriesCreated > 0 ? ((seriesAssisted / seriesCreated) * 100).toFixed(1) : "0.0"}%
-                  </span>
-                </div>
-              </Panel>
-
-              <Panel
-                title="Trạng thái SOS"
-                subtitle={`Cơ cấu ${formatNumber(sosTotal)} cuộc gọi`}
-                mock={sosMock}
-              >
-                <SosStatusDonut counts={counts} />
-              </Panel>
+            <section className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+              <SosDashboardPanel summary={view.sos} loading={loading} retry={refresh}
+                errorStatus={overview && !overview.sos.ok ? overview.sos.status : null} />
 
               <Panel
                 title="Vùng có cảnh báo"
