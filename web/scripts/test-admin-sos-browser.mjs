@@ -162,6 +162,34 @@ try {
     assert.doesNotMatch(await page.getByRole("region", { name: "Thống kê SOS" }).innerText(), /Tổng số SOS\s+0/);
     await context.close();
   });
+  for (const [status, message] of [
+    [401, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."],
+    [403, "Bạn không có quyền xem dữ liệu Admin SOS."],
+  ]) {
+    await run(`list refresh with 500 and summary ${status} hides previously loaded SOS`, async () => {
+      const { context, page, state, calls } = await open();
+      try {
+        const row = page.getByText("API-SOS-01", { exact: true });
+        await visible(row);
+        const beforeRefresh = calls.length;
+
+        state.listStatus = 500;
+        state.summaryStatus = status;
+        await page.getByRole("button", { name: "Làm mới", exact: true }).click();
+        const alert = page.getByRole("alert");
+        await visible(alert);
+        assert.equal(await row.count(), 0, "access errors must hide the previous SOS rows");
+        assert.equal(await alert.getByText(message, { exact: true }).count(), 1);
+        assert.equal(await page.getByRole("button", { name: "Thử lại", exact: true }).count(), 0);
+        if (status === 401) await visible(alert.getByRole("button", { name: "Đăng nhập lại", exact: true }));
+        else await visible(alert.getByRole("link", { name: "Về tổng quan", exact: true }));
+        assert.deepEqual(calls.slice(beforeRefresh).map(call => call.path).sort(),
+          ["/api/admin/rescue-requests/summary", "/api/admin/rescue-requests?sort=newest"].sort());
+      } finally {
+        await context.close();
+      }
+    });
+  }
   await run("401, 403 and 404 have distinct states and hide cached protected data", async () => {
     for (const status of [401, 403, 404]) {
       const { context, page, state } = await open(5175, "/admin/sos/API-SOS-01");

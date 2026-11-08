@@ -21,6 +21,7 @@
 - Dữ liệu mẫu được tạo một lần trong phiên trang. Chuyển danh sách/chi tiết hoặc bấm Làm mới không tự thay giờ gửi, giờ GPS hay giờ hoàn tất. Tải lại toàn bộ trang khởi tạo phiên mẫu mới.
 - Không thêm phân trang giả hoặc lọc cục bộ một trang dữ liệu API.
 - Đang tải, không có SOS, không có kết quả lọc, lỗi/Thử lại, 401 và 403 được xử lý riêng.
+- Khi làm mới, 401 hoặc 403 từ danh sách hoặc thống kê được ưu tiên hơn lỗi tải thông thường. Màn hình ẩn danh sách SOS đã tải và hiển thị hành động đăng nhập lại hoặc về tổng quan theo mã lỗi.
 - Đổi bộ lọc nhanh không cho phản hồi cũ ghi đè phản hồi mới.
 - Bấm Áp dụng hoặc Xóa bộ lọc khi tiêu chí đang dùng giữ nguyên không gửi thêm request. Nút Làm mới vẫn đọc lại danh sách và thống kê theo tiêu chí đang áp dụng.
 
@@ -123,7 +124,7 @@ npm run dev
 - Lint: **PASS**.
 - TypeScript và production build: **PASS**; Vite còn cảnh báo bundle JS lớn hơn 500 kB, không làm build thất bại.
 - Node tests: **48/48 PASS**, gồm 17 kiểm tra SOS và 31 kiểm tra hồi quy vùng/bản đồ hiện có.
-- Browser QA: **15/15 nhóm PASS**, gồm kiểm tra bấm lặp bộ lọc và làm mới chủ động. Dữ liệu mẫu hoặc HTTP fixture, không dùng dữ liệu đăng nhập thật.
+- Browser QA: **17/17 nhóm PASS**, gồm kiểm tra bấm lặp bộ lọc, làm mới chủ động và hai ca làm mới với danh sách trả 500 kèm thống kê trả 401 hoặc 403. Dữ liệu mẫu hoặc HTTP fixture, không dùng dữ liệu đăng nhập thật.
 - Hai bộ test Backend `admin-sos-monitoring.test.js` và `admin-sos-summary-statistics.test.js` đạt với dữ liệu giả lập trong bộ nhớ. Các test kiểm tra request HTTP cục bộ, xác thực, phân quyền và hợp đồng API hiện có.
 - Trong bộ ảnh QA chuẩn, nền OpenStreetMap không tải được từ trình duyệt của môi trường này; thông báo lỗi nền, ghim và tọa độ vẫn được kiểm tra. Cần xác nhận tải đủ nền bản đồ trên máy chạy thật; không coi ảnh nền xám là bằng chứng bản đồ nền đã hoạt động.
 - Ảnh Huy cung cấp ngày 07/11/2026 đã cho thấy trên máy Windows: lint/build đạt; bộ lọc Đã cứu khớp ba số liệu 1/0/1; chi tiết DEMO-SOS-002 hiển thị nền bản đồ, tọa độ, thời điểm GPS, người xác nhận, giờ hoàn tất và lịch sử. Đây vẫn là kiểm tra bằng dữ liệu mẫu, chưa phải tích hợp API thật. Qua đối chiếu giờ gửi giữa hai ảnh, đã sửa việc nguồn mẫu tự tạo lại timestamp khi đổi màn hình và bổ sung kiểm tra hồi quy.

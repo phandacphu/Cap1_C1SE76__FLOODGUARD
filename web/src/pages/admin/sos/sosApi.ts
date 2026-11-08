@@ -10,6 +10,10 @@ export function sosError(error: unknown): { status: number; message: string } {
   return { status: 0, message: error instanceof Error ? error.message : "Không tải được dữ liệu SOS." };
 }
 
+function isAccessError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
 function requireToken(token: string | null): asserts token is string {
   if (!token) throw new ApiError("Phiên đăng nhập đã hết hạn.", 401);
 }
@@ -43,11 +47,12 @@ export async function fetchSosList(token: string | null, filters: SosFilters): P
     apiGet<unknown>(`/admin/rescue-requests?sort=${filters.sort}`, token).then(parseApiList),
     fetchSosSummary(token),
   ]);
+  // Access failures must clear cached rows even if the other request also failed.
+  if (list.status === "rejected" && isAccessError(list.reason)) throw list.reason;
+  if (summary.status === "rejected" && isAccessError(summary.reason)) throw summary.reason;
   if (list.status === "rejected") throw list.reason;
   if (summary.status === "rejected") {
-    const error = sosError(summary.reason);
-    if (error.status === 401 || error.status === 403) throw summary.reason;
-    return { items: list.value, summary: null, summaryError: error, source: "api" };
+    return { items: list.value, summary: null, summaryError: sosError(summary.reason), source: "api" };
   }
   return { items: list.value, summary: summary.value, summaryError: null, source: "api" };
 }

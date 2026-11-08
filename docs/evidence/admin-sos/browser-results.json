@@ -22,6 +22,14 @@
       "result": "PASS"
     },
     {
+      "name": "list refresh with 500 and summary 401 hides previously loaded SOS",
+      "result": "PASS"
+    },
+    {
+      "name": "list refresh with 500 and summary 403 hides previously loaded SOS",
+      "result": "PASS"
+    },
+    {
       "name": "401, 403 and 404 have distinct states and hide cached protected data",
       "result": "PASS"
     },
