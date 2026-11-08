@@ -13,7 +13,6 @@ import com.example.floodguard.domain.model.warningSeverityLabel
 import com.example.floodguard.domain.model.warningTimeStatusLabel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,12 +65,9 @@ class WarningDetailViewModel(
                 _uiState.value = WarningDetailUiState(errorMessage = "Không tìm thấy cảnh báo")
                 return@launch
             }
-            val (result, areasResult) = coroutineScope {
-                val alerts = async { floodAlertRepository.getFloodAlerts() }
-                val areas = async { floodAreaRepository.getFloodAreas() }
-                alerts.await() to areas.await()
-            }
-
+            val areas = async { floodAreaRepository.getFloodAreas() }
+            val result = floodAlertRepository.getFloodAlerts()
+            val areasResult = if (areas.isCompleted) areas.await() else null
             result
                 .onSuccess { floodAlerts ->
 
@@ -93,7 +89,7 @@ class WarningDetailViewModel(
                     }
 
                     loadedAlert = alert
-                    val areaName = areasResult.getOrNull()
+                    val areaName = areasResult?.getOrNull()
                         ?.firstOrNull { it.id == alert.areaId }
                         ?.name?.trim()?.takeIf { it.isNotBlank() }
                     val detail =
@@ -170,8 +166,12 @@ class WarningDetailViewModel(
                             warningDetail = detail,
                             errorMessage = null,
                             areaLoadNotice = when {
-                                areasResult.isFailure -> "Chưa tải được tên khu vực. Bấm làm mới để thử lại."
-                                areaName == null -> "Chưa tìm thấy tên khu vực tương ứng với bản tin."
+                                areasResult == null ->
+                                    "Đang tải tên khu vực."
+                                areasResult.isFailure ->
+                                    "Chưa tải được tên khu vực. Bấm làm mới để thử lại."
+                                areaName == null ->
+                                    "Chưa tìm thấy tên khu vực tương ứng với bản tin."
                                 else -> null
                             }
                         )
@@ -185,6 +185,32 @@ class WarningDetailViewModel(
                                 "Không thể tải chi tiết cảnh báo. Kiểm tra kết nối và thử lại."
                         )
                 }
+            if (_uiState.value.warningDetail == null) {
+                areas.cancel()
+                return@launch
+            }
+
+            val finalAreasResult = areas.await()
+            val alert = loadedAlert ?: return@launch
+            val current = _uiState.value
+            val detail = current.warningDetail ?: return@launch
+
+            val finalName = finalAreasResult.getOrNull()
+                ?.firstOrNull { it.id == alert.areaId }
+                ?.name?.trim()?.takeIf { it.isNotBlank() }
+
+            _uiState.value = current.copy(
+                warningDetail = detail.copy(
+                    locationSummary = finalName ?: "Khu vực chưa có tên"
+                ),
+                areaLoadNotice = when {
+                    finalAreasResult.isFailure ->
+                        "Chưa tải được tên khu vực. Bấm làm mới để thử lại."
+                    finalName == null ->
+                        "Chưa tìm thấy tên khu vực tương ứng với bản tin."
+                    else -> null
+                }
+            )
         }
     }
 

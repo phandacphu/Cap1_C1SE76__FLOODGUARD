@@ -11,7 +11,6 @@ import com.example.floodguard.domain.model.nextWarningStatusUpdateDelayMillis
 import com.example.floodguard.domain.model.resolveWarningTimeStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,14 +44,12 @@ class WarningViewModel(
         if (loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
             _uiState.value = WarningUiState.Loading
-            val (alertsResult, areasResult) = coroutineScope {
-                val alerts = async { floodAlertRepository.getFloodAlerts() }
-                val areas = async { floodAreaRepository.getFloodAreas() }
-                alerts.await() to areas.await()
-            }
+            val areas = async { floodAreaRepository.getFloodAreas() }
+            val alertsResult = floodAlertRepository.getFloodAlerts()
+            val areasResult = if (areas.isCompleted) areas.await() else null
             alertsResult.onSuccess { alerts ->
                 loadedAlerts = alerts
-                val names = areasResult.getOrNull().orEmpty()
+                val names = areasResult?.getOrNull().orEmpty()
                     .associate { it.id to it.name.trim() }
                 val now = Instant.now()
                 val warnings = alerts.map { alert ->
@@ -79,6 +76,8 @@ class WarningViewModel(
                     WarningUiState.Success(
                         warnings = warnings,
                         areaLoadNotice = when {
+                            areasResult == null ->
+                                "Đang tải tên khu vực."
                             areasResult.isFailure ->
                                 "Chưa tải được tên khu vực. Bạn vẫn có thể xem cảnh báo; bấm Làm mới để thử lại."
                             alerts.any { names[it.areaId].isNullOrBlank() } ->
@@ -92,6 +91,38 @@ class WarningViewModel(
                     "Không thể tải cảnh báo. Kiểm tra kết nối và thử lại."
                 )
             }
+            val state = _uiState.value as? WarningUiState.Success
+            if (state == null) {
+                areas.cancel()
+                return@launch
+            }
+
+            val finalAreasResult = areas.await()
+            val finalNames = finalAreasResult.getOrNull().orEmpty()
+                .associate { it.id to it.name.trim() }
+
+// Đọc trạng thái mới nhất để không ghi đè việc cập nhật
+// trạng thái thời gian trong lúc chờ tên vùng.
+            val current = _uiState.value as? WarningUiState.Success
+                ?: return@launch
+            val alertsById = loadedAlerts.associateBy { it.id }
+
+            _uiState.value = current.copy(
+                warnings = current.warnings.map { warning ->
+                    val areaId = alertsById[warning.id]?.areaId
+                    warning.copy(
+                        area = finalNames[areaId]?.takeIf { it.isNotBlank() }
+                            ?: "Khu vực chưa có tên"
+                    )
+                },
+                areaLoadNotice = when {
+                    finalAreasResult.isFailure ->
+                        "Chưa tải được tên khu vực. Bạn vẫn có thể xem cảnh báo; bấm Làm mới để thử lại."
+                    loadedAlerts.any { finalNames[it.areaId].isNullOrBlank() } ->
+                        "Một số bản tin chưa có tên khu vực tương ứng."
+                    else -> null
+                }
+            )
         }
     }
 

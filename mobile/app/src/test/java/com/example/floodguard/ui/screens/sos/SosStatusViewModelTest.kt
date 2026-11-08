@@ -17,6 +17,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import retrofit2.Response
 import java.io.IOException
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -278,4 +280,46 @@ class SosStatusViewModelTest {
             assertSame(cancellation, error)
         }
     }
+    private fun assertAccessErrorClearsDetails(
+        code: Int,
+        expectedMessage: String
+    ) = runTest(dispatcher) {
+        val api = FakeApi().apply {
+            answer = { response(RescueRequestDto(id = "B")) }
+        }
+        val vm = viewModel(api)
+        runCurrent()
+
+        assertNotNull(vm.uiState.value.request)
+        assertNotNull(vm.uiState.value.loadedAtMillis)
+
+        api.answer = {
+            Response.error(
+                code,
+                "{}".toResponseBody("application/json".toMediaType())
+            )
+        }
+
+        vm.refresh()
+        runCurrent()
+
+        assertNull(vm.uiState.value.request)
+        assertNull(vm.uiState.value.loadedAtMillis)
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals(expectedMessage, vm.uiState.value.error)
+    }
+
+    @Test
+    fun refresh401_clearsPreviouslyLoadedDetails() =
+        assertAccessErrorClearsDetails(
+            401,
+            "Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại."
+        )
+
+    @Test
+    fun refresh403_clearsPreviouslyLoadedDetails() =
+        assertAccessErrorClearsDetails(
+            403,
+            "Tài khoản không có quyền xem dữ liệu này."
+        )
 }

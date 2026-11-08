@@ -11,6 +11,7 @@ import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
@@ -61,8 +62,9 @@ class WarningLoadingReviewTest {
 
         override suspend fun getFloodAreas(): Response<FloodAreasResponse> {
             calls++
-            return reply
+            return pending?.await() ?: reply
         }
+        var pending: CompletableDeferred<Response<FloodAreasResponse>>? = null
     }
 
     private fun <T> httpError(): Response<T> = Response.error(
@@ -309,4 +311,82 @@ class WarningLoadingReviewTest {
         assertEquals("warning-B", vm.uiState.value.warningDetail?.id)
         assertNull(vm.uiState.value.errorMessage)
     }
+    @Test
+    fun list_showsWarningsBeforeAreaResponse_thenUpdatesNames() =
+        runTest(dispatcher) {
+            val pending = CompletableDeferred<Response<FloodAreasResponse>>()
+            val alerts = FakeAlertApi().apply { reply = alertsReply() }
+            val areas = FakeAreaApi().apply { this.pending = pending }
+            val vm = listVm(alerts, areas)
+
+            runCurrent()
+
+            val initial = vm.uiState.value as WarningUiState.Success
+            assertEquals(2, initial.warnings.size)
+            assertTrue(initial.warnings.all {
+                it.area == "Khu vực chưa có tên"
+            })
+            assertFalse(pending.isCompleted)
+
+            pending.complete(areasReply())
+            runCurrent()
+
+            val updated = vm.uiState.value as WarningUiState.Success
+            assertEquals(
+                "Khu vực B",
+                updated.warnings.single { it.id == "warning-B" }.area
+            )
+            assertNull(updated.areaLoadNotice)
+            assertEquals(1, alerts.calls)
+        }
+
+    @Test
+    fun detail_showsContentBeforeAreaResponse_thenUpdatesName() =
+        runTest(dispatcher) {
+            val pending = CompletableDeferred<Response<FloodAreasResponse>>()
+            val alerts = FakeAlertApi().apply { reply = alertsReply() }
+            val areas = FakeAreaApi().apply { this.pending = pending }
+            val vm = detailVm(alerts, areas)
+
+            runCurrent()
+
+            assertFalse(vm.uiState.value.isLoading)
+            assertEquals("warning-B", vm.uiState.value.warningDetail?.id)
+            assertEquals("Nội dung B", vm.uiState.value.warningDetail?.description)
+            assertEquals(
+                "Khu vực chưa có tên",
+                vm.uiState.value.warningDetail?.locationSummary
+            )
+            assertFalse(pending.isCompleted)
+
+            pending.complete(areasReply())
+            runCurrent()
+
+            assertEquals(
+                "Khu vực B",
+                vm.uiState.value.warningDetail?.locationSummary
+            )
+            assertNull(vm.uiState.value.areaLoadNotice)
+            assertEquals(1, alerts.calls)
+        }
+
+    @Test
+    fun alertFailure_doesNotWaitForPendingAreaResponse() =
+        runTest(dispatcher) {
+            val pending = CompletableDeferred<Response<FloodAreasResponse>>()
+            val alerts = FakeAlertApi().apply { reply = httpError() }
+            val areas = FakeAreaApi().apply { this.pending = pending }
+
+            val list = listVm(alerts, areas)
+            val detail = detailVm(alerts, areas)
+            runCurrent()
+
+            assertTrue(list.uiState.value is WarningUiState.Error)
+            assertFalse(detail.uiState.value.isLoading)
+            assertNotNull(detail.uiState.value.errorMessage)
+            assertFalse(pending.isCompleted)
+
+            pending.complete(areasReply())
+            runCurrent()
+        }
 }

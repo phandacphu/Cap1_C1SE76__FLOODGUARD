@@ -10,6 +10,11 @@ import kotlinx.coroutines.CancellationException
 import java.io.EOFException
 import java.io.IOException
 
+class SosHistoryHttpException(
+    val statusCode: Int,
+    message: String
+) : Exception(message)
+
 class RescueRequestRepository(
     private val api: RescueRequestApi
 ) {
@@ -60,7 +65,9 @@ class RescueRequestRepository(
                         "Không thể tải lịch sử SOS (${response.code()})."
                 }
 
-                Result.failure(Exception(message))
+                Result.failure(
+                    SosHistoryHttpException(response.code(), message)
+                )
             }
         } catch (e: CancellationException) {
             throw e

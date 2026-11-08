@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.floodguard.data.remote.dto.rescue.RescueRequestDto
 import com.example.floodguard.data.repository.RescueRequestRepository
+import com.example.floodguard.data.repository.SosHistoryHttpException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,12 +73,21 @@ class SosStatusViewModel(
                         }
                     },
                     onFailure = { error ->
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                error = error.message
-                                    ?: "Không thể tải trạng thái SOS."
-                            )
+                        val message = error.message
+                            ?: "Không thể tải trạng thái SOS."
+
+                        val accessDenied = error is SosHistoryHttpException &&
+                                error.statusCode in setOf(401, 403)
+
+                        if (accessDenied) {
+                            _uiState.value = SosStatusUiState(error = message)
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    error = message
+                                )
+                            }
                         }
                     }
                 )
