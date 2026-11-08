@@ -9,6 +9,8 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import FloodAreaManagementScreen from './pages/admin/flood-area/FloodAreaManagementScreen';
 import HistoricalMapScreen from './pages/admin/flood-area/components/HistoricalMapScreen';
 import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
+import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
+import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -41,6 +43,8 @@ export const App: React.FC = () => {
             <Route path="/admin/users" element={<UserManagementScreen />} />
             <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
+            <Route path="/admin/sos" element={<SosMonitoringScreen />} />
+            <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

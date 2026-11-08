@@ -38,7 +38,8 @@ fun ProfileScreen(
 
     onBackClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {},
-    onMenuClick: (String) -> Unit = {}
+    onMenuClick: (String) -> Unit = {},
+    onSosStatusClick: (String) -> Unit = {}
 ) {
     var floodAlerts by remember { mutableStateOf(true) }
     var sosAlerts by remember { mutableStateOf(true) }
@@ -224,15 +225,9 @@ fun ProfileScreen(
                             Spacer(Modifier.height(6.dp))
 
                             ProfileInfo(
-                                label = "Trạng thái",
-                                value = request.status
-                                    ?: "Chưa cập nhật"
-                            )
+                                label = "Tình trạng",
+                                value = "Chưa xác định"
 
-                            ProfileInfo(
-                                label = "Mức độ khẩn cấp",
-                                value = request.urgency
-                                    ?: "Chưa cập nhật"
                             )
 
                             ProfileInfo(
@@ -253,6 +248,21 @@ fun ProfileScreen(
                                     label = "Ghi chú",
                                     value = request.note
                                 )
+                            }
+
+                            val requestId = request.id
+
+                            if (!requestId.isNullOrBlank()) {
+                                TextButton(
+                                    onClick = {
+                                        onSosStatusClick(requestId)
+                                    }
+                                ) {
+                                    Text(
+                                        text = "Xem trạng thái yêu cầu",
+                                        color = Cyan
+                                    )
+                                }
                             }
 
                             if (index < sosState.requests.lastIndex) {
