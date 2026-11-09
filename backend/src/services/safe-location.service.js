@@ -1,201 +1,135 @@
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
+const {
+  normalizeSafeLocationData,
+  normalizeSafeLocationId,
+  normalizeSafeLocationQuery,
+  isVisibleSafeLocation,
+  isSoftDeleted,
+  calculateDistanceKm,
+  toClientSafeLocation,
+  safeLocationError,
+} = require("./safe-location-contract");
 
 const SAFE_LOCATIONS_COLLECTION = "safe_locations";
-const SAFE_LOCATION_SERVICES_COLLECTION =
-  "safe_location_services";
+const SAFE_LOCATION_SERVICES_COLLECTION = "safe_location_services";
 
-const ALLOWED_TYPES = [
-  "shelter",
-  "school",
-  "hospital",
-  "community_center",
-  "other",
-];
-
-const ALLOWED_STATUSES = ["active", "inactive"];
-
-function normalizeOptionalString(value, fieldName) {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  if (typeof value !== "string") {
-    throw new Error(`${fieldName} must be a string or null`);
-  }
-
-  return value.trim() || null;
-}
-
-function normalizeLocation(location) {
-  if (
-    !location ||
-    typeof location !== "object" ||
-    Array.isArray(location) ||
-    !Number.isFinite(location.latitude) ||
-    !Number.isFinite(location.longitude)
-  ) {
-    throw new Error(
-      "Safe location must contain numeric latitude and longitude",
-    );
-  }
-
-  if (location.latitude < -90 || location.latitude > 90) {
-    throw new Error(
-      "Safe location latitude must be between -90 and 90",
-    );
-  }
-
-  if (
-    location.longitude < -180 ||
-    location.longitude > 180
-  ) {
-    throw new Error(
-      "Safe location longitude must be between -180 and 180",
-    );
-  }
-
-  return {
-    latitude: location.latitude,
-    longitude: location.longitude,
-  };
-}
-
-function normalizeSafeLocationData(locationData) {
-  if (
-    !locationData ||
-    typeof locationData.name !== "string" ||
-    !locationData.name.trim()
-  ) {
-    throw new Error("Safe location name is required");
-  }
-
-  if (
-    typeof locationData.address !== "string" ||
-    !locationData.address.trim()
-  ) {
-    throw new Error("Safe location address is required");
-  }
-
-  if (!ALLOWED_TYPES.includes(locationData.type)) {
-    throw new Error("Invalid safe location type");
-  }
-
-  if (
-    !Number.isInteger(locationData.capacity) ||
-    locationData.capacity < 0
-  ) {
-    throw new Error(
-      "Safe location capacity must be a non-negative integer",
-    );
-  }
-
-  if (!ALLOWED_STATUSES.includes(locationData.status)) {
-    throw new Error("Invalid safe location status");
-  }
-
-  return {
-    name: locationData.name.trim(),
-    address: locationData.address.trim(),
-    location: normalizeLocation(locationData.location),
-    type: locationData.type,
-    capacity: locationData.capacity,
-    capacityNote: normalizeOptionalString(
-      locationData.capacityNote,
-      "capacityNote",
-    ),
-    description: normalizeOptionalString(
-      locationData.description,
-      "description",
-    ),
-    contactPhone: normalizeOptionalString(
-      locationData.contactPhone,
-      "contactPhone",
-    ),
-    status: locationData.status,
-  };
-}
-
-async function getSafeLocationById(safeLocationId) {
-  const locationDoc = await db
+async function getSafeLocationById(id) {
+  const doc = await db
     .collection(SAFE_LOCATIONS_COLLECTION)
-    .doc(safeLocationId)
+    .doc(normalizeSafeLocationId(id))
     .get();
-
-  if (!locationDoc.exists) {
-    return null;
-  }
-
-  return {
-    id: locationDoc.id,
-    ...locationDoc.data(),
-  };
+  if (!doc.exists || !isVisibleSafeLocation(doc.data())) return null;
+  return { ...doc.data(), id: doc.id };
 }
 
-async function createSafeLocation(locationData) {
-  const normalizedData =
-    normalizeSafeLocationData(locationData);
+async function getSafeLocations(query = {}) {
+  const origin = normalizeSafeLocationQuery(query);
+  const snapshot = await db.collection(SAFE_LOCATIONS_COLLECTION).get();
+  const locations = [];
+  for (const doc of snapshot.docs) {
+    if (!isVisibleSafeLocation(doc.data())) continue;
+    try {
+      locations.push(
+        toClientSafeLocation({ ...doc.data(), id: doc.id }, origin),
+      );
+    } catch (error) {
+      if (error.code !== "INVALID_SAFE_LOCATION_DATA") throw error;
+      // Invalid legacy coordinates/records cannot become navigable public pins.
+    }
+  }
+  return locations.sort(
+    origin
+      ? (a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id)
+      : (a, b) =>
+          a.name.localeCompare(b.name, "vi") || a.id.localeCompare(b.id),
+  );
+}
 
-  const locationRef = db
-    .collection(SAFE_LOCATIONS_COLLECTION)
-    .doc();
+async function getSafeLocationDetail(id, query = {}) {
+  const origin = normalizeSafeLocationQuery(query);
+  const record = await getSafeLocationById(id);
+  if (record) {
+    try {
+      return toClientSafeLocation(record, origin);
+    } catch (error) {
+      if (error.code !== "INVALID_SAFE_LOCATION_DATA") throw error;
+    }
+  }
+  throw safeLocationError(
+    "SAFE_LOCATION_NOT_FOUND",
+    "Địa điểm không còn được cung cấp",
+    404,
+  );
+}
 
-  await locationRef.set({
-    ...normalizedData,
+// Alias for existing callers; v2 never truncates by radius or type.
+async function getNearbySafeLocations(query = {}) {
+  normalizeSafeLocationQuery(query, true);
+  return getSafeLocations(query);
+}
+
+// Trusted fixtures only. Live writes must use the Admin API.
+async function createSafeLocation(input) {
+  const data = normalizeSafeLocationData(input);
+  const ref = db.collection(SAFE_LOCATIONS_COLLECTION).doc();
+  await ref.create({
+    ...data,
+    schemaVersion: 2,
+    isDeleted: false,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-
-  return getSafeLocationById(locationRef.id);
+  return getSafeLocationById(ref.id);
 }
 
-async function setSafeLocationById(
-  safeLocationId,
-  locationData,
-) {
-  if (
-    typeof safeLocationId !== "string" ||
-    !safeLocationId.trim()
-  ) {
-    throw new Error("Safe location ID is required");
-  }
-
-  const normalizedData =
-    normalizeSafeLocationData(locationData);
-
-  const locationRef = db
+async function setSafeLocationById(id, input) {
+  const data = normalizeSafeLocationData(input);
+  const ref = db
     .collection(SAFE_LOCATIONS_COLLECTION)
-    .doc(safeLocationId.trim());
-
-  const existingLocation = await locationRef.get();
-
-  await locationRef.set(
-    {
-      ...normalizedData,
-      createdAt: existingLocation.exists
-        ? existingLocation.data().createdAt
-        : FieldValue.serverTimestamp(),
+    .doc(normalizeSafeLocationId(id));
+  await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(ref);
+    if (
+      existing.exists &&
+      (isSoftDeleted(existing.data()) ||
+        !isVisibleSafeLocation(existing.data()))
+    ) {
+      throw safeLocationError(
+        "SAFE_LOCATION_NOT_FOUND",
+        "Archived safe location cannot be replaced",
+        404,
+      );
+    }
+    const saved = {
+      ...data,
+      schemaVersion: 2,
+      isDeleted: false,
       updatedAt: FieldValue.serverTimestamp(),
-    },
-    {
-      merge: false,
-    },
-  );
-
-  return getSafeLocationById(locationRef.id);
+    };
+    if (existing.exists) transaction.update(ref, saved);
+    else
+      transaction.create(ref, {
+        ...saved,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+  });
+  return getSafeLocationById(ref.id);
 }
 
-async function ensureSafeLocationExists(safeLocationId) {
-  const safeLocation =
-    await getSafeLocationById(safeLocationId);
-
-  if (!safeLocation) {
-    throw new Error(
-      "Referenced safe location does not exist",
-    );
-  }
+async function ensureSafeLocationExists(id) {
+  if (!(await getSafeLocationById(id)))
+    throw new Error("Referenced safe location does not exist");
 }
 
+function normalizeOptionalString(value, fieldName) {
+  if (value == null) return null;
+  if (typeof value !== "string")
+    throw new Error(`${fieldName} must be a string or null`);
+  return value.trim() || null;
+}
+
+// Legacy service helpers remain storage-only. The v2 API never exposes services.
 function normalizeSafeLocationServiceData(serviceData) {
   if (
     !serviceData ||
@@ -205,17 +139,12 @@ function normalizeSafeLocationServiceData(serviceData) {
     throw new Error("Safe location service location ID is required");
   }
 
-  if (
-    typeof serviceData.name !== "string" ||
-    !serviceData.name.trim()
-  ) {
+  if (typeof serviceData.name !== "string" || !serviceData.name.trim()) {
     throw new Error("Safe location service name is required");
   }
 
   if (typeof serviceData.isAvailable !== "boolean") {
-    throw new Error(
-      "Safe location service availability must be boolean",
-    );
+    throw new Error("Safe location service availability must be boolean");
   }
 
   return {
@@ -245,23 +174,14 @@ async function getSafeLocationServiceById(serviceId) {
   };
 }
 
-async function setSafeLocationServiceById(
-  serviceId,
-  serviceData,
-) {
-  if (
-    typeof serviceId !== "string" ||
-    !serviceId.trim()
-  ) {
+async function setSafeLocationServiceById(serviceId, serviceData) {
+  if (typeof serviceId !== "string" || !serviceId.trim()) {
     throw new Error("Safe location service ID is required");
   }
 
-  const normalizedData =
-    normalizeSafeLocationServiceData(serviceData);
+  const normalizedData = normalizeSafeLocationServiceData(serviceData);
 
-  await ensureSafeLocationExists(
-    normalizedData.safeLocationId,
-  );
+  await ensureSafeLocationExists(normalizedData.safeLocationId);
 
   const serviceRef = db
     .collection(SAFE_LOCATION_SERVICES_COLLECTION)
@@ -285,191 +205,6 @@ async function setSafeLocationServiceById(
   return getSafeLocationServiceById(serviceRef.id);
 }
 
-async function getSafeLocations() {
-  const [locationsSnapshot, servicesSnapshot] =
-    await Promise.all([
-      db.collection(SAFE_LOCATIONS_COLLECTION).get(),
-      db
-        .collection(SAFE_LOCATION_SERVICES_COLLECTION)
-        .get(),
-    ]);
-
-  const servicesByLocationId = new Map();
-
-  servicesSnapshot.docs.forEach((serviceDoc) => {
-    const service = {
-      id: serviceDoc.id,
-      ...serviceDoc.data(),
-    };
-
-    const existingServices =
-      servicesByLocationId.get(service.safeLocationId) || [];
-
-    existingServices.push(service);
-
-    servicesByLocationId.set(
-      service.safeLocationId,
-      existingServices,
-    );
-  });
-
-  return locationsSnapshot.docs
-    .map((locationDoc) => ({
-      id: locationDoc.id,
-      ...locationDoc.data(),
-      services:
-        servicesByLocationId.get(locationDoc.id) || [],
-    }))
-    .sort((firstLocation, secondLocation) =>
-      firstLocation.name.localeCompare(secondLocation.name),
-    );
-}
-
-function nearbyValidationError(message) {
-  const error = new Error(message);
-  error.code = "INVALID_NEARBY_FILTER";
-  return error;
-}
-
-function normalizeNearbySafeLocationFilters(filters = {}) {
-  function parseNumber(value, fieldName, min, max) {
-    if (
-      (typeof value !== "string" &&
-        typeof value !== "number") ||
-      (typeof value === "string" && !value.trim())
-    ) {
-      throw nearbyValidationError(
-        `${fieldName} must be a number between ${min} and ${max}`,
-      );
-    }
-
-    const number = Number(value);
-
-    if (
-      !Number.isFinite(number) ||
-      number < min ||
-      number > max
-    ) {
-      throw nearbyValidationError(
-        `${fieldName} must be a number between ${min} and ${max}`,
-      );
-    }
-
-    return number;
-  }
-
-  const latitude = parseNumber(
-    filters.latitude,
-    "latitude",
-    -90,
-    90,
-  );
-
-  const longitude = parseNumber(
-    filters.longitude,
-    "longitude",
-    -180,
-    180,
-  );
-
-  const radiusKm =
-    filters.radiusKm === undefined
-      ? 10
-      : parseNumber(filters.radiusKm, "radiusKm", 0, 100);
-
-  if (radiusKm <= 0) {
-    throw nearbyValidationError(
-      "radiusKm must be greater than 0 and at most 100",
-    );
-  }
-
-  if (
-    filters.type !== undefined &&
-    !ALLOWED_TYPES.includes(filters.type)
-  ) {
-    throw nearbyValidationError("Invalid safe location type");
-  }
-
-  return {
-    latitude,
-    longitude,
-    radiusKm,
-    type: filters.type,
-  };
-}
-
-function calculateDistanceKm(origin, destination) {
-  const toRadians = (degrees) => degrees * Math.PI / 180;
-  const earthRadiusKm = 6371;
-
-  const latitudeDifference = toRadians(
-    destination.latitude - origin.latitude,
-  );
-  const longitudeDifference = toRadians(
-    destination.longitude - origin.longitude,
-  );
-
-  const a =
-    Math.sin(latitudeDifference / 2) ** 2 +
-    Math.cos(toRadians(origin.latitude)) *
-      Math.cos(toRadians(destination.latitude)) *
-      Math.sin(longitudeDifference / 2) ** 2;
-
-  const clampedA = Math.min(1, Math.max(0, a));
-
-  return (
-    earthRadiusKm *
-    2 *
-    Math.atan2(
-      Math.sqrt(clampedA),
-      Math.sqrt(1 - clampedA),
-    )
-  );
-}
-
-async function getNearbySafeLocations(filters = {}) {
-  const normalizedFilters =
-    normalizeNearbySafeLocationFilters(filters);
-
-  const safeLocations = await getSafeLocations();
-
-  return safeLocations
-    .filter((safeLocation) => {
-      const location = safeLocation.location;
-
-      return (
-        safeLocation.status === "active" &&
-        (
-          normalizedFilters.type === undefined ||
-          safeLocation.type === normalizedFilters.type
-        ) &&
-        location &&
-        Number.isFinite(location.latitude) &&
-        Number.isFinite(location.longitude) &&
-        location.latitude >= -90 &&
-        location.latitude <= 90 &&
-        location.longitude >= -180 &&
-        location.longitude <= 180
-      );
-    })
-    .map((safeLocation) => ({
-      ...safeLocation,
-      distanceKm: calculateDistanceKm(
-        normalizedFilters,
-        safeLocation.location,
-      ),
-    }))
-    .filter(
-      (safeLocation) =>
-        safeLocation.distanceKm <= normalizedFilters.radiusKm,
-    )
-    .sort(
-      (first, second) =>
-        first.distanceKm - second.distanceKm ||
-        first.id.localeCompare(second.id),
-    );
-}
-
 module.exports = {
   SAFE_LOCATIONS_COLLECTION,
   SAFE_LOCATION_SERVICES_COLLECTION,
@@ -477,11 +212,13 @@ module.exports = {
   setSafeLocationById,
   getSafeLocationById,
   getSafeLocations,
+  getSafeLocationDetail,
+  getNearbySafeLocations,
+  normalizeSafeLocationData,
+  normalizeNearbySafeLocationFilters: (query) =>
+    normalizeSafeLocationQuery(query, true),
+  calculateDistanceKm,
   setSafeLocationServiceById,
   getSafeLocationServiceById,
-  normalizeSafeLocationData,
   normalizeSafeLocationServiceData,
-  getNearbySafeLocations,
-  normalizeNearbySafeLocationFilters,
-  calculateDistanceKm,
 };

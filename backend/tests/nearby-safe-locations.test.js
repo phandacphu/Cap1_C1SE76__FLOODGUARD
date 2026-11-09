@@ -1,246 +1,107 @@
+const { test, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-
-const firebasePath = require.resolve("../src/config/firebase");
-let simulateDatabaseError = false;
-
-function document(id, data) {
-  return { id, data: () => data };
-}
-
-function locationDocument(
-  id,
-  longitude,
-  type = "shelter",
-  status = "active",
-) {
-  return document(id, {
-    name: id,
-    address: "Sample address",
-    location: { latitude: 0, longitude },
-    type,
-    status,
-    capacity: 100,
-  });
-}
-
-const locations = [
-  locationDocument("far", 0.2),
-  locationDocument("near", 0.01),
-  locationDocument("inactive", 0, "shelter", "inactive"),
-  locationDocument("hospital", 0.02, "hospital"),
-  locationDocument("outside", 2),
-  locationDocument("invalid-coordinate", NaN),
-];
-
-const services = [
-  document("water", {
-    safeLocationId: "near",
-    name: "drinking_water",
-    description: "Sample water service",
-    isAvailable: true,
-  }),
-];
-
-require.cache[firebasePath] = {
-  id: firebasePath,
-  filename: firebasePath,
-  loaded: true,
-  exports: {
-    db: {
-      collection(name) {
-        assert.ok(
-          ["safe_locations", "safe_location_services"].includes(name),
-        );
-
-        return {
-          async get() {
-            if (simulateDatabaseError) {
-              throw new Error("Simulated database failure");
-            }
-
-            return {
-              docs: name === "safe_locations" ? locations : services,
-            };
-          },
-        };
-      },
-    },
-  },
-};
-
+const h = require("./helpers/safe-location-test-app");
 const {
   calculateDistanceKm,
-  normalizeNearbySafeLocationFilters,
+  normalizeSafeLocationQuery,
+} = require("../src/services/safe-location-contract");
+const {
   getNearbySafeLocations,
 } = require("../src/services/safe-location.service");
+beforeEach(h.reset);
 
-const {
-  listNearbySafeLocations,
-} = require("../src/controllers/safe-location.controller");
+test("Haversine handles zero, known distance, date line, poles and antipodes", () => {
+  const zero = { latitude: 0, longitude: 0 };
+  assert.equal(calculateDistanceKm(zero, zero), 0);
+  assert.ok(
+    Math.abs(
+      calculateDistanceKm(zero, { latitude: 0, longitude: 1 }) - 111.195,
+    ) < 0.01,
+  );
+  assert.ok(
+    calculateDistanceKm(
+      { latitude: 0, longitude: 179.9 },
+      { latitude: 0, longitude: -179.9 },
+    ) < 23,
+  );
+  assert.ok(
+    calculateDistanceKm(
+      { latitude: 90, longitude: 0 },
+      { latitude: 90, longitude: 180 },
+    ) < 0.001,
+  );
+  assert.ok(
+    Number.isFinite(calculateDistanceKm(zero, { latitude: 0, longitude: 180 })),
+  );
+});
 
-function createResponse() {
-  return {
-    statusCode: null,
-    body: null,
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      this.body = body;
-      return this;
-    },
-  };
-}
-
-async function callController(query) {
-  const response = createResponse();
-  await listNearbySafeLocations({ query }, response);
-  return response;
-}
-
-async function runTests() {
-  const origin = { latitude: 0, longitude: 0 };
-
-  assert.equal(calculateDistanceKm(origin, origin), 0);
-
-  // One degree of longitude at the equator is about 111.195 km.
-  const distance = calculateDistanceKm(origin, {
-    latitude: 0,
-    longitude: 1,
-  });
-  assert.ok(Math.abs(distance - 111.195) < 0.01);
-
-  const defaults = normalizeNearbySafeLocationFilters({
-    latitude: "0",
-    longitude: "0",
-  });
-  assert.equal(defaults.latitude, 0);
-  assert.equal(defaults.longitude, 0);
-  assert.equal(defaults.radiusKm, 10);
-
-  for (const invalidFilter of [
-    { latitude: "" },
-    { latitude: "91" },
-    { latitude: ["0", "1"] },
-    { latitude: NaN },
-    { longitude: "181" },
-    { longitude: "Infinity" },
-    { radiusKm: "0" },
-    { radiusKm: "-1" },
-    { radiusKm: "101" },
-    { type: "unknown" },
-  ]) {
-    assert.throws(
-      () => normalizeNearbySafeLocationFilters({
-        latitude: "0",
-        longitude: "0",
-        ...invalidFilter,
-      }),
-      (error) => error.code === "INVALID_NEARBY_FILTER",
-    );
-  }
-
-  const nearby = await getNearbySafeLocations({
-    ...origin,
-    radiusKm: 30,
-  });
-
+test("origin must be a complete numeric pair; radius/type/search/page are not supported", () => {
+  assert.equal(normalizeSafeLocationQuery({}), null);
   assert.deepEqual(
-    nearby.map((location) => location.id),
-    ["near", "hospital", "far"],
+    normalizeSafeLocationQuery({ latitude: "0", longitude: "0" }),
+    { latitude: 0, longitude: 0 },
   );
-  assert.ok(Math.abs(nearby[0].distanceKm - 1.11195) < 0.001);
-  assert.equal(nearby[0].services[0].id, "water");
-
-  const shelters = await getNearbySafeLocations({
-    ...origin,
-    radiusKm: 30,
-    type: "shelter",
-  });
-  assert.deepEqual(
-    shelters.map((location) => location.id),
-    ["near", "far"],
-  );
-
-  const withinTwoKm = await getNearbySafeLocations({
-    ...origin,
-    radiusKm: 2,
-  });
-  assert.deepEqual(
-    withinTwoKm.map((location) => location.id),
-    ["near"],
-  );
-
-  const empty = await getNearbySafeLocations({
-    ...origin,
-    radiusKm: 0.1,
-  });
-  assert.deepEqual(empty, []);
-
-  const success = await callController({
-    latitude: "0",
-    longitude: "0",
-    radiusKm: "30",
-  });
-  assert.equal(success.statusCode, 200);
-  assert.equal(success.body.success, true);
-  assert.deepEqual(
-    success.body.data.safeLocations.map((location) => location.id),
-    ["near", "hospital", "far"],
-  );
-  assert.equal(
-    typeof success.body.data.safeLocations[0].distanceKm,
-    "number",
-  );
-  assert.equal(
-    success.body.data.safeLocations[0].services[0].name,
-    "drinking_water",
-  );
-
   for (const query of [
-    {},
-    { latitude: "91", longitude: "0" },
-    { latitude: "0", longitude: "0", radiusKm: "0" },
+    { latitude: "0" },
+    { longitude: "0" },
+    { latitude: "", longitude: "0" },
     { latitude: ["0", "1"], longitude: "0" },
-    { latitude: "0", longitude: "0", type: "unknown" },
-    { latitude: "0", longitude: "0", unsupported: "value" },
-  ]) {
-    const response = await callController(query);
-    assert.equal(response.statusCode, 400);
-    assert.equal(response.body.success, false);
-  }
-
-  const emptyResponse = await callController({
-    latitude: "0",
-    longitude: "0",
-    radiusKm: "0.1",
-  });
-  assert.equal(emptyResponse.statusCode, 200);
-  assert.deepEqual(emptyResponse.body.data.safeLocations, []);
-
-  simulateDatabaseError = true;
-  const originalConsoleError = console.error;
-  console.error = () => {};
-
-  try {
-    const response = await callController({
+    { latitude: "0x10", longitude: "0" },
+    { latitude: "91", longitude: "0" },
+    { latitude: "0", longitude: "Infinity" },
+    ...["radiusKm", "type", "search", "page", "limit", "status"].map((key) => ({
       latitude: "0",
       longitude: "0",
+      [key]: "1",
+    })),
+  ]) {
+    assert.throws(() => normalizeSafeLocationQuery(query), {
+      code: "INVALID_SAFE_LOCATION_QUERY",
     });
-    assert.equal(response.statusCode, 500);
-    assert.equal(response.body.success, false);
-    assert.equal(response.body.message, "Internal server error");
-  } finally {
-    console.error = originalConsoleError;
-    simulateDatabaseError = false;
   }
+});
 
-  console.log("Nearby safe locations tests passed");
-}
+test("all distances are unrounded, sorted nearest first with stable ID ties and no radius cap", async () => {
+  for (const [id, longitude] of [
+    ["far", 10],
+    ["near-b", 0.001001],
+    ["near-a", 0.001],
+    ["tie-b", 0.1],
+    ["tie-a", 0.1],
+  ]) {
+    h.seed(id, { location: { latitude: 0, longitude } });
+  }
+  h.seed("deleted", {
+    location: { latitude: 0, longitude: 0 },
+    isDeleted: true,
+  });
+  const points = await getNearbySafeLocations({ latitude: 0, longitude: 0 });
+  assert.deepEqual(
+    points.map((p) => p.id),
+    ["near-a", "near-b", "tie-a", "tie-b", "far"],
+  );
+  assert.ok(points[4].distanceKm > 1000);
+  assert.ok(points[0].distanceKm < points[1].distanceKm);
+  assert.equal(
+    points[0].distanceKm.toFixed(2),
+    points[1].distanceKm.toFixed(2),
+  );
+});
 
-runTests().catch((error) => {
-  console.error("Nearby safe locations tests failed");
-  console.error(error);
-  process.exitCode = 1;
+test("HTTP nearby alias returns all points, requires GPS and rejects old radius arguments", async () => {
+  h.seed("far", { location: { latitude: 0, longitude: 5 } });
+  await h.withApi(async (api) => {
+    const result = await api(
+      "/api/safe-locations/nearby?latitude=0&longitude=0",
+      { actor: null },
+    );
+    assert.equal(result.status, 200);
+    assert.ok(result.body.data.safeLocations[0].distanceKm > 500);
+    for (const path of [
+      "/api/safe-locations/nearby",
+      "/api/safe-locations/nearby?latitude=0&longitude=0&radiusKm=10",
+    ]) {
+      assert.equal((await api(path, { actor: null })).status, 400);
+    }
+  });
 });
