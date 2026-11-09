@@ -1,222 +1,130 @@
-const assert = require("assert");
+const { test, beforeEach } = require("node:test");
+const assert = require("node:assert/strict");
+const h = require("./helpers/safe-location-test-app");
+const c = require("../src/services/safe-location-contract");
+const service = require("../src/services/safe-location.service");
+beforeEach(h.reset);
 
-const {
-  setSafeLocationById,
-  getSafeLocationById,
-  setSafeLocationServiceById,
-  getSafeLocationServiceById,
-  normalizeSafeLocationData,
-  normalizeSafeLocationServiceData,
-} = require("../src/services/safe-location.service");
-
-const SAMPLE_LOCATION_ID =
-  "ccf66-sample-safe-location-01";
-
-const SAMPLE_WATER_SERVICE_ID =
-  "ccf66-sample-service-water";
-
-const SAMPLE_FIRST_AID_SERVICE_ID =
-  "ccf66-sample-service-first-aid";
-
-function createValidSafeLocationData() {
-  return {
-    name: "Sample Community Shelter 01",
-    address: "Hai Chau District, Da Nang",
-    location: {
-      latitude: 16.0544,
-      longitude: 108.2022,
-    },
-    type: "community_center",
-    capacity: 300,
-    capacityNote:
-      "Temporary capacity for prototype testing",
-    description:
-      "Simulated evacuation location for FLOODGUARD testing",
-    contactPhone: "02361234567",
-    status: "active",
-  };
-}
-
-async function testSafeLocationService() {
-  try {
-    assert.throws(
-      () =>
-        normalizeSafeLocationData({
-          ...createValidSafeLocationData(),
-          name: "",
-        }),
-      /Safe location name is required/,
+test("minimal fields accept every type and normalize optional description", () => {
+  for (const type of c.SAFE_LOCATION_TYPES) {
+    const data = c.normalizeSafeLocationData(
+      h.body({ type, description: "  " }),
     );
-
-    assert.throws(
-      () =>
-        normalizeSafeLocationData({
-          ...createValidSafeLocationData(),
-          location: {
-            latitude: 91,
-            longitude: 108.2022,
-          },
-        }),
-      /latitude must be between -90 and 90/,
+    assert.equal(data.name, "TEST Shelter");
+    assert.equal(data.address, "TEST Address");
+    assert.equal(data.description, null);
+    assert.equal(data.type, type);
+    assert.deepEqual(
+      Object.keys(data).sort(),
+      ["name", "address", "location", "type", "description"].sort(),
     );
-
-    assert.throws(
-      () =>
-        normalizeSafeLocationData({
-          ...createValidSafeLocationData(),
-          capacity: -1,
-        }),
-      /capacity must be a non-negative integer/,
-    );
-
-    assert.throws(
-      () =>
-        normalizeSafeLocationData({
-          ...createValidSafeLocationData(),
-          type: "unknown",
-        }),
-      /Invalid safe location type/,
-    );
-
-    assert.throws(
-      () =>
-        normalizeSafeLocationServiceData({
-          safeLocationId: SAMPLE_LOCATION_ID,
-          name: "first_aid",
-          isAvailable: "yes",
-        }),
-      /availability must be boolean/,
-    );
-
-    const savedLocation = await setSafeLocationById(
-      SAMPLE_LOCATION_ID,
-      createValidSafeLocationData(),
-    );
-
-    assert.strictEqual(
-      savedLocation.id,
-      SAMPLE_LOCATION_ID,
-    );
-    assert.strictEqual(
-      savedLocation.name,
-      "Sample Community Shelter 01",
-    );
-    assert.strictEqual(
-      savedLocation.type,
-      "community_center",
-    );
-    assert.strictEqual(savedLocation.capacity, 300);
-    assert.strictEqual(savedLocation.status, "active");
-    assert.ok(savedLocation.createdAt);
-    assert.ok(savedLocation.updatedAt);
-
-    const fetchedLocation = await getSafeLocationById(
-      SAMPLE_LOCATION_ID,
-    );
-
-    assert.ok(fetchedLocation);
-    assert.strictEqual(
-      fetchedLocation.id,
-      SAMPLE_LOCATION_ID,
-    );
-    assert.strictEqual(
-      fetchedLocation.location.latitude,
-      16.0544,
-    );
-    assert.strictEqual(
-      fetchedLocation.location.longitude,
-      108.2022,
-    );
-
-    await assert.rejects(
-      () =>
-        setSafeLocationServiceById(
-          "ccf66-invalid-location-service",
-          {
-            safeLocationId: "missing-safe-location",
-            name: "drinking_water",
-            description: null,
-            isAvailable: true,
-          },
-        ),
-      /Referenced safe location does not exist/,
-    );
-
-    const waterService =
-      await setSafeLocationServiceById(
-        SAMPLE_WATER_SERVICE_ID,
-        {
-          safeLocationId: SAMPLE_LOCATION_ID,
-          name: "drinking_water",
-          description:
-            "Sample drinking water support",
-          isAvailable: true,
-        },
-      );
-
-    assert.strictEqual(
-      waterService.id,
-      SAMPLE_WATER_SERVICE_ID,
-    );
-    assert.strictEqual(
-      waterService.safeLocationId,
-      SAMPLE_LOCATION_ID,
-    );
-    assert.strictEqual(
-      waterService.name,
-      "drinking_water",
-    );
-    assert.strictEqual(
-      waterService.isAvailable,
-      true,
-    );
-    assert.ok(waterService.createdAt);
-    assert.ok(waterService.updatedAt);
-
-    const firstAidService =
-      await setSafeLocationServiceById(
-        SAMPLE_FIRST_AID_SERVICE_ID,
-        {
-          safeLocationId: SAMPLE_LOCATION_ID,
-          name: "first_aid",
-          description:
-            "Sample first-aid support",
-          isAvailable: true,
-        },
-      );
-
-    assert.strictEqual(
-      firstAidService.safeLocationId,
-      SAMPLE_LOCATION_ID,
-    );
-    assert.strictEqual(
-      firstAidService.name,
-      "first_aid",
-    );
-
-    const fetchedWaterService =
-      await getSafeLocationServiceById(
-        SAMPLE_WATER_SERVICE_ID,
-      );
-
-    assert.ok(fetchedWaterService);
-    assert.strictEqual(
-      fetchedWaterService.safeLocationId,
-      SAMPLE_LOCATION_ID,
-    );
-
-    console.log("Safe location service tests passed");
-    console.log(
-      `Sample safe location ID: ${SAMPLE_LOCATION_ID}`,
-    );
-
-    process.exit(0);
-  } catch (error) {
-    console.error("Safe location service tests failed");
-    console.error(error);
-
-    process.exit(1);
   }
-}
+  const data = h.body();
+  delete data.description;
+  assert.equal(c.normalizeSafeLocationData(data).description, null);
+});
 
-testSafeLocationService();
+test("rejects obsolete/caller-controlled fields and malformed minimal input", () => {
+  for (const key of [
+    "capacity",
+    "capacityNote",
+    "services",
+    "contactPhone",
+    "status",
+    "id",
+    "isDeleted",
+    "deletedAt",
+    "deletedBy",
+    "createdAt",
+    "schemaVersion",
+    "__proto__",
+  ]) {
+    const input = { ...h.body(), [key]: key === "__proto__" ? {} : "x" };
+    assert.throws(() => c.normalizeSafeLocationData(input), {
+      code: "INVALID_SAFE_LOCATION_DATA",
+    });
+  }
+  for (const changes of [
+    { name: " " },
+    { address: null },
+    { name: "x".repeat(201) },
+    { address: "x".repeat(501) },
+    { type: "unknown" },
+    { description: 3 },
+    { description: "x".repeat(2001) },
+    { location: { latitude: "16", longitude: 108 } },
+    { location: { latitude: NaN, longitude: 108 } },
+    { location: { latitude: 91, longitude: 108 } },
+    { location: { latitude: 16, longitude: Infinity } },
+    { location: { latitude: 16, longitude: -181 } },
+    { location: { latitude: 16 } },
+    { location: { latitude: 0, longitude: 0, extra: true } },
+  ]) {
+    assert.throws(() => c.normalizeSafeLocationData(h.body(changes)), {
+      code: "INVALID_SAFE_LOCATION_DATA",
+    });
+  }
+  assert.deepEqual(
+    c.normalizeSafeLocationData(
+      h.body({ location: { latitude: 0, longitude: 0 } }),
+    ).location,
+    { latitude: 0, longitude: 0 },
+  );
+});
+
+test("IDs are bounded document IDs, not paths or reserved IDs", () => {
+  for (const value of [
+    undefined,
+    "",
+    " ",
+    ".",
+    "..",
+    "a/b",
+    "__reserved__",
+    "x".repeat(1501),
+  ]) {
+    assert.throws(() => c.normalizeSafeLocationId(value), {
+      code: "INVALID_SAFE_LOCATION_ID",
+    });
+  }
+});
+
+test("fixture writes keep ID and creation time without resurrecting deleted records", async () => {
+  const created = await service.createSafeLocation(h.body());
+  assert.equal(created.schemaVersion, 2);
+  assert.equal(created.isDeleted, false);
+  const before = await service.setSafeLocationById("fixture", h.body());
+  const after = await service.setSafeLocationById(
+    "fixture",
+    h.body({ name: "Updated" }),
+  );
+  assert.equal(after.id, "fixture");
+  assert.equal(after.createdAt.toMillis(), before.createdAt.toMillis());
+  h.records.get("safe_locations/fixture").isDeleted = true;
+  await assert.rejects(service.setSafeLocationById("fixture", h.body()), {
+    code: "SAFE_LOCATION_NOT_FOUND",
+  });
+  assert.equal(await service.getSafeLocationById("fixture"), null);
+});
+
+test("legacy service documents stay separate and cannot be linked to a deleted point", async () => {
+  h.seed();
+  const saved = await service.setSafeLocationServiceById("water", {
+    safeLocationId: "location-1",
+    name: "water",
+    isAvailable: true,
+  });
+  assert.equal(saved.safeLocationId, "location-1");
+  assert.equal(
+    (await service.getSafeLocationServiceById("water")).name,
+    "water",
+  );
+  h.records.get("safe_locations/location-1").isDeleted = true;
+  await assert.rejects(
+    service.setSafeLocationServiceById("new", {
+      safeLocationId: "location-1",
+      name: "water",
+      isAvailable: true,
+    }),
+  );
+});
