@@ -4,22 +4,31 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.floodguard.data.repository.FloodAlertRepository
+import com.example.floodguard.data.repository.FloodAreaRepository
+import com.example.floodguard.data.model.FloodAlertDto
+import com.example.floodguard.domain.model.formatWarningDateTime
+import com.example.floodguard.domain.model.nextWarningStatusUpdateDelayMillis
+import com.example.floodguard.domain.model.resolveWarningTimeStatus
+import com.example.floodguard.domain.model.warningSeverityLabel
+import com.example.floodguard.domain.model.warningTimeStatusLabel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 data class WarningDetailUiState(
     val isLoading: Boolean = false,
     val warningDetail: WarningDetail? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val areaLoadNotice: String? = null
 )
 
 class WarningDetailViewModel(
     savedStateHandle: SavedStateHandle,
-    private val floodAlertRepository: FloodAlertRepository
+    private val floodAlertRepository: FloodAlertRepository,
+    private val floodAreaRepository: FloodAreaRepository
 ) : ViewModel() {
 
     private val warningId: String =
@@ -35,22 +44,30 @@ class WarningDetailViewModel(
     val uiState: StateFlow<WarningDetailUiState> =
         _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+    private var loadedAlert: FloodAlertDto? = null
+
     init {
         loadWarningDetail()
     }
 
     fun loadWarningDetail() {
 
-        viewModelScope.launch {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
 
             _uiState.value =
                 WarningDetailUiState(
                     isLoading = true
                 )
 
-            val result =
-                floodAlertRepository.getFloodAlerts()
-
+            if (warningId.isBlank()) {
+                _uiState.value = WarningDetailUiState(errorMessage = "Không tìm thấy cảnh báo")
+                return@launch
+            }
+            val areas = async { floodAreaRepository.getFloodAreas() }
+            val result = floodAlertRepository.getFloodAlerts()
+            val areasResult = if (areas.isCompleted) areas.await() else null
             result
                 .onSuccess { floodAlerts ->
 
@@ -71,20 +88,24 @@ class WarningDetailViewModel(
                         return@onSuccess
                     }
 
+                    loadedAlert = alert
+                    val areaName = areasResult?.getOrNull()
+                        ?.firstOrNull { it.id == alert.areaId }
+                        ?.name?.trim()?.takeIf { it.isNotBlank() }
                     val detail =
                         WarningDetail(
                             id = alert.id,
 
-                            systemStatus = getWarningStatus(
+                            systemStatus = warningTimeStatusLabel(resolveWarningTimeStatus(
                                 status = alert.status,
                                 startAt = alert.startAt,
                                 endAt = alert.endAt
-                            ),
+                            )),
 
                             screenTitle = "Chi tiết cảnh báo",
 
                             levelText =
-                                alert.severity.uppercase(),
+                                warningSeverityLabel(alert.severity),
 
                             startTime =
                                 formatWarningDateTime(
@@ -103,7 +124,7 @@ class WarningDetailViewModel(
                                 alert.title,
 
                             locationSummary =
-                                "Mã khu vực: ${alert.areaId}",
+                                areaName ?: "Khu vực chưa có tên",
 
                             description =
                                 alert.content,
@@ -136,86 +157,74 @@ class WarningDetailViewModel(
                             emergencyNote = "",
 
                             sourceInfo =
-                                "Dữ liệu từ FloodGuard Backend API"
+                                "Nguồn: FloodGuard Backend API • Thời gian: giờ Việt Nam (GMT+7)"
                         )
 
                     _uiState.value =
                         WarningDetailUiState(
                             isLoading = false,
                             warningDetail = detail,
-                            errorMessage = null
+                            errorMessage = null,
+                            areaLoadNotice = when {
+                                areasResult == null ->
+                                    "Đang tải tên khu vực."
+                                areasResult.isFailure ->
+                                    "Chưa tải được tên khu vực. Bấm làm mới để thử lại."
+                                areaName == null ->
+                                    "Chưa tìm thấy tên khu vực tương ứng với bản tin."
+                                else -> null
+                            }
                         )
                 }
-                .onFailure { error ->
+                .onFailure {
 
                     _uiState.value =
                         WarningDetailUiState(
                             isLoading = false,
                             errorMessage =
-                                error.message
-                                    ?: "Không thể tải chi tiết cảnh báo"
+                                "Không thể tải chi tiết cảnh báo. Kiểm tra kết nối và thử lại."
                         )
                 }
-        }
-    }
-}
+            if (_uiState.value.warningDetail == null) {
+                areas.cancel()
+                return@launch
+            }
 
-private fun formatWarningDateTime(
-    isoTime: String
-): String {
+            val finalAreasResult = areas.await()
+            val alert = loadedAlert ?: return@launch
+            val current = _uiState.value
+            val detail = current.warningDetail ?: return@launch
 
-    return runCatching {
+            val finalName = finalAreasResult.getOrNull()
+                ?.firstOrNull { it.id == alert.areaId }
+                ?.name?.trim()?.takeIf { it.isNotBlank() }
 
-        Instant
-            .parse(isoTime)
-            .atZone(
-                ZoneId.systemDefault()
+            _uiState.value = current.copy(
+                warningDetail = detail.copy(
+                    locationSummary = finalName ?: "Khu vực chưa có tên"
+                ),
+                areaLoadNotice = when {
+                    finalAreasResult.isFailure ->
+                        "Chưa tải được tên khu vực. Bấm làm mới để thử lại."
+                    finalName == null ->
+                        "Chưa tìm thấy tên khu vực tương ứng với bản tin."
+                    else -> null
+                }
             )
-            .format(
-                DateTimeFormatter
-                    .ofPattern("dd/MM/yyyy HH:mm")
-            )
-
-    }.getOrDefault(isoTime)
-}
-
-private fun getWarningStatus(
-    status: String,
-    startAt: String,
-    endAt: String?
-): String {
-
-    if (!status.equals("active", ignoreCase = true)) {
-        return "CẢNH BÁO ĐÃ TẮT"
-    }
-
-    val now = Instant.now()
-
-    val start = runCatching {
-        Instant.parse(startAt)
-    }.getOrNull()
-        ?: return "KHÔNG XÁC ĐỊNH THỜI GIAN"
-
-    val end = endAt
-        ?.takeIf { it.isNotBlank() }
-        ?.let {
-            runCatching {
-                Instant.parse(it)
-            }.getOrNull()
-                ?: return "KHÔNG XÁC ĐỊNH THỜI GIAN"
-        }
-
-    return when {
-        end != null && !now.isBefore(end) -> {
-            "CẢNH BÁO ĐÃ HẾT HẠN"
-        }
-
-        now.isBefore(start) -> {
-            "CẢNH BÁO ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
-        }
-
-        else -> {
-            "CẢNH BÁO ĐANG CÓ HIỆU LỰC"
         }
     }
+
+    fun refreshTimeStatus(): Long {
+        val alert = loadedAlert ?: return 60_000L
+        val state = _uiState.value
+        val detail = state.warningDetail ?: return 60_000L
+        val now = Instant.now()
+        _uiState.value = state.copy(warningDetail = detail.copy(
+            systemStatus = warningTimeStatusLabel(resolveWarningTimeStatus(
+                alert.status, alert.startAt, alert.endAt, now
+            ))
+        ))
+        return nextWarningStatusUpdateDelayMillis(alert.startAt, alert.endAt, now)
+    }
+
 }

@@ -1,11 +1,9 @@
 package com.example.floodguard.ui.screens.safe_location
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.LocationOn
@@ -22,6 +20,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.location.Location
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.example.floodguard.domain.model.SafeLocation
 import com.example.floodguard.ui.components.SafeLocationCard
 import com.example.floodguard.ui.components.FloodGuardBottomBar
@@ -44,6 +50,35 @@ fun SafeLocationListScreen(
     viewModel: SafeLocationViewModel = viewModel()
 ) {
     val state = viewModel.uiState.collectAsState().value
+
+    var gpsLocation by remember {
+        mutableStateOf<Location?>(null)
+    }
+
+    var touchingMap by remember {
+        mutableStateOf(false)
+    }
+
+    val gpsState = state.copy(
+        currentAddress = gpsLocation?.let {
+            "Vĩ độ: %.6f • Kinh độ: %.6f".format(
+                Locale.US,
+                it.latitude,
+                it.longitude
+            )
+        } ?: "Chưa xác định vị trí",
+        latitude = gpsLocation?.latitude,
+        longitude = gpsLocation?.longitude,
+        gpsAccuracyMeters = gpsLocation
+            ?.takeIf { it.hasAccuracy() }
+            ?.accuracy,
+        lastUpdated = gpsLocation?.let {
+            SimpleDateFormat(
+                "dd/MM/yyyy HH:mm:ss",
+                Locale.forLanguageTag("vi-VN")
+            ).format(Date(it.time))
+        }
+    )
 
     Scaffold(
         containerColor = PageBackground,
@@ -74,16 +109,22 @@ fun SafeLocationListScreen(
                 top = 16.dp,
                 bottom = 28.dp
             ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            userScrollEnabled = !touchingMap
         ) {
 
             item {
-                GpsInformationCard(state)
+                GpsInformationCard(gpsState)
             }
 
             item {
-                SafeLocationMapPreview(
-                    onMapClick = onMapClick
+                SafeLocationMap(
+                    locations = state.locations,
+                    isLoadingLocations = state.isLoading,
+                    locationError = state.errorMessage,
+                    onGpsChanged = { gpsLocation = it },
+                    onViewDetail = onViewDetail,
+                    onMapTouchChanged = { touchingMap = it }
                 )
             }
 
@@ -112,14 +153,6 @@ fun SafeLocationListScreen(
                         )
                     }
                 }
-            }
-
-
-            item {
-                SafeLocationFilters(
-                    selectedFilter = state.selectedFilter,
-                    onSelectFilter = viewModel::selectFilter
-                )
             }
 
             when {
@@ -343,129 +376,6 @@ private fun GpsInformationCard(
         }
     }
 }
-
-
-@Composable
-private fun SafeLocationMapPreview(
-    onMapClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(190.dp)
-            .clickable(onClick = onMapClick),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = SectionBackground
-        )
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = AccentCyan,
-                    modifier = Modifier.size(34.dp)
-                )
-
-                Text(
-                    text = "XEM BẢN ĐỒ ĐIỂM TRÁNH TRÚ",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp
-                )
-
-                Text(
-                    text = "Nhấn để mở Google Maps • Dữ liệu thử nghiệm",
-                    color = MutedText,
-                    fontSize = 12.sp
-                )
-
-                Text(
-                    text = "Dữ liệu thử nghiệm • Chưa xác minh",
-                    color = MutedText,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun SafeLocationFilters(
-    selectedFilter: SafeLocationFilter,
-    onSelectFilter: (SafeLocationFilter) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        FilterButton(
-            label = "Tất cả",
-            selected = selectedFilter == SafeLocationFilter.ALL,
-            onClick = {
-                onSelectFilter(SafeLocationFilter.ALL)
-            },
-            modifier = Modifier.weight(1f)
-        )
-
-
-        FilterButton(
-            label = "Có y tế",
-            selected = selectedFilter == SafeLocationFilter.MEDICAL,
-            onClick = {
-                onSelectFilter(SafeLocationFilter.MEDICAL)
-            },
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun FilterButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) {
-                AccentCyan
-            } else {
-                SectionBackground
-            },
-            contentColor = if (selected) {
-                PageBackground
-            } else {
-                Color.White
-            }
-        ),
-        contentPadding = PaddingValues(
-            horizontal = 2.dp,
-            vertical = 10.dp
-        )
-    ) {
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            maxLines = 1,
-            softWrap = false,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
 @Composable
 private fun EmergencySupportCard() {
     Card(

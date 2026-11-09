@@ -42,6 +42,8 @@ import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewMod
 import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
 import com.example.floodguard.ui.screens.sos.SendSosScreen
 import com.example.floodguard.ui.screens.sos.SendSosViewModel
+import com.example.floodguard.ui.screens.sos.SosStatusScreen
+import com.example.floodguard.ui.screens.sos.SosStatusViewModel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -285,6 +287,14 @@ fun AppNavGraph(
 
                 sosState = sosState,
 
+                onSosStatusClick = { sosId ->
+                    navController.navigate(
+                        "${AppRoutes.SOS_STATUS}/${android.net.Uri.encode(sosId)}"
+                    ) {
+                        launchSingleTop = true
+                    }
+                },
+
                 onRetrySos = {
                     profileViewModel.loadSosHistory()
                 },
@@ -483,6 +493,9 @@ fun AppNavGraph(
                 WarningViewModel(
                     floodAlertRepository = FloodAlertRepository(
                         floodAlertApi = ApiClient.floodAlertApi
+                    ),
+                    floodAreaRepository = FloodAreaRepository(
+                        floodAreaApi = ApiClient.floodAreaApi
                     )
                 )
             }
@@ -557,6 +570,9 @@ fun AppNavGraph(
                         savedStateHandle = createSavedStateHandle(),
                         floodAlertRepository = FloodAlertRepository(
                             floodAlertApi = ApiClient.floodAlertApi
+                        ),
+                        floodAreaRepository = FloodAreaRepository(
+                            floodAreaApi = ApiClient.floodAreaApi
                         )
                     )
                 }
@@ -881,6 +897,44 @@ fun AppNavGraph(
                             navController.navigate(AppRoutes.PROFILE) {
                                 launchSingleTop = true
                             }
+                        }
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = "${AppRoutes.SOS_STATUS}/{sosId}"
+        ) { entry ->
+            val sosId = entry.arguments?.getString("sosId").orEmpty()
+
+            val repository = remember(sessionManager) {
+                val retrofit = ApiClient.createAuthenticatedRetrofit(sessionManager)
+
+                RescueRequestRepository(
+                    api = retrofit.create(RescueRequestApi::class.java)
+                )
+            }
+
+            val statusViewModel: SosStatusViewModel = viewModel {
+                SosStatusViewModel(
+                    repository = repository,
+                    sosId = sosId
+                )
+            }
+
+            val statusState by statusViewModel.uiState.collectAsState()
+
+            SosStatusScreen(
+                state = statusState,
+                onRefresh = statusViewModel::refresh,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(AppRoutes.PROFILE) {
+                            popUpTo(entry.destination.id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
                         }
                     }
                 }

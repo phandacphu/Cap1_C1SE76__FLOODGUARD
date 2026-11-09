@@ -1,239 +1,149 @@
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
-
 const {
   RESCUE_REQUESTS_COLLECTION,
   getRescueRequestById,
 } = require("./rescue-request.service");
-
-const {
-  RESCUE_ASSIGNMENTS_COLLECTION,
-  getRescueAssignmentByRequestId,
-} = require("./rescue-assignment.service");
-
 const {
   RESCUE_REQUEST_STATUS_HISTORY_COLLECTION,
   normalizeRescueRequestStatusHistoryData,
 } = require("./rescue-request-status-history.service");
-
 const {
   prepareSosStatusNotification,
   stageSosStatusNotification,
 } = require("./sos-status-notification.service");
-
-function statusError(code, message) {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-}
-
-function isValidDocumentId(value) {
-  return (
-    typeof value === "string" &&
-    value.trim().length > 0 &&
-    !value.trim().includes("/") &&
-    value.trim() !== "." &&
-    value.trim() !== ".." &&
-    Buffer.byteLength(value.trim(), "utf8") <= 1500
-  );
-}
+const {
+  normalizeAuditLogData,
+  AUDIT_LOGS_COLLECTION,
+} = require("./audit-log.service");
+const {
+  ACTIVE_SOS_STATUSES,
+  ACTIVE_SOS_COLLECTION,
+  activeSosLockId,
+  validDocumentId,
+  sosError,
+  ensureFields,
+} = require("./sos-contract");
 
 function normalizeStatusUpdate(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw statusError(
+  ensureFields(input, ["status", "note"], "INVALID_STATUS_UPDATE");
+  if (input.status !== "assisted")
+    throw sosError(
       "INVALID_STATUS_UPDATE",
-      "Status update body must be an object",
+      "Only assisted (Đã cứu) is supported",
     );
-  }
-
-  const unsupportedField = Object.keys(input).find(
-    (field) => !["status", "note"].includes(field),
-  );
-
-  if (unsupportedField !== undefined) {
-    throw statusError(
+  if (input.note != null && typeof input.note !== "string")
+    throw sosError("INVALID_STATUS_UPDATE", "note must be a string or null");
+  const note = input.note?.trim() || null;
+  if (note && note.length > 200)
+    throw sosError(
       "INVALID_STATUS_UPDATE",
-      `Unsupported request field: ${unsupportedField}`,
+      "note must not exceed 200 characters",
     );
-  }
-
-  if (!["in_progress", "assisted"].includes(input.status)) {
-    throw statusError(
-      "INVALID_STATUS_UPDATE",
-      "Status must be in_progress or assisted",
-    );
-  }
-
-  if (
-    input.note !== undefined &&
-    input.note !== null &&
-    typeof input.note !== "string"
-  ) {
-    throw statusError(
-      "INVALID_STATUS_UPDATE",
-      "Status update note must be a string or null",
-    );
-  }
-
-  return {
-    status: input.status,
-    note: typeof input.note === "string" ? input.note.trim() || null : null,
-  };
+  return { status: "assisted", note };
 }
 
 async function updateRescueStatusWithHistory(requestId, rescueStaffId, input) {
-  if (!isValidDocumentId(rescueStaffId)) {
-    throw statusError("STATUS_AUTH_REQUIRED", "Authentication is required");
-  }
-
-  if (!isValidDocumentId(requestId)) {
-    throw statusError("INVALID_STATUS_REQUEST_ID", "Invalid rescue request ID");
-  }
-
+  if (!validDocumentId(rescueStaffId))
+    throw sosError("STATUS_AUTH_REQUIRED", "Authentication is required", 401);
+  if (!validDocumentId(requestId))
+    throw sosError("INVALID_STATUS_REQUEST_ID", "Invalid rescue request ID");
   const data = normalizeStatusUpdate(input);
-  const normalizedRequestId = requestId.trim();
   const normalizedStaffId = rescueStaffId.trim();
-
   const userRef = db.collection("users").doc(normalizedStaffId);
-
   const requestRef = db
     .collection(RESCUE_REQUESTS_COLLECTION)
-    .doc(normalizedRequestId);
-
-  const assignmentRef = db
-    .collection(RESCUE_ASSIGNMENTS_COLLECTION)
-    .doc(normalizedRequestId);
-
-  // Allocate once so transaction retries reuse the same ID.
+    .doc(requestId.trim());
+  // Stable document IDs also survive transaction retries.
   const historyRef = db
     .collection(RESCUE_REQUEST_STATUS_HISTORY_COLLECTION)
     .doc();
-
+  const auditRef = db.collection(AUDIT_LOGS_COLLECTION).doc();
   await db.runTransaction(async (transaction) => {
     const userDoc = await transaction.get(userRef);
-
-    if (!userDoc.exists) {
-      throw statusError(
+    if (!userDoc.exists)
+      throw sosError(
         "STATUS_USER_NOT_FOUND",
         "Authenticated user no longer exists",
+        401,
       );
-    }
-
-    const user = userDoc.data();
-
-    if (user.isActive !== true) {
-      throw statusError("STATUS_ACCOUNT_INACTIVE", "Account is inactive");
-    }
-
-    if (user.role !== "rescue") {
-      throw statusError(
+    if (userDoc.data().isActive !== true)
+      throw sosError("STATUS_ACCOUNT_INACTIVE", "Account is inactive", 403);
+    if (userDoc.data().role !== "rescue")
+      throw sosError(
         "STATUS_ROLE_FORBIDDEN",
-        "Only rescue staff can update SOS status",
+        "Only rescue staff can confirm a rescue",
+        403,
       );
-    }
-
     const requestDoc = await transaction.get(requestRef);
-
-    if (!requestDoc.exists) {
-      throw statusError("STATUS_REQUEST_NOT_FOUND", "Rescue request not found");
-    }
-
-    const assignmentDoc = await transaction.get(assignmentRef);
-
-    if (!assignmentDoc.exists) {
-      throw statusError(
-        "STATUS_ASSIGNMENT_CONFLICT",
-        "Rescue request has no assignment",
+    if (!requestDoc.exists)
+      throw sosError(
+        "STATUS_REQUEST_NOT_FOUND",
+        "Rescue request not found",
+        404,
       );
-    }
-
-    const assignment = assignmentDoc.data();
-
-    if (assignment.requestId !== normalizedRequestId) {
-      throw statusError(
-        "STATUS_ASSIGNMENT_CONFLICT",
-        "Assignment does not match this rescue request",
-      );
-    }
-
-    if (assignment.rescueStaffId !== normalizedStaffId) {
-      throw statusError(
-        "STATUS_STAFF_FORBIDDEN",
-        "Only the assigned rescue staff can update this SOS",
-      );
-    }
-
     const request = requestDoc.data();
-
-    const expected =
-      data.status === "in_progress"
-        ? {
-            requestStatus: "received",
-            assignmentStatus: "accepted",
-            nextAssignmentStatus: "in_progress",
-          }
-        : {
-            requestStatus: "in_progress",
-            assignmentStatus: "in_progress",
-            nextAssignmentStatus: "completed",
-          };
-
-    if (
-      request.status !== expected.requestStatus ||
-      assignment.status !== expected.assignmentStatus
-    ) {
-      throw statusError(
+    if (!ACTIVE_SOS_STATUSES.includes(request.status)) {
+      throw sosError(
         "STATUS_TRANSITION_CONFLICT",
-        "Status transition is not allowed for the current SOS and assignment",
+        "SOS is already completed or is not active",
+        409,
       );
     }
-
+    let lockRef = null;
+    let lock = null;
+    if (validDocumentId(request.residentId)) {
+      lockRef = db
+        .collection(ACTIVE_SOS_COLLECTION)
+        .doc(activeSosLockId(request.residentId));
+      lock = await transaction.get(lockRef);
+    }
     const history = normalizeRescueRequestStatusHistoryData({
-      requestId: normalizedRequestId,
+      requestId: requestRef.id,
       oldStatus: request.status,
-      newStatus: data.status,
+      newStatus: "assisted",
       changedBy: normalizedStaffId,
       note: data.note,
     });
-
-    const preparedNotification = await prepareSosStatusNotification(
-      transaction,
-      {
-        requestId: normalizedRequestId,
-        request,
-        historyId: historyRef.id,
-        newStatus: data.status,
+    const prepared = await prepareSosStatusNotification(transaction, {
+      requestId: requestRef.id,
+      request,
+      historyId: historyRef.id,
+      newStatus: "assisted",
+    });
+    const audit = normalizeAuditLogData({
+      actor: { id: normalizedStaffId, role: "rescue" },
+      action: "rescue_request.complete",
+      target: { type: "rescue_request", id: requestRef.id },
+      metadata: {
+        source: "api",
+        outcome: "success",
+        changedFields: ["status"],
       },
-    );
-
-    // All reads finish before writes.
-    // Preserve assignment identities and original assignedAt.
+    });
+    // Completion, history, audit, notification and lock release commit together.
     transaction.update(requestRef, {
-      status: data.status,
+      status: "assisted",
+      completedBy: normalizedStaffId,
+      completedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-
-    transaction.update(assignmentRef, {
-      status: expected.nextAssignmentStatus,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-
+    if (lock?.exists && lock.data().requestId === requestRef.id)
+      transaction.delete(lockRef);
     transaction.create(historyRef, {
       ...history,
       changedAt: FieldValue.serverTimestamp(),
     });
-
-    stageSosStatusNotification(transaction, preparedNotification);
+    transaction.create(auditRef, {
+      ...audit,
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    stageSosStatusNotification(transaction, prepared);
   });
-
-  const rescueRequest = await getRescueRequestById(normalizedRequestId);
-
-  const assignment = await getRescueAssignmentByRequestId(normalizedRequestId);
-
-  return { rescueRequest, assignment };
+  return {
+    rescueRequest: await getRescueRequestById(requestRef.id),
+    assignment: null,
+  };
 }
 
-module.exports = {
-  normalizeStatusUpdate,
-  updateRescueStatusWithHistory,
-};
+module.exports = { normalizeStatusUpdate, updateRescueStatusWithHistory };

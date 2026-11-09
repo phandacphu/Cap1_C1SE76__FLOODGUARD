@@ -7,52 +7,53 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.example.floodguard.domain.model.Warning
+import com.example.floodguard.domain.model.WarningTimeStatus
+import com.example.floodguard.domain.model.filterWarnings
 import com.example.floodguard.ui.components.FloodGuardBottomBar
+import com.example.floodguard.ui.components.WarningAccent
+import com.example.floodguard.ui.components.WarningBackground
+import com.example.floodguard.ui.components.WarningBorder
 import com.example.floodguard.ui.components.WarningCard
+import com.example.floodguard.ui.components.WarningDataNotice
+import com.example.floodguard.ui.components.WarningSecondaryText
+import com.example.floodguard.ui.components.WarningSurface
+import com.example.floodguard.ui.components.WarningTopBar
 import com.example.floodguard.ui.navigation.AppRoutes
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import java.time.Instant
 
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WarningListScreen(
     onBackClick: () -> Unit,
@@ -62,264 +63,130 @@ fun WarningListScreen(
     onBottomNavigate: (String) -> Unit = {},
     viewModel: WarningViewModel
 ) {
-
-    val uiState by viewModel.uiState.collectAsState()
-
-    var selectedFilter by remember {
-        mutableStateOf("all")
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedStatus by rememberSaveable { mutableStateOf("effective") }
+    var selectedSeverity by rememberSaveable { mutableStateOf("all") }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val hasWarnings = uiState is WarningUiState.Success
+    LaunchedEffect(viewModel, lifecycleOwner, hasWarnings) {
+        if (hasWarnings) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) delay(viewModel.refreshTimeStatuses())
+            }
+        }
     }
 
     Scaffold(
-        containerColor = Color(0xFF07101F),
-
+        containerColor = WarningBackground,
         topBar = {
-
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF07101F)
-                ),
-
-                navigationIcon = {
-
-                    IconButton(
-                        onClick = onBackClick
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Outlined.ArrowBack,
-                            contentDescription = "Quay lại",
-                            tint = Color.White
-                        )
-                    }
-                },
-
-                title = {
-
-                    Column {
-
-                        Text(
-                            text = "DỮ LIỆU PHỤC VỤ PHÁT TRIỂN",
-                            color = Color(0xFF22D3EE),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        Text(
-                            text = "Cảnh báo lũ",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                },
-
-                actions = {
-
-                    IconButton(
-                        onClick = onNotificationClick
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Outlined.Notifications,
-                            contentDescription = "Thông báo",
-                            tint = Color.White
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onProfileClick
-                    ) {
-
-                        Icon(
-                            imageVector = Icons.Outlined.Person,
-                            contentDescription = "Cá nhân",
-                            tint = Color.White
-                        )
-                    }
-                }
-            )
+            WarningTopBar("Cảnh báo lũ", onBackClick, onNotificationClick, onProfileClick)
         },
-
         bottomBar = {
-
-            FloodGuardBottomBar(
-                currentRoute = AppRoutes.HOME,
-                onNavigate = onBottomNavigate
-            )
+            FloodGuardBottomBar(currentRoute = AppRoutes.HOME, onNavigate = onBottomNavigate)
         }
-
-    ) { paddingValues ->
-
+    ) { padding ->
         when (val state = uiState) {
+            WarningUiState.Loading -> Box(
+                Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center
+            ) { CircularProgressIndicator(color = WarningAccent) }
 
-            WarningUiState.Loading -> {
-
-                LoadingWarningState(
-                    modifier = Modifier.padding(
-                        paddingValues
-                    )
-                )
+            is WarningUiState.Error -> Column(
+                Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Không thể tải cảnh báo", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(state.message, color = WarningSecondaryText, modifier = Modifier.padding(top = 8.dp))
+                TextButton(onClick = viewModel::retry) { Text("Thử lại", color = WarningAccent) }
             }
 
-            WarningUiState.Empty -> {
-
-                EmptyWarningState(
-                    modifier = Modifier.padding(
-                        paddingValues
-                    )
+            else -> {
+                val stateWarnings = (state as? WarningUiState.Success)?.warnings.orEmpty()
+                val filteredWarnings = filterWarnings(
+                    warnings = stateWarnings,
+                    selectedStatus = selectedStatus,
+                    selectedSeverity = selectedSeverity
                 )
-            }
-
-            is WarningUiState.Error -> {
-
-                ErrorWarningState(
-                    modifier = Modifier.padding(
-                        paddingValues
-                    ),
-                    message = state.message,
-                    onRetry = {
-                        viewModel.retry()
-                    }
-                )
-            }
-
-            is WarningUiState.Success -> {
-
-                val filteredWarnings =
-                    when (selectedFilter) {
-
-                        "critical" ->
-                            state.warnings.filter {
-                                it.severity.equals(
-                                    "critical",
-                                    ignoreCase = true
-                                )
-                            }
-
-                        "high" ->
-                            state.warnings.filter {
-                                it.severity.equals(
-                                    "high",
-                                    ignoreCase = true
-                                )
-                            }
-
-                        "medium" ->
-                            state.warnings.filter {
-                                it.severity.equals(
-                                    "medium",
-                                    ignoreCase = true
-                                )
-                            }
-
-                        "low" ->
-                            state.warnings.filter {
-                                it.severity.equals(
-                                    "low",
-                                    ignoreCase = true
-                                )
-                            }
-
-                        else ->
-                            state.warnings
-                    }
-
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 8.dp,
-                        bottom = 24.dp
-                    ),
-
-                    verticalArrangement =
-                        Arrangement.spacedBy(16.dp)
+                    Modifier.fillMaxSize().padding(padding),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-
-                    // =========================
-                    // LOCATION
-                    // =========================
-
+                    item { WarningDataNotice() }
                     item {
-
-                        LocationSection()
-                    }
-
-
-                    // =========================
-                    // SUMMARY
-                    // =========================
-
-                    item {
-
-                        WarningSummarySection(
-                            totalWarnings =
-                                state.warnings.size
-                        )
-                    }
-
-
-                    // =========================
-                    // FILTER
-                    // =========================
-
-                    item {
-
-                        WarningFilterSection(
-                            selectedFilter =
-                                selectedFilter,
-
-                            onFilterSelected = {
-                                selectedFilter = it
-                            }
-                        )
-                    }
-
-
-                    // =========================
-                    // LIST
-                    // =========================
-
-                    if (filteredWarnings.isEmpty()) {
-
-                        item {
-
-                            NoFilteredWarningState()
-                        }
-
-                    } else {
-
-                        items(
-                            items = filteredWarnings,
-                            key = {
-                                it.id
-                            }
-                        ) { warning ->
-
-                            WarningCard(
-                                warning = warning,
-                                onClick = {
-
-                                    onWarningClick(
-                                        warning.id
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        "${stateWarnings.count { it.isEffectiveNow }} đang có hiệu lực",
+                                        color = Color.White, style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Tổng ${stateWarnings.size} bản tin • Giờ Việt Nam",
+                                        color = WarningSecondaryText, style = MaterialTheme.typography.bodySmall
                                     )
                                 }
-                            )
+                                TextButton(onClick = viewModel::retry) {
+                                    Text("Làm mới", color = WarningAccent)
+                                }
+                            }
+                            (state as? WarningUiState.Success)?.areaLoadNotice?.let {
+                                Text(it, color = WarningSecondaryText, style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
-
-
-                    // =========================
-                    // FOOTER NOTE
-                    // =========================
-
                     item {
-
-                        DevelopmentDataNotice()
+                        WarningFilterRow(
+                            label = "",
+                            options = listOf(
+                                "effective" to "Đang có hiệu lực", "all" to "Tất cả",
+                                "upcoming" to "Chưa có hiệu lực", "expired" to "Đã hết hạn",
+                                "disabled" to "Đã tắt"
+                            ),
+                            selected = selectedStatus,
+                            onSelect = { selectedStatus = it }
+                        )
+                    }
+                    item {
+                        WarningFilterRow(
+                            label = "Mức độ",
+                            options = listOf(
+                                "all" to "Tất cả", "critical" to "Khẩn cấp", "high" to "Cao",
+                                "medium" to "Trung bình", "low" to "Thấp"
+                            ),
+                            selected = selectedSeverity,
+                            onSelect = { selectedSeverity = it }
+                        )
+                    }
+                    if (filteredWarnings.isEmpty()) {
+                        item {
+                            Surface(
+                                color = WarningSurface, shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, WarningBorder)
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        if (stateWarnings.isEmpty()) "Chưa có bản tin cảnh báo"
+                                        else if (selectedStatus == "effective" && selectedSeverity == "all")
+                                            "Không có cảnh báo đang có hiệu lực"
+                                        else "Không có bản tin phù hợp bộ lọc",
+                                        color = Color.White, fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (stateWarnings.isNotEmpty()) {
+                                        TextButton(onClick = {
+                                            selectedStatus = "all"
+                                            selectedSeverity = "all"
+                                        }) { Text("Xem tất cả bản tin", color = WarningAccent) }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        items(filteredWarnings, key = { it.id }) { warning ->
+                            WarningCard(warning) { onWarningClick(warning.id) }
+                        }
                     }
                 }
             }
@@ -327,544 +194,34 @@ fun WarningListScreen(
     }
 }
 
-
-// =====================================================
-// LOCATION
-// =====================================================
-
 @Composable
-private fun LocationSection() {
-
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-
-        Text(
-            text = "KHU VỰC THEO DÕI",
-            color = Color(0xFF64748B),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium
-        )
-
-        Spacer(
-            modifier = Modifier.height(5.dp)
-        )
-
-        Row(
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Text(
-                text = "⌖",
-                color = Color(0xFF22D3EE),
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Spacer(
-                modifier = Modifier.width(7.dp)
-            )
-
-            Text(
-                text = "Đà Nẵng & Lưu vực",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-
-// =====================================================
-// SUMMARY
-// =====================================================
-
-@Composable
-private fun WarningSummarySection(
-    totalWarnings: Int
-) {
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-
-        horizontalArrangement =
-            Arrangement.spacedBy(8.dp)
-    ) {
-
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = "HOẠT ĐỘNG",
-            value = "$totalWarnings",
-            subtitle = "bản tin",
-            valueColor = Color(0xFFFF4D4F)
-        )
-
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = "KHU VỰC",
-            value = "Đà Nẵng",
-            subtitle = "đang theo dõi",
-            valueColor = Color(0xFF22D3EE)
-        )
-
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = "TRẠNG THÁI",
-            value = "Theo dõi",
-            subtitle = "dữ liệu phát triển",
-            valueColor = Color(0xFFFFD54F)
-        )
-    }
-}
-
-
-@Composable
-private fun SummaryCard(
-    modifier: Modifier,
-    title: String,
-    value: String,
-    subtitle: String,
-    valueColor: Color
-) {
-
-    Surface(
-        modifier = modifier,
-
-        shape =
-            RoundedCornerShape(14.dp),
-
-        color =
-            Color(0xFF0D1726),
-
-        border =
-            BorderStroke(
-                width = 1.dp,
-                color = Color(0xFF1E293B)
-            )
-    ) {
-
-        Column(
-            modifier = Modifier.padding(
-                horizontal = 10.dp,
-                vertical = 12.dp
-            )
-        ) {
-
-            Text(
-                text = title,
-                color = Color(0xFF718096),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(
-                modifier = Modifier.height(6.dp)
-            )
-
-            Text(
-                text = value,
-                color = valueColor,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(
-                modifier = Modifier.height(3.dp)
-            )
-
-            Text(
-                text = subtitle,
-                color = Color(0xFF94A3B8),
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
-    }
-}
-
-
-// =====================================================
-// FILTER
-// =====================================================
-
-@Composable
-private fun WarningFilterSection(
-    selectedFilter: String,
-    onFilterSelected: (String) -> Unit
-) {
-
-    Column {
-
-        Text(
-            text = "MỨC CẢNH BÁO",
-            color = Color(0xFF64748B),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium
-        )
-
-        Spacer(
-            modifier = Modifier.height(8.dp)
-        )
-
-        val filters = listOf(
-            "all" to "Tất cả",
-            "critical" to "Khẩn cấp",
-            "high" to "Cấp 3",
-            "medium" to "Cấp 2",
-            "low" to "Cấp 1"
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(
-                    rememberScrollState()
-                ),
-
-            horizontalArrangement =
-                Arrangement.spacedBy(8.dp)
-        ) {
-
-            filters.forEach { filter ->
-
-                WarningFilterChip(
-                    key = filter.first,
-                    label = filter.second,
-                    selectedFilter =
-                        selectedFilter,
-                    onFilterSelected =
-                        onFilterSelected
-                )
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun WarningFilterChip(
-    key: String,
+private fun WarningFilterRow(
     label: String,
-    selectedFilter: String,
-    onFilterSelected: (String) -> Unit
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
 ) {
-
-    val selected =
-        key == selectedFilter
-
-    FilterChip(
-        selected = selected,
-
-        onClick = {
-            onFilterSelected(key)
-        },
-
-        label = {
-
-            Text(
-                text = label,
-                fontWeight =
-                    if (selected) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.Medium
-                    }
-            )
-        },
-
-        shape =
-            RoundedCornerShape(20.dp),
-
-        border =
-            FilterChipDefaults.filterChipBorder(
-                enabled = true,
-                selected = selected,
-                borderColor =
-                    Color(0xFF263449),
-                selectedBorderColor =
-                    Color(0xFF22D3EE)
-            ),
-
-        colors =
-            FilterChipDefaults.filterChipColors(
-
-                containerColor =
-                    Color(0xFF0D1726),
-
-                labelColor =
-                    Color(0xFF94A3B8),
-
-                selectedContainerColor =
-                    Color(0xFF123B4A),
-
-                selectedLabelColor =
-                    Color(0xFF22D3EE)
-            )
-    )
-}
-
-
-// =====================================================
-// FILTER EMPTY
-// =====================================================
-
-@Composable
-private fun NoFilteredWarningState() {
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-
-        color =
-            Color(0xFF0D1726),
-
-        shape =
-            RoundedCornerShape(16.dp),
-
-        border =
-            BorderStroke(
-                width = 1.dp,
-                color = Color(0xFF1E293B)
-            )
-    ) {
-
-        Text(
-            text =
-                "Không có cảnh báo thuộc mức này.",
-
-            color =
-                Color(0xFF94A3B8),
-
-            textAlign =
-                TextAlign.Center,
-
-            modifier =
-                Modifier.padding(32.dp)
-        )
-    }
-}
-
-
-// =====================================================
-// DEVELOPMENT NOTICE
-// =====================================================
-
-@Composable
-private fun DevelopmentDataNotice() {
-
-    Surface(
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        color =
-            Color(0xFF0B1422),
-
-        shape =
-            RoundedCornerShape(14.dp),
-
-        border =
-            BorderStroke(
-                width = 1.dp,
-                color = Color(0xFF172235)
-            )
-    ) {
-
-        Column(
-            modifier = Modifier.padding(14.dp),
-            horizontalAlignment =
-                Alignment.CenterHorizontally
-        ) {
-
-            Text(
-                text =
-                    "DỮ LIỆU PHỤC VỤ PHÁT TRIỂN",
-
-                color =
-                    Color(0xFF22D3EE),
-
-                style =
-                    MaterialTheme.typography.labelSmall,
-
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(5.dp)
-            )
-
-            Text(
-                text =
-                    "Các thông số đang hiển thị dùng để phát triển và kiểm thử giao diện, chưa phải dữ liệu được cơ quan nhà nước xác thực.",
-
-                color =
-                    Color(0xFF718096),
-
-                style =
-                    MaterialTheme.typography.labelSmall,
-
-                textAlign =
-                    TextAlign.Center
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (label.isNotBlank()) {
+            Text(label, color = WarningSecondaryText, style = MaterialTheme.typography.labelLarge)
         }
-    }
-}
-
-
-// =====================================================
-// LOADING
-// =====================================================
-
-@Composable
-private fun LoadingWarningState(
-    modifier: Modifier = Modifier
-) {
-
-    Box(
-        modifier = modifier
-            .fillMaxSize(),
-
-        contentAlignment =
-            Alignment.Center
-    ) {
-
-        Column(
-            horizontalAlignment =
-                Alignment.CenterHorizontally
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-
-            CircularProgressIndicator(
-                color =
-                    Color(0xFF22D3EE)
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(14.dp)
-            )
-
-            Text(
-                text =
-                    "Đang tải cảnh báo...",
-
-                color =
-                    Color.White
-            )
-        }
-    }
-}
-
-
-// =====================================================
-// EMPTY
-// =====================================================
-
-@Composable
-private fun EmptyWarningState(
-    modifier: Modifier = Modifier
-) {
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(30.dp),
-
-        contentAlignment =
-            Alignment.Center
-    ) {
-
-        Column(
-            horizontalAlignment =
-                Alignment.CenterHorizontally
-        ) {
-
-            Text(
-                text = "Cảnh báo lũ",
-                color = Color.White,
-                style =
-                    MaterialTheme.typography.titleMedium,
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
-            )
-
-            Text(
-                text =
-                    "Hiện không có cảnh báo lũ đang hoạt động.",
-
-                color =
-                    Color(0xFF94A3B8),
-
-                textAlign =
-                    TextAlign.Center
-            )
-        }
-    }
-}
-
-
-// =====================================================
-// ERROR
-// =====================================================
-
-@Composable
-private fun ErrorWarningState(
-    modifier: Modifier = Modifier,
-    message: String,
-    onRetry: () -> Unit
-) {
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(30.dp),
-
-        contentAlignment =
-            Alignment.Center
-    ) {
-
-        Column(
-            horizontalAlignment =
-                Alignment.CenterHorizontally
-        ) {
-
-            Text(
-                text = "Không thể tải cảnh báo",
-                color = Color.White,
-                style =
-                    MaterialTheme.typography.titleMedium,
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
-            )
-
-            Text(
-                text = message,
-                color =
-                    Color(0xFFFF6B6B),
-                textAlign =
-                    TextAlign.Center
-            )
-
-            Spacer(
-                modifier =
-                    Modifier.height(18.dp)
-            )
-
-            Button(
-                onClick = onRetry
-            ) {
-
-                Text(
-                    text = "Thử lại"
+            options.forEach { (key, title) ->
+                FilterChip(
+                    selected = selected == key,
+                    onClick = { onSelect(key) },
+                    label = { Text(title) },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = WarningSurface,
+                        labelColor = WarningSecondaryText,
+                        selectedContainerColor = Color(0xFF123747),
+                        selectedLabelColor = WarningAccent
+                    ),
+                    border = BorderStroke(1.dp, if (selected == key) WarningAccent else WarningBorder)
                 )
             }
         }
