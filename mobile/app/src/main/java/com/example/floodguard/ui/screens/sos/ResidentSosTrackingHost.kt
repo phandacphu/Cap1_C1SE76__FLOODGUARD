@@ -62,12 +62,21 @@ class ResidentSosTracking internal constructor(
     }
 
     fun onApiError(error: Throwable) {
-        if (
-            error is ResidentSosApiException &&
-            error.statusCode in setOf(401, 403)
-        ) {
-            uploader.rejectAccess(error.message)
-            refresh()
+        if (error !is ResidentSosApiException) return
+
+        when (error.statusCode) {
+            401 -> {
+                // Phiên không hợp lệ: dừng toàn bộ và xóa dữ liệu.
+                uploader.rejectAccess(error.message)
+                refresh()
+            }
+
+            403 -> {
+                // Có thể chỉ bị từ chối một SOS khác.
+                // Màn chi tiết tự xóa dữ liệu SOS đó.
+                // Yêu cầu bộ theo dõi kiểm tra lại SOS hoạt động của mình.
+                refresh()
+            }
         }
     }
 

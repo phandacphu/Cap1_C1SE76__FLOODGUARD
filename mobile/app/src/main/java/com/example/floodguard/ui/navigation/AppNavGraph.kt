@@ -1034,7 +1034,7 @@ fun AppNavGraph(
                     uploadState.lastServerRequest?.state == "rescued" &&
                     statusState.request?.state != "rescued"
                 ) {
-                    statusViewModel.refresh()
+                    statusViewModel.refreshAfterCompletion()
                 }
             }
 

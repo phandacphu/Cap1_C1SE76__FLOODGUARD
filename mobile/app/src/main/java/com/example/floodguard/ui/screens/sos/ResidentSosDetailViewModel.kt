@@ -41,7 +41,18 @@ class ResidentSosDetailViewModel(
     private var historyJob: Job? = null
     private var refreshVersion = 0L
 
+    private var completionRefreshPending = false
+
     init {
+        refresh()
+    }
+
+    fun refreshAfterCompletion() {
+        if (_uiState.value.isLoading) {
+            completionRefreshPending = true
+            return
+        }
+
         refresh()
     }
 
@@ -89,9 +100,15 @@ class ResidentSosDetailViewModel(
                 throw error
             } catch (error: Exception) {
                 showError(error)
-            } finally {
+            }
+            finally {
                 _uiState.update {
                     it.copy(isLoading = false)
+                }
+
+                if (completionRefreshPending) {
+                    completionRefreshPending = false
+                    refresh()
                 }
             }
         }
@@ -132,6 +149,7 @@ class ResidentSosDetailViewModel(
 
     private fun showHistoryError(error: Throwable) {
         if (mustClearDetails(error)) {
+            completionRefreshPending = false
             showError(error)
         } else {
             _historyState.update {
