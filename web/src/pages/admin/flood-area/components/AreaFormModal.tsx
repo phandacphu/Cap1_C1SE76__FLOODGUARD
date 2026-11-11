@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PolygonDrawMap } from "./PolygonDrawMap";
+import type { HistoricalFloodArea } from "../historicalFloodAreaService";
 import {
   AREA_TYPES,
   AREA_TYPE_LABEL,
@@ -13,7 +14,7 @@ import {
 
 interface Props {
   /** null = create a new area. */
-  area: FloodAreaItem | null;
+  area: FloodAreaItem | HistoricalFloodArea | null;
   busy: boolean;
   serverError: string | null;
   onSubmit: (input: FloodAreaInput) => void;
@@ -22,6 +23,7 @@ interface Props {
   timeoutUncertain: boolean;
   /** Điểm ngập lịch sử hiển thị tham khảo trên bản đồ vẽ. */
   referencePoints?: GeoPoint[];
+  referencePoint?: GeoPoint;
 }
 
 const FIELD =
@@ -39,15 +41,17 @@ export function AreaFormModal({
   onVerifyTimeout,
   timeoutUncertain,
   referencePoints,
+  referencePoint,
 }: Props) {
   const [name, setName] = useState(area?.name ?? "");
   const [description, setDescription] = useState(area?.description ?? "");
   const [areaType, setAreaType] = useState<AreaType | "">(area?.areaType ?? "");
   const [source, setSource] = useState(area?.source ?? "");
   const [points, setPoints] = useState<GeoPoint[]>(
-    area ? area.geometry.points.map((p) => ({ ...p })) : [],
+    area?.geometry?.points.map((p) => ({ ...p })) ?? [],
   );
   const [errors, setErrors] = useState<string[]>([]);
+  const isHistorical = area !== null && "referencePoint" in area;
 
   const submit = () => {
     if (busy || timeoutUncertain) return;
@@ -103,10 +107,24 @@ export function AreaFormModal({
               className={`${FIELD} mt-1 resize-none`}
             />
           </label>
+          {isHistorical && (
+            <label className="sm:col-span-2">
+              <span className={LABEL}>Loại vùng</span>
+              <select
+                aria-label="Loại vùng lịch sử"
+                value="historical"
+                disabled
+                className={`${FIELD} mt-1`}
+              >
+                <option value="historical">Vùng ngập lịch sử</option>
+              </select>
+              <span className="mt-1 block text-xs text-muted">Nhóm lịch sử không đổi khi lưu. Đây không phải cảnh báo ngập hiện tại.</span>
+            </label>
+          )}
           <label className="sm:col-span-2">
-            <span className={LABEL}>Loại vùng</span>
+            <span className={LABEL}>{isHistorical ? "Phân loại đa giác (theo API)" : "Loại vùng"}</span>
             <select
-              aria-label="Loại vùng"
+              aria-label={isHistorical ? "Phân loại đa giác" : "Loại vùng"}
               value={areaType}
               onChange={(e) => setAreaType(isAreaType(e.target.value) ? e.target.value : "")}
               disabled={busy}
@@ -118,7 +136,7 @@ export function AreaFormModal({
               ))}
             </select>
             {area && area.areaType === null && (
-              <span className="mt-1 block text-xs text-warn">Vùng cũ chưa phân loại. Chọn loại đúng trước khi lưu.</span>
+              <span className="mt-1 block text-xs text-warn">{isHistorical ? "Để lưu đa giác lịch sử, API yêu cầu chọn Vùng ngập hoặc Vùng trũng." : "Vùng cũ chưa phân loại. Chọn loại đúng trước khi lưu."}</span>
             )}
           </label>
           <label className="sm:col-span-2">
@@ -141,6 +159,7 @@ export function AreaFormModal({
               points={points}
               onChange={setPoints}
               referencePoints={referencePoints}
+              referencePoint={referencePoint}
               disabled={busy}
             />
           </div>
