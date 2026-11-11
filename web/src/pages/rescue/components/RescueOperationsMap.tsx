@@ -96,7 +96,7 @@ export function RescueOperationsMap({ requests }: { requests: RescueRequest[] | 
                 key={layers[index].label}
                 data={result.value as unknown as GeoJSON.FeatureCollection}
                 interactive={false}
-                style={{ color: "#64748b", weight: 1.5, dashArray: "5 4", fillOpacity: 0.06 }}
+                style={{ color: "#ef4444", fillColor: "#ef4444", weight: 1.5, fillOpacity: 0.15 }}
                 pointToLayer={(_feature, latlng) => L.marker(latlng, { icon: historicalFloodIcon, interactive: false })}
               />
             ) : null,

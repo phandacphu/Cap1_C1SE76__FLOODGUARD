@@ -219,7 +219,7 @@ export const FloodMapView: React.FC = () => {
         L.geoJSON(result.value as unknown as GeoJSON.FeatureCollection, {
           pane: 'flood-history',
           interactive: false,
-          style: { color: '#64748b', weight: 1.5, dashArray: '5 4', fillOpacity: 0.06 },
+          style: { color: '#ef4444', fillColor: '#ef4444', weight: 1.5, fillOpacity: 0.15 },
           pointToLayer: (_feature, position) => L.marker(position, {
             pane: 'flood-history',
             interactive: false,
@@ -385,7 +385,7 @@ export const FloodMapView: React.FC = () => {
 
           <div className="flex gap-3 text-xs text-slate-300" aria-label="Chú giải">
             <span>🟡 Vùng ngập</span><span>🔴 Vùng trũng</span>
-            {isRescue && <span><svg width="12" height="16" viewBox="0 0 24 32" aria-hidden="true" className="inline"><path d="M12 30C9 25 2 17 2 11a10 10 0 0 1 20 0c0 6-7 14-10 19Z" fill="#6d28d9" stroke="white" strokeWidth="2"/><circle cx="12" cy="11" r="3.5" fill="white"/></svg> Ngập lịch sử</span>}
+            {isRescue && <span><svg width="12" height="16" viewBox="0 0 24 32" aria-hidden="true" className="inline"><path d="M12 30C9 25 2 17 2 11a10 10 0 0 1 20 0c0 6-7 14-10 19Z" fill="#ef4444" stroke="white" strokeWidth="2"/><circle cx="12" cy="11" r="3.5" fill="white"/></svg> Ngập lịch sử</span>}
             <span>⚪ Chưa phân loại</span>
           </div>
         </div>
@@ -406,7 +406,7 @@ export const FloodMapView: React.FC = () => {
           </label>
           {showHistory && (
             <>
-              <p className="text-slate-300">Ghim: điểm ngập lịch sử. Viền xám nét đứt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
+              <p className="text-slate-300">Ghim đỏ: điểm ngập lịch sử. Viền đỏ và nền đỏ nhạt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
               <p role="status" className="text-slate-400">{historyStatus || 'Đang tải lớp ngập lịch sử…'}</p>
               {historyStatus.startsWith('Không tải') && (
                 <button type="button" className="underline" onClick={() => {
