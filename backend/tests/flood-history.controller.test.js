@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 
-const servicePath = require.resolve("../src/services/flood-history.service");
+const servicePath = require.resolve("../src/services/historical-flood-area.service");
 
 let getFloodHistoryImplementation;
 
@@ -9,12 +9,13 @@ require.cache[servicePath] = {
   filename: servicePath,
   loaded: true,
   exports: {
-    getFloodHistoryGeoJSON: (...args) => getFloodHistoryImplementation(...args),
+    getHistoricalLayer: (...args) => getFloodHistoryImplementation(...args),
   },
 };
 
 const {
   listHistoricalFloodPoints,
+  listHistoricalFloodAreas,
   listHistoricalFloodBuffers,
   listHistoricalFloodRadar,
 } = require("../src/controllers/flood-history.controller");
@@ -36,6 +37,7 @@ function createResponse() {
 
 const testCases = [
   ["points", listHistoricalFloodPoints],
+  ["areas", listHistoricalFloodAreas],
   ["buffers", listHistoricalFloodBuffers],
   ["radar", listHistoricalFloodRadar],
 ];
