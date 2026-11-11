@@ -10,6 +10,8 @@ interface FloodHistoryApi {
     @GET("api/flood-history/points")
     suspend fun getPoints(): Response<FloodHistoryResponse>
 
+    @GET("api/flood-history/areas")
+    suspend fun getAreas(): Response<FloodHistoryResponse>
     @GET("api/flood-history/buffers")
     suspend fun getBuffers(): Response<FloodHistoryResponse>
 

@@ -222,6 +222,8 @@ private class CitizenMapFixtureApi :
     override suspend fun getPoints(): Response<FloodHistoryResponse> =
         historyResponse("points", FIXTURE_HISTORY_FEATURES)
 
+    override suspend fun getAreas(): Response<FloodHistoryResponse> =
+        historyResponse("areas")
     override suspend fun getBuffers(): Response<FloodHistoryResponse> =
         historyResponse("buffers")
 
