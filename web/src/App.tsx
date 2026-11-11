@@ -12,16 +12,15 @@ import UserManagementScreen from './pages/admin/user-management/UserManagementSc
 import FloodWarningManagementScreen from './pages/admin/flood-warning/FloodWarningManagementScreen';
 import { createFloodWarningDemo } from './pages/admin/flood-warning/floodWarningDemo';
 import SafeLocationManagementScreen from './pages/admin/safe-location/SafeLocationManagementScreen';
-import { createSafeLocationDemo } from './pages/admin/safe-location/safeLocationDemo';
+import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
 import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 
-// Demo sources are restricted to development until the real API adapters are connected.
+// CCF-125 belongs to a separate branch; preserve existing warning demo wiring here.
 const warningDemo = import.meta.env.DEV ? createFloodWarningDemo() : null;
-const safeLocationDemo = import.meta.env.DEV ? createSafeLocationDemo() : null;
 
 /** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
@@ -51,7 +50,7 @@ export const App: React.FC = () => {
             <Route path="/admin/users" element={<UserManagementScreen />} />
             <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
             {warningDemo && <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={warningDemo} />} />}
-            {safeLocationDemo && <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationDemo} />} />}
+            <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationApi} />} />
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
