@@ -1,8 +1,8 @@
-const { getFloodHistoryGeoJSON } = require("../services/flood-history.service");
+const { getHistoricalLayer } = require("../services/historical-flood-area.service");
 
 async function sendFloodHistoryLayer(res, layer) {
   try {
-    const geojson = await getFloodHistoryGeoJSON(layer);
+    const geojson = await getHistoricalLayer(layer);
 
     return res.status(200).json({
       success: true,
@@ -26,6 +26,10 @@ async function listHistoricalFloodPoints(req, res) {
   return sendFloodHistoryLayer(res, "points");
 }
 
+async function listHistoricalFloodAreas(req, res) {
+  return sendFloodHistoryLayer(res, "areas");
+}
+
 async function listHistoricalFloodBuffers(req, res) {
   return sendFloodHistoryLayer(res, "buffers");
 }
@@ -36,6 +40,7 @@ async function listHistoricalFloodRadar(req, res) {
 
 module.exports = {
   listHistoricalFloodPoints,
+  listHistoricalFloodAreas,
   listHistoricalFloodBuffers,
   listHistoricalFloodRadar,
 };

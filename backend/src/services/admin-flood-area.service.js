@@ -436,6 +436,10 @@ async function deleteFloodAreaForAdmin(actorId, areaId) {
 }
 
 module.exports = {
+  authorizeAdmin,
+  ensureActiveAdmin,
+  ensureAllowedBody,
+  normalizeDocumentId,
   listFloodAreasForAdmin,
   getFloodAreaDetailForAdmin,
   createFloodAreaForAdmin,
