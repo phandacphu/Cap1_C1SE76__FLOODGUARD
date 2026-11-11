@@ -1,3 +1,4 @@
+import { AREA_TYPE_COLOR } from '../../admin/flood-area/floodAreaTypes';
 import { historicalFloodIcon } from "../../map/historicalFloodIcon";
 import { formatDashboardSosCount } from "../../admin/sos/sosFormat";
 import { useEffect, useState } from "react";
@@ -96,7 +97,7 @@ export function RescueOperationsMap({ requests }: { requests: RescueRequest[] | 
                 key={layers[index].label}
                 data={result.value as unknown as GeoJSON.FeatureCollection}
                 interactive={false}
-                style={{ color: "#ef4444", fillColor: "#ef4444", weight: 1.5, fillOpacity: 0.15 }}
+                style={{ color: AREA_TYPE_COLOR.low_lying, fillColor: AREA_TYPE_COLOR.low_lying, weight: 2.5, opacity: 0.95, fillOpacity: 0.4 }}
                 pointToLayer={(_feature, latlng) => L.marker(latlng, { icon: historicalFloodIcon, interactive: false })}
               />
             ) : null,
