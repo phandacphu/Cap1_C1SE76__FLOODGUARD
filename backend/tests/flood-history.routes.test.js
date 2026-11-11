@@ -1,6 +1,16 @@
 const assert = require("node:assert/strict");
 const express = require("express");
 
+const firebasePath = require.resolve("../src/config/firebase");
+require.cache[firebasePath] = {
+  id: firebasePath,
+  filename: firebasePath,
+  loaded: true,
+  exports: {
+    db: { collection: () => ({ get: async () => ({ docs: [] }) }) },
+  },
+};
+
 const floodHistoryRoutes = require("../src/routes/flood-history.routes");
 
 async function runTests() {
@@ -19,6 +29,7 @@ async function runTests() {
 
     const expected = {
       points: 27,
+      areas: 0,
       buffers: 2,
       radar: 157,
     };

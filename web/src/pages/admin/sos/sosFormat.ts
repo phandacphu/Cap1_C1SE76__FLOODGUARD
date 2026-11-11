@@ -28,3 +28,7 @@ export function formatSosSituations(values: string[] | null): string {
 export function formatSosWaterLevel(value: string | null): string {
   return value ? waterLevelLabels[value] ?? value : "Chưa được cung cấp";
 }
+
+export function formatDashboardSosCount(value: number | null | undefined): string {
+  return value == null ? "Chưa tải được số SOS" : formatSosCount(value);
+}

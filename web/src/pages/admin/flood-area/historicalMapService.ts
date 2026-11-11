@@ -2,7 +2,7 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL || "https://floodguard-backend-demo.onrender.com/api";
 const TIMEOUT_MS = 70000;
 
-export type HistoricalLayerKey = "points" | "buffers" | "radar";
+export type HistoricalLayerKey = "points" | "areas" | "buffers" | "radar";
 
 export interface HistoricalFeature {
   type: "Feature";
@@ -26,6 +26,7 @@ export class HistoricalApiError extends Error {
 
 const LAYER_LABEL: Record<HistoricalLayerKey, string> = {
   points: "Điểm ngập lịch sử",
+  areas: "Đa giác lịch sử do Admin vẽ",
   buffers: "Vùng đệm tham khảo",
   radar: "Vùng phân tích radar",
 };
@@ -102,6 +103,8 @@ export function parseHistoricalCollection(body: unknown, layer: HistoricalLayerK
       ? type === "Point" && isPosition(coordinates)
       : layer === "buffers"
         ? type === "MultiPolygon" && isMultiPolygonCoordinates(coordinates)
+        : layer === "areas"
+          ? type === "Polygon" && isPolygonCoordinates(coordinates)
         : (type === "Polygon" && isPolygonCoordinates(coordinates)) ||
           (type === "MultiPolygon" && isMultiPolygonCoordinates(coordinates));
     if (!valid) fail("có loại hình học hoặc tọa độ không hợp lệ");
@@ -137,5 +140,6 @@ async function fetchLayer(endpoint: string, layer: HistoricalLayerKey): Promise<
 }
 
 export const fetchHistoricalPoints = () => fetchLayer("/flood-history/points", "points");
+export const fetchHistoricalAreas = () => fetchLayer("/flood-history/areas", "areas");
 export const fetchHistoricalBuffers = () => fetchLayer("/flood-history/buffers", "buffers");
 export const fetchHistoricalRadar = () => fetchLayer("/flood-history/radar", "radar");

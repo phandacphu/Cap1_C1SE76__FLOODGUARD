@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import {
     fetchHistoricalPoints,
+    fetchHistoricalAreas,
     fetchHistoricalBuffers,
     fetchHistoricalRadar,
     type HistoricalFeatureCollection,
@@ -40,29 +41,28 @@ interface LayerState {
     version: number;
 }
 
-const ALL_LAYERS: LayerKey[] = ['points', 'buffers', 'radar'];
+const ALL_LAYERS: LayerKey[] = ['points', 'areas', 'buffers', 'radar'];
 
 const FETCHERS: Record<LayerKey, () => Promise<HistoricalFeatureCollection>> = {
     points: fetchHistoricalPoints,
+    areas: fetchHistoricalAreas,
     buffers: fetchHistoricalBuffers,
     radar: fetchHistoricalRadar,
 };
 
 const LAYER_LABEL: Record<LayerKey, string> = {
     points: 'Điểm ngập lịch sử',
+    areas: 'Đa giác lịch sử do Admin vẽ',
     buffers: 'Vùng đệm tham khảo',
     radar: 'Vùng trũng',
 };
 
 const LOADING: LayerState = { status: 'loading', data: null, error: null, version: 0 };
 
-// Đang tải / lỗi / đã tải (kể cả 0) — không dùng số mặc định
-const countLabel = (s: LayerState) =>
-    s.status === 'loading' ? 'đang tải…' : s.status === 'error' ? 'lỗi tải' : String(s.data?.features.length ?? 0);
-
 export default function HistoricalMapScreen() {
     const [layers, setLayers] = useState<Record<LayerKey, LayerState>>({
         points: LOADING,
+        areas: LOADING,
         buffers: LOADING,
         radar: LOADING,
     });
@@ -72,7 +72,7 @@ export default function HistoricalMapScreen() {
     const [areasLoading, setAreasLoading] = useState(true);
 
     const mountedRef = useRef(false);
-    const layerRequestsRef = useRef<Record<LayerKey, number>>({ points: 0, buffers: 0, radar: 0 });
+    const layerRequestsRef = useRef<Record<LayerKey, number>>({ points: 0, areas: 0, buffers: 0, radar: 0 });
     const areaRequestRef = useRef(0);
     const mountRunRef = useRef(0);
 
@@ -133,9 +133,6 @@ export default function HistoricalMapScreen() {
 
     const anyLoading = ALL_LAYERS.some((k) => layers[k].status === 'loading');
     const failedKeys = ALL_LAYERS.filter((k) => layers[k].status === 'error');
-    const areasCount = areasLoading && areas === null ? 'đang tải…'
-        : areasError && areas === null ? 'lỗi tải'
-        : String(areas?.length ?? 0);
 
     const bufferStyle = {
         color: '#dc2626',
@@ -155,6 +152,7 @@ export default function HistoricalMapScreen() {
     };
 
     const pointsData = layers.points.data;
+    const historicalAreasData = layers.areas.data;
     const buffersData = layers.buffers.data;
     const radarData = layers.radar.data;
 
@@ -220,11 +218,11 @@ export default function HistoricalMapScreen() {
                     </span>
                     <button
                         type="button"
-                        onClick={loadAreas}
-                        disabled={areasLoading}
+                        onClick={() => { loadAreas(); ALL_LAYERS.forEach(loadLayer); }}
+                        disabled={areasLoading || anyLoading}
                         className="rounded border border-blue-400/50 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
                     >
-                        {areasLoading ? 'Đang làm mới vùng…' : 'Làm mới vùng Admin'}
+                        {areasLoading || anyLoading ? 'Đang làm mới vùng…' : 'Làm mới vùng và lớp lịch sử'}
                     </button>
                 </div>
 
@@ -242,6 +240,28 @@ export default function HistoricalMapScreen() {
 
                         {radarData && <GeoJSONLayer key={`radar-${layers.radar.version}`} data={radarData as any} style={radarStyle} />}
                         {buffersData && <GeoJSONLayer key={`buffers-${layers.buffers.version}`} data={buffersData as any} style={bufferStyle} />}
+                        {historicalAreasData && (
+                            <GeoJSONLayer
+                                key={`historical-areas-${layers.areas.version}`}
+                                data={historicalAreasData as any}
+                                style={(feature: any) => {
+                                    const t = feature?.properties?.areaType;
+                                    const color = t === 'low_lying' ? AREA_TYPE_COLOR.low_lying : AREA_TYPE_COLOR.flood;
+                                    return { color, weight: 2.5, fillColor: color, fillOpacity: 0.16, dashArray: '5 5' };
+                                }}
+                                onEachFeature={(feature: any, layer: any) => {
+                                    const props = feature?.properties || {};
+                                    layer.bindPopup(`<div style="min-width:180px;font-family:sans-serif">
+                                      <strong>${escapeHtml(props.name || 'Đa giác lịch sử')}</strong><br>
+                                      ID: ${escapeHtml(props.id || '—')}<br>
+                                      Loại: ${escapeHtml(props.areaType === 'low_lying' ? 'Vùng trũng' : 'Vùng ngập')}<br>
+                                      Nguồn: ${escapeHtml(props.source || 'Chưa có')}<br>
+                                      ${escapeHtml(props.description || '')}<br>
+                                      <em>Dữ liệu lịch sử tham khảo, không phải cảnh báo hiện tại.</em>
+                                    </div>`);
+                                }}
+                            />
+                        )}
                         {pointsData && (
                             <GeoJSONLayer
                                 key={`points-${layers.points.version}`}
@@ -309,7 +329,7 @@ export default function HistoricalMapScreen() {
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                                <span>Điểm ngập lịch sử ({countLabel(layers.points)})</span>
+                                <span>Điểm ngập lịch sử</span>
                             </div>
                             <div className="text-xs text-gray-400 leading-relaxed pl-5">Các vị trí từng ghi nhận ngập (2015-2026).</div>
                         </div>
@@ -317,25 +337,25 @@ export default function HistoricalMapScreen() {
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 rounded-full bg-red-500 opacity-50 border border-red-500"></div>
-                                <span>Vùng đệm tham khảo ({countLabel(layers.buffers)})</span>
+                                <span>Vùng đệm tham khảo</span>
                             </div>
-                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vùng đệm nghiên cứu 220m và 450m. Không phải ranh giới ngập thực tế.</div>
+                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vùng đệm nghiên cứu 220m và 450m.</div>
                         </div>
 
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 bg-red-700 opacity-60 border border-red-800"></div>
-                                <span>Vùng trũng ({countLabel(layers.radar)})</span>
+                                <span>Vùng trũng</span>
                             </div>
-                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Lớp radar được nhóm quy ước hiển thị là vùng trũng; giữ nguyên dữ liệu tham khảo.</div>
+                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Lớp radar các vùng trũng</div>
                         </div>
 
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
                                 <div className="w-3 h-3 bg-orange-400 opacity-70 border border-orange-500"></div>
-                                <span>Vùng Admin ({areasCount})</span>
+                                <span>Vùng ngập</span>
                             </div>
-                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Vàng: vùng ngập. Đỏ nhạt: vùng trũng, cùng màu lớp radar. Vùng chưa phân loại chưa được vẽ.</div>
+                            <div className="text-xs text-gray-400 leading-relaxed pl-5">Lớp radar các vùng ngập</div>
                         </div>
                     </div>
                 </div>
