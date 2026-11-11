@@ -1,4 +1,3 @@
-import { formatDashboardSosCount } from "../admin/sos/sosFormat";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet } from "../../api/http";
@@ -12,7 +11,7 @@ import { SEVERITY_WEIGHT, formatNumber } from "../admin/adminStats";
 import { FloodAlertBanner } from "./components/FloodAlertBanner";
 import { SosActionButtons } from "./components/SosActionButtons";
 import { SosPriorityBadge } from "./components/SosPriorityBadge";
-import { RescueOperationsMap } from "./components/RescueOperationsMap";
+import { SosScatterMap } from "./components/SosScatterMap";
 import { SosStatusBadge } from "./components/SosStatusBadge";
 import {
   computeKpis,
@@ -127,7 +126,7 @@ export function RescueDashboard() {
             label="SOS mới"
             icon="sos"
             tone="sos"
-            value={formatDashboardSosCount(kpis?.waiting)}
+            value={kpis ? String(kpis.waiting).padStart(2, "0") : "—"}
             sub={kpis ? `+${kpis.waitingLast15Min} trong 15 phút qua` : undefined}
             footerLabel="Khẩn cấp chưa nhận"
             footerValue={kpis ? String(kpis.criticalWaiting) : "—"}
@@ -136,7 +135,7 @@ export function RescueDashboard() {
             label="Đang xử lý"
             icon="pulse"
             tone="warn"
-            value={formatDashboardSosCount(kpis?.inProgress)}
+            value={kpis ? String(kpis.inProgress).padStart(2, "0") : "—"}
             sub="Ca đang cứu hộ ngoài hiện trường"
             footerLabel="Phân công cho tôi"
             footerValue={view ? String(view.mine.length) : "—"}
@@ -145,7 +144,7 @@ export function RescueDashboard() {
             label="Đã hỗ trợ hôm nay"
             icon="shield"
             tone="safe"
-            value={formatDashboardSosCount(kpis?.assistedToday)}
+            value={kpis ? formatNumber(kpis.assistedToday) : "—"}
             sub={kpis?.successRate != null ? `${kpis.successRate.toFixed(1)}% tổng ca đã hoàn tất` : undefined}
             footerLabel="Tổng yêu cầu"
             footerValue={kpis ? formatNumber(kpis.total) : "—"}
@@ -164,19 +163,25 @@ export function RescueDashboard() {
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
           <Panel
             title="Bản đồ tác chiến"
-            subtitle="Vị trí SOS đang mở và dữ liệu ngập lịch sử"
+            subtitle="Sơ đồ vị trí SOS đang mở · Google Maps sẽ thay thế ở CCF-105"
             icon="map"
             className="xl:col-span-2"
           >
-            {error && (
-              <p role="status" className="mb-3 text-xs text-warn">
-                Không thể cập nhật SOS. Vị trí còn hiển thị có thể là dữ liệu từ lần tải trước.
-              </p>
+            {error ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-warn">
+                Lỗi kết nối: Không thể tải dữ liệu bản đồ SOS.
+              </div>
+            ) : !requests || loading ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Đang tải dữ liệu SOS...
+              </div>
+            ) : requests.length === 0 ? (
+              <div className="flex h-72 items-center justify-center font-mono text-xs text-muted">
+                Chưa có dữ liệu SOS.
+              </div>
+            ) : (
+              <SosScatterMap requests={requests} />
             )}
-            {!requests && loading && (
-              <p role="status" className="mb-3 text-xs text-muted">Đang tải dữ liệu SOS…</p>
-            )}
-            <RescueOperationsMap requests={requests} />
           </Panel>
 
           <Panel

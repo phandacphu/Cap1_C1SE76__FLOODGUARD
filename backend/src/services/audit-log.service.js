@@ -9,6 +9,7 @@ const ALLOWED_CHANGED_FIELDS = [
   "fullName",
   "role",
   "isActive",
+  "isDeleted",
   "name",
   "description",
   "location",

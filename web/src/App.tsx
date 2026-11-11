@@ -9,6 +9,10 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import FloodAreaManagementScreen from './pages/admin/flood-area/FloodAreaManagementScreen';
 import HistoricalMapScreen from './pages/admin/flood-area/components/HistoricalMapScreen';
 import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
+import FloodWarningManagementScreen from './pages/admin/flood-warning/FloodWarningManagementScreen';
+import { floodWarningApi } from './pages/admin/flood-warning/floodWarningApi';
+import SafeLocationManagementScreen from './pages/admin/safe-location/SafeLocationManagementScreen';
+import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
 import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
@@ -16,6 +20,7 @@ import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 import { FloodMapView } from './pages/map/FloodMapView';
 
+/** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   return <Navigate to={isAuthenticated && user ? homePathForRole(user.role) : '/login'} replace />;
@@ -52,6 +57,8 @@ export const App: React.FC = () => {
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<UserManagementScreen />} />
             <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
+            <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={floodWarningApi} />} />
+            <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationApi} />} />
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />

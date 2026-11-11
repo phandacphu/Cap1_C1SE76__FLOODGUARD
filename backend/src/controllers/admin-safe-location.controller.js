@@ -3,6 +3,7 @@ const {
   getSafeLocationDetailForAdmin,
   createSafeLocationForAdmin,
   updateSafeLocationForAdmin,
+  deleteSafeLocationForAdmin,
 } = require("../services/admin-safe-location.service");
 
 const ERROR_STATUSES = {
@@ -10,8 +11,8 @@ const ERROR_STATUSES = {
   ADMIN_SAFE_USER_NOT_FOUND: 401,
   ADMIN_SAFE_ACCOUNT_INACTIVE: 403,
   ADMIN_SAFE_ROLE_FORBIDDEN: 403,
-  INVALID_ADMIN_SAFE_LOCATION_ID: 400,
-  INVALID_ADMIN_SAFE_LOCATION_DATA: 400,
+  INVALID_SAFE_LOCATION_ID: 400,
+  INVALID_SAFE_LOCATION_DATA: 400,
   ADMIN_SAFE_LOCATION_NOT_FOUND: 404,
 };
 
@@ -22,10 +23,11 @@ function handleError(res, error, operation) {
     return res.status(statusCode).json({
       success: false,
       message: error.message,
+      code: error.code,
     });
   }
 
-  console.error(`${operation} error:`, error);
+  console.error(`${operation} failed`);
 
   return res.status(500).json({
     success: false,
@@ -34,11 +36,7 @@ function handleError(res, error, operation) {
 }
 
 function ensureAuthenticated(req, res) {
-  if (
-    !req.user ||
-    typeof req.user.id !== "string" ||
-    !req.user.id.trim()
-  ) {
+  if (!req.user || typeof req.user.id !== "string" || !req.user.id.trim()) {
     res.status(401).json({
       success: false,
       message: "Authentication is required",
@@ -68,8 +66,7 @@ async function listAdminSafeLocations(req, res) {
     if (!ensureAuthenticated(req, res)) return;
     if (!ensureNoQuery(req, res)) return;
 
-    const safeLocations =
-      await listSafeLocationsForAdmin(req.user.id);
+    const safeLocations = await listSafeLocationsForAdmin(req.user.id);
 
     return res.status(200).json({
       success: true,
@@ -77,11 +74,7 @@ async function listAdminSafeLocations(req, res) {
       data: { safeLocations },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "List admin safe locations",
-    );
+    return handleError(res, error, "List admin safe locations");
   }
 }
 
@@ -90,11 +83,10 @@ async function getAdminSafeLocationDetail(req, res) {
     if (!ensureAuthenticated(req, res)) return;
     if (!ensureNoQuery(req, res)) return;
 
-    const safeLocation =
-      await getSafeLocationDetailForAdmin(
-        req.user.id,
-        req.params.locationId,
-      );
+    const safeLocation = await getSafeLocationDetailForAdmin(
+      req.user.id,
+      req.params.locationId,
+    );
 
     return res.status(200).json({
       success: true,
@@ -102,11 +94,7 @@ async function getAdminSafeLocationDetail(req, res) {
       data: { safeLocation },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "Get admin safe location detail",
-    );
+    return handleError(res, error, "Get admin safe location detail");
   }
 }
 
@@ -115,11 +103,10 @@ async function createAdminSafeLocation(req, res) {
     if (!ensureAuthenticated(req, res)) return;
     if (!ensureNoQuery(req, res)) return;
 
-    const safeLocation =
-      await createSafeLocationForAdmin(
-        req.user.id,
-        req.body,
-      );
+    const safeLocation = await createSafeLocationForAdmin(
+      req.user.id,
+      req.body,
+    );
 
     return res.status(201).json({
       success: true,
@@ -127,11 +114,7 @@ async function createAdminSafeLocation(req, res) {
       data: { safeLocation },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "Create admin safe location",
-    );
+    return handleError(res, error, "Create admin safe location");
   }
 }
 
@@ -140,12 +123,11 @@ async function updateAdminSafeLocation(req, res) {
     if (!ensureAuthenticated(req, res)) return;
     if (!ensureNoQuery(req, res)) return;
 
-    const safeLocation =
-      await updateSafeLocationForAdmin(
-        req.user.id,
-        req.params.locationId,
-        req.body,
-      );
+    const safeLocation = await updateSafeLocationForAdmin(
+      req.user.id,
+      req.params.locationId,
+      req.body,
+    );
 
     return res.status(200).json({
       success: true,
@@ -153,11 +135,41 @@ async function updateAdminSafeLocation(req, res) {
       data: { safeLocation },
     });
   } catch (error) {
-    return handleError(
-      res,
-      error,
-      "Update admin safe location",
+    return handleError(res, error, "Update admin safe location");
+  }
+}
+
+async function deleteAdminSafeLocation(req, res) {
+  try {
+    if (!ensureAuthenticated(req, res)) return;
+    if (!ensureNoQuery(req, res)) return;
+    if (
+      req.body != null &&
+      (typeof req.body !== "object" ||
+        Array.isArray(req.body) ||
+        Object.keys(req.body).length)
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "DELETE does not accept a body",
+          code: "INVALID_SAFE_LOCATION_DATA",
+        });
+    }
+    const result = await deleteSafeLocationForAdmin(
+      req.user.id,
+      req.params.locationId,
     );
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Safe location deleted successfully",
+        data: result,
+      });
+  } catch (error) {
+    return handleError(res, error, "Delete admin safe location");
   }
 }
 
@@ -166,4 +178,5 @@ module.exports = {
   getAdminSafeLocationDetail,
   createAdminSafeLocation,
   updateAdminSafeLocation,
+  deleteAdminSafeLocation,
 };

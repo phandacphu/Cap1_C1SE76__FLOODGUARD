@@ -1,580 +1,269 @@
 package com.example.floodguard.ui.components
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.View
+
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.example.floodguard.domain.model.WarningTimeStatus
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.floodguard.domain.model.Warning
+import com.example.floodguard.domain.model.WarningTimeStatus
+import com.example.floodguard.domain.model.formatWarningDateTime
+import com.example.floodguard.domain.model.warningSeverityLabel
+import com.example.floodguard.domain.model.warningTimeStatusLabel
+import java.util.Locale
 
+// Shared presentation for the list and detail. All backgrounds are solid colors.
+val WarningBackground = Color(0xFF07101F)
+val WarningSurface = Color(0xFF0D1726)
+val WarningBorder = Color(0xFF263449)
+val WarningSecondaryText = Color(0xFFB8C4D6)
+val WarningAccent = Color(0xFF22D3EE)
 
+fun warningSeverityColor(severity: String): Color = when (severity.lowercase(Locale.ROOT)) {
+    "low", "thấp" -> Color(0xFFFFD54F)
+    "medium", "trung bình" -> Color(0xFFFFA726)
+    "high", "cao" -> Color(0xFFFF6464)
+    "critical", "khẩn cấp" -> Color(0xFFE3A0FF)
+    else -> WarningSecondaryText
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WarningCard(
-    warning: Warning,
-    onClick: () -> Unit
+fun WarningTopBar(
+    title: String,
+    onBack: () -> Unit,
+    onNotificationClick: () -> Unit,
+    onProfileClick: () -> Unit
 ) {
-
-    val severityInfo =
-        getSeverityInfo(
-            severity = warning.severity
-        )
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                onClick()
-            },
-
-        shape = RoundedCornerShape(18.dp),
-
-        border = BorderStroke(
-            width = 1.dp,
-            color = severityInfo.color.copy(
-                alpha = 0.35f
-            )
-        ),
-
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0D1726)
-        ),
-
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 0.dp
-        )
-    ) {
-
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-
-            // =========================
-            // THANH MÀU SEVERITY
-            // =========================
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-            ) {
-
-                Surface(
-                    modifier = Modifier.matchParentSize(),
-                    color = severityInfo.color
-                ) {}
+    val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(view, lifecycleOwner) {
+        val window = findWarningActivity(view.context)?.window
+        var previousLightStatusBar: Boolean? = null
+        val applyStatusBarStyle = Runnable {
+            if (window != null && view.isAttachedToWindow) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                if (previousLightStatusBar == null) {
+                    previousLightStatusBar = controller.isAppearanceLightStatusBars
+                }
+                controller.isAppearanceLightStatusBars = false
             }
-
-
-            // =========================
-            // CONTENT
-            // =========================
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = 16.dp,
-                        vertical = 16.dp
-                    )
-            ) {
-
-                // =========================
-                // SEVERITY + TIME
-                // =========================
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.SpaceBetween,
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Surface(
-                        color =
-                            severityInfo.color.copy(
-                                alpha = 0.14f
-                            ),
-
-                        shape =
-                            RoundedCornerShape(8.dp)
-                    ) {
-
-                        Text(
-                            text =
-                                severityInfo.label,
-
-                            color =
-                                severityInfo.color,
-
-                            style =
-                                MaterialTheme
-                                    .typography
-                                    .labelMedium,
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            modifier = Modifier.padding(
-                                horizontal = 10.dp,
-                                vertical = 6.dp
-                            )
-                        )
-                    }
-
-                    Text(
-                        text = "Bắt đầu: ${formatWarningTime(warning.startTime)}",
-
-                        color =
-                            Color(0xFF94A3B8),
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .labelMedium,
-
-                        fontWeight =
-                            FontWeight.Medium
-                    )
-                }
-
-
-                Spacer(
-                    modifier = Modifier.height(14.dp)
-                )
-
-
-                // =========================
-                // TITLE
-                // =========================
-
-                Text(
-                    text = warning.title,
-
-                    color = Color.White,
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .titleMedium,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    maxLines = 2,
-
-                    overflow =
-                        TextOverflow.Ellipsis
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(9.dp)
-                )
-
-
-                // =========================
-                // AREA
-                // =========================
-
-                Text(
-                    text = "📍 ${warning.area}",
-
-                    color =
-                        Color(0xFFB8C4D6),
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodySmall,
-
-                    maxLines = 2,
-
-                    overflow =
-                        TextOverflow.Ellipsis
-                )
-
-
-                Spacer(
-                    modifier = Modifier.height(14.dp)
-                )
-
-
-                // =========================
-                // CONTENT
-                // =========================
-
-                Text(
-                    text = warning.content,
-
-                    color =
-                        Color(0xFFD5DEE9),
-
-                    style =
-                        MaterialTheme
-                            .typography
-                            .bodyMedium,
-
-                    lineHeight =
-                        MaterialTheme
-                            .typography
-                            .bodyMedium
-                            .lineHeight
-                )
-
-
-                // =========================
-                // MOCK METRIC
-                // =========================
-
-                if (
-                    warning.metricLeftValue != null ||
-                    warning.metricRightValue != null
-                ) {
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(18.dp)
-                    )
-
-                    Row(
-                        modifier =
-                            Modifier.fillMaxWidth(),
-
-                        horizontalArrangement =
-                            Arrangement.spacedBy(
-                                10.dp
-                            )
-                    ) {
-
-                        WarningMetricBox(
-                            modifier =
-                                Modifier.weight(1f),
-
-                            label =
-                                warning.metricLeftLabel,
-
-                            value =
-                                warning.metricLeftValue,
-
-                            accentColor =
-                                severityInfo.color
-                        )
-
-                        WarningMetricBox(
-                            modifier =
-                                Modifier.weight(1f),
-
-                            label =
-                                warning.metricRightLabel,
-
-                            value =
-                                warning.metricRightValue,
-
-                            accentColor =
-                                severityInfo.color
-                        )
-                    }
-                }
-
-
-                Spacer(
-                    modifier =
-                        Modifier.height(18.dp)
-                )
-
-
-                HorizontalDivider(
-                    color =
-                        Color(0xFF1E293B),
-
-                    thickness = 1.dp
-                )
-
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-
-                // =========================
-                // FOOTER
-                // =========================
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.SpaceBetween,
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-                ) {
-
-                    Text(
-                        text = warning.footerText ?: when (warning.timeStatus) {
-                            WarningTimeStatus.DISABLED -> "ĐÃ TẮT"
-
-                            WarningTimeStatus.UPCOMING ->
-                                "ĐANG BẬT • CHƯA CÓ HIỆU LỰC"
-
-                            WarningTimeStatus.EFFECTIVE ->
-                                "ĐANG CÓ HIỆU LỰC"
-
-                            WarningTimeStatus.EXPIRED -> "ĐÃ HẾT HẠN"
-
-                            WarningTimeStatus.UNKNOWN ->
-                                "KHÔNG XÁC ĐỊNH THỜI GIAN"
-                        },
-
-                        color =
-                            if (warning.isEffectiveNow) {
-                                severityInfo.color
-                            } else {
-                                Color(0xFF64748B)
-                            },
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .labelSmall,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        modifier =
-                            Modifier.weight(1f),
-
-                        maxLines = 1,
-
-                        overflow =
-                            TextOverflow.Ellipsis
-                    )
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(12.dp)
-                    )
-
-
-                    Text(
-                        text = "Xem chi tiết  ›",
-
-                        color =
-                            Color(0xFF22D3EE),
-
-                        style =
-                            MaterialTheme
-                                .typography
-                                .labelMedium,
-
-                        fontWeight =
-                            FontWeight.SemiBold
-                    )
+        }
+        // Apply after attachment, and again after the route resumes. The initial
+        // composition can occur before the view has an insets controller.
+        val attachListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(attachedView: View) {
+                attachedView.post(applyStatusBarStyle)
+            }
+            override fun onViewDetachedFromWindow(detachedView: View) = Unit
+        }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) view.post(applyStatusBarStyle)
+        }
+        view.addOnAttachStateChangeListener(attachListener)
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        view.post(applyStatusBarStyle)
+        onDispose {
+            view.removeCallbacks(applyStatusBarStyle)
+            view.removeOnAttachStateChangeListener(attachListener)
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            if (window != null) {
+                previousLightStatusBar?.let { previous ->
+                    WindowCompat.getInsetsController(window, view)
+                        .isAppearanceLightStatusBars = previous
                 }
             }
         }
     }
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Quay lại", tint = Color.White)
+            }
+        },
+        actions = {
+            IconButton(onClick = onNotificationClick) {
+                Icon(Icons.Outlined.Notifications, "Thông báo", tint = Color.White)
+            }
+            IconButton(onClick = onProfileClick) {
+                Icon(Icons.Outlined.Person, "Cá nhân", tint = Color.White)
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = WarningBackground,
+            scrolledContainerColor = WarningBackground
+        )
+    )
 }
 
 
-// =====================================================
-// METRIC BOX
-// =====================================================
+private fun findWarningActivity(context: Context): Activity? {
+    var current = context
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        val base = current.baseContext
+        if (base === current) return null
+        current = base
+    }
+    return current as? Activity
+}
 
 @Composable
-private fun WarningMetricBox(
-    modifier: Modifier = Modifier,
-    label: String?,
-    value: String?,
-    accentColor: Color
-) {
-
+fun WarningDataNotice() {
     Surface(
-        modifier = modifier,
-
-        color =
-            Color(0xFF111D2E),
-
-        shape =
-            RoundedCornerShape(12.dp),
-
-        border =
-            BorderStroke(
-                width = 1.dp,
-                color = Color(0xFF1E2D42)
-            )
+        color = WarningSurface,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, WarningBorder),
+        modifier = Modifier.fillMaxWidth()
     ) {
-
-        Column(
-            modifier = Modifier.padding(
-                horizontal = 12.dp,
-                vertical = 12.dp
-            )
-        ) {
-
-            Text(
-                text =
-                    label ?: "THÔNG SỐ",
-
-                color =
-                    Color(0xFF7E8DA3),
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .labelSmall,
-
-                fontWeight =
-                    FontWeight.Medium,
-
-                maxLines = 1,
-
-                overflow =
-                    TextOverflow.Ellipsis
-            )
-
-
-            Spacer(
-                modifier =
-                    Modifier.height(6.dp)
-            )
-
-
-            Text(
-                text =
-                    value ?: "--",
-
-                color =
-                    accentColor,
-
-                style =
-                    MaterialTheme
-                        .typography
-                        .titleMedium,
-
-                fontWeight =
-                    FontWeight.Bold,
-
-                maxLines = 1,
-
-                overflow =
-                    TextOverflow.Ellipsis
-            )
-        }
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = WarningAccent, fontWeight = FontWeight.Bold)) {
+                    append("Dữ liệu kiểm thử. ")
+                }
+                append("Chưa phải cảnh báo lũ thực tế được xác thực.")
+            },
+            color = WarningSecondaryText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp)
+        )
     }
 }
 
-
-// =====================================================
-// SEVERITY
-// =====================================================
-
-private data class SeverityInfo(
-    val label: String,
-    val color: Color
-)
-
-
-private fun getSeverityInfo(
-    severity: String
-): SeverityInfo {
-
-    return when (
-        severity.lowercase()
-    ) {
-
-        "critical" -> {
-
-            SeverityInfo(
-                label = "KHẨN CẤP",
-                color = Color(0xFFFF3B4E)
-            )
-        }
-
-
-        "high" -> {
-
-            SeverityInfo(
-                label = "CẤP 3 – CAO",
-                color = Color(0xFFFF4D4F)
-            )
-        }
-
-
-        "medium" -> {
-
-            SeverityInfo(
-                label = "CẤP 2 – TRUNG BÌNH",
-                color = Color(0xFFFFA726)
-            )
-        }
-
-
-        "low" -> {
-
-            SeverityInfo(
-                label = "CẤP 1 – THẤP",
-                color = Color(0xFFFFD54F)
-            )
-        }
-
-
-        else -> {
-
-            SeverityInfo(
-                label = "KHÔNG XÁC ĐỊNH",
-                color = Color(0xFF94A3B8)
-            )
-        }
+@Composable
+fun WarningSeverityBadge(severity: String) {
+    val color = warningSeverityColor(severity)
+    Surface(color = color.copy(alpha = 0.14f), shape = RoundedCornerShape(8.dp)) {
+        Text(
+            text = "Mức độ ${warningSeverityLabel(severity).lowercase(Locale.forLanguageTag("vi-VN"))}",
+            color = color,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+        )
     }
 }
 
-    private fun formatWarningTime(
-        isoTime: String?
-    ): String {
-
-        if (isoTime.isNullOrBlank()) {
-            return "Không xác định"
+@Composable
+fun WarningCard(warning: Warning, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, WarningBorder),
+        colors = CardDefaults.cardColors(containerColor = WarningSurface)
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(4.dp)
+                .background(warningSeverityColor(warning.severity))
+        )
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            WarningSeverityBadge(warning.severity)
+            Text(
+                warning.title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    Icons.Outlined.LocationOn, null,
+                    tint = WarningSecondaryText, modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    warning.area, color = WarningSecondaryText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    "Bắt đầu: ${formatWarningDateTime(warning.startTime)}",
+                    color = WarningSecondaryText, style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Kết thúc: ${formatWarningDateTime(warning.endTime)}",
+                    color = WarningSecondaryText, style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Text(
+                warning.content, color = Color(0xFFD5DEE9),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3, overflow = TextOverflow.Ellipsis
+            )
+            HorizontalDivider(color = WarningBorder)
+            // A separate line keeps long status labels readable at larger font sizes.
+            Text(
+                warningTimeStatusLabel(warning.timeStatus),
+                color = if (warning.timeStatus == WarningTimeStatus.EFFECTIVE) {
+                    WarningAccent
+                } else {
+                    WarningSecondaryText
+                },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Xem chi tiết", color = WarningAccent, style = MaterialTheme.typography.labelLarge)
+                Icon(Icons.Outlined.ChevronRight, null, tint = WarningAccent, modifier = Modifier.size(18.dp))
+            }
         }
-
-        return runCatching {
-
-            java.time.Instant
-                .parse(isoTime)
-                .atZone(
-                    java.time.ZoneId.systemDefault()
-                )
-                .format(
-                    java.time.format.DateTimeFormatter
-                        .ofPattern("dd/MM/yyyy HH:mm")
-                )
-
-        }.getOrDefault(isoTime)
     }
+}
