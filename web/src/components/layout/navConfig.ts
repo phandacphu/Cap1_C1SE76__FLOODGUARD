@@ -12,7 +12,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Tổng quan", icon: "dashboard", to: "/admin/dashboard" },
   { label: "Bản đồ trực quan", icon: "map", to: "/admin/historical-map" },
   { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
-  { label: "Quản lý cảnh báo lũ", icon: "alert", to: import.meta.env.DEV ? "/admin/flood-warnings" : undefined },
+  { label: "Quản lý cảnh báo lũ", icon: "alert", to: "/admin/flood-warnings" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
   { label: "Quản lý địa điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
   { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
