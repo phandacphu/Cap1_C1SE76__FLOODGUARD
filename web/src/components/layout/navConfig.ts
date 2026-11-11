@@ -10,7 +10,8 @@ export interface NavItem {
 /** Admin sidebar (Figma: Admin Command C4I). Only finished screens have a route. */
 export const ADMIN_NAV: NavItem[] = [
   { label: "Tổng quan", icon: "dashboard", to: "/admin/dashboard" },
-  { label: "Bản đồ trực quan", icon: "map", to: "/admin/historical-map" },
+  { label: "Bản đồ trực quan", icon: "map", to: "/admin/map" },
+  { label: "Bản đồ lịch sử", icon: "map", to: "/admin/historical-map" },
   { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert", to: "/admin/flood-warnings" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
@@ -27,7 +28,7 @@ export const ADMIN_NAV: NavItem[] = [
 /** Rescue sidebar (Figma: Rescue Staff). Used by the Rescue screens. */
 export const RESCUE_NAV: NavItem[] = [
   { label: "Tổng quan cứu hộ", icon: "dashboard", to: "/rescue/dashboard" },
-  { label: "Bản đồ trực quan", icon: "map" },
+  { label: "Bản đồ trực quan", icon: "map", to: "/map" },
   { label: "Yêu cầu SOS", icon: "sos", to: "/rescue/sos" },
   { label: "Cảnh báo lũ", icon: "alert" },
   { label: "Địa điểm an toàn", icon: "shield" },

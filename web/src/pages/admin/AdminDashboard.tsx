@@ -12,7 +12,7 @@ import { KpiCard } from "./components/KpiCard";
 import { Panel } from "./components/Panel";
 import { RiskAreasPanel } from "./components/RiskAreasPanel";
 import { SosDashboardPanel } from "./sos/SosDashboardPanel";
-import { formatSosCount } from "./sos/sosFormat";
+import { formatDashboardSosCount } from "./sos/sosFormat";
 import {
   SEVERITY_LABEL,
   countAlertsBySeverity,
@@ -146,11 +146,11 @@ export function AdminDashboard() {
                 label="Tổng SOS toàn hệ thống"
                 icon="sos"
                 tone="text"
-                value={formatSosCount(view.sos?.total)}
+                value={formatDashboardSosCount(view.sos?.total)}
                 mock={sosMock}
                 sub={view.sos ? "Từ thống kê tổng hợp SOS" : "Chưa tải được thống kê SOS"}
                 footerLabel="Chờ cứu hộ"
-                footerValue={formatSosCount(view.sos?.active)}
+                footerValue={formatDashboardSosCount(view.sos?.active)}
               />
               <KpiCard
                 label="Cảnh báo đang hiệu lực"

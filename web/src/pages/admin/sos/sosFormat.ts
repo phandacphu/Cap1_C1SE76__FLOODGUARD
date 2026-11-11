@@ -9,3 +9,7 @@ export function formatSosTime(value: string | Date | null): string {
 export function formatSosCount(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : value.toLocaleString("vi-VN");
 }
+
+export function formatDashboardSosCount(value: number | null | undefined): string {
+  return value == null ? "Chưa tải được số SOS" : formatSosCount(value);
+}
