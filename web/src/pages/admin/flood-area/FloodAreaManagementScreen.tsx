@@ -1,3 +1,4 @@
+
 import { useMemo, useState, useEffect } from "react";
 import { AdminHeader } from "../../../components/layout/AdminHeader";
 import { AppShell } from "../../../components/layout/AppShell";
@@ -51,12 +52,13 @@ export default function FloodAreaManagementScreen() {
   const [historyRound, setHistoryRound] = useState(0);
 
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<AreaType | "all" | "unclassified">("all");
+  const [typeFilter, setTypeFilter] = useState<AreaType | "history">("flood");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [timeoutUncertain, setTimeoutUncertain] = useState(false);
   const [uncertainName, setUncertainName] = useState<string | null>(null);
+  const [uncertainType, setUncertainType] = useState<AreaType | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Service đã kiểm tra success / FeatureCollection / features là mảng,
@@ -95,16 +97,17 @@ export default function FloodAreaManagementScreen() {
 
   const filteredAreas = useMemo(() => {
     const q = search.trim().toLowerCase();
+    if (typeFilter === "history") return [];
     return list.filter((a) =>
+      a.areaType === typeFilter &&
       (q === "" || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q) ||
-        formatAreaId(a.id).toLowerCase().includes(q)) &&
-      (typeFilter === "all" || (typeFilter === "unclassified" ? a.areaType === null : a.areaType === typeFilter))
+        formatAreaId(a.id).toLowerCase().includes(q))
     );
   }, [list, search, typeFilter]);
 
   const filteredHistory = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (typeFilter !== "all") return [];
+    if (typeFilter !== "history") return [];
     return historicalPoints.filter((pt) => {
       const name = (pt.properties?.name ?? "").toLowerCase();
       const id = (pt.properties?.id ?? "").toLowerCase();
@@ -121,6 +124,7 @@ export default function FloodAreaManagementScreen() {
     setDialogError(null);
     setTimeoutUncertain(false);
     setUncertainName(null);
+    setUncertainType(null);
   };
 
   const submitForm = async (input: FloodAreaInput) => {
@@ -134,9 +138,11 @@ export default function FloodAreaManagementScreen() {
       setDialogError(result.error ?? "Lưu thất bại.");
       setTimeoutUncertain(result.status === 504);
       setUncertainName(input.name);
+      setUncertainType(input.areaType);
       return;
     }
     setDialog(null);
+    setTypeFilter(input.areaType);
     setNotice(target ? "Đã cập nhật vùng." : "Đã tạo vùng mới.");
   };
 
@@ -178,7 +184,7 @@ export default function FloodAreaManagementScreen() {
     setDialogError(null);
     setTimeoutUncertain(false);
     setSearch("");
-    setTypeFilter("all");
+    setTypeFilter(uncertainType ?? "flood");
     setNotice(`Đang đọc lại dữ liệu để kiểm tra vùng “${uncertainName ?? "đã lưu"}”. Hãy đối chiếu danh sách và nguồn; không tự gửi lại yêu cầu lưu.`);
     refresh();
   };
@@ -227,7 +233,7 @@ export default function FloodAreaManagementScreen() {
         </div>
         {list.some((a) => a.areaType === null) && (
           <div role="note" className={BANNER_WARN}>
-            Có vùng chưa phân loại. Bấm Sửa để chọn Vùng ngập hoặc Vùng trũng; hệ thống không tự chuyển loại.
+            Có vùng cũ chưa phân loại trong dữ liệu API. Các vùng này vẫn được tính trong thống kê, nhưng không hiển thị trong ba lựa chọn bộ lọc; hệ thống không tự chuyển loại hoặc xóa dữ liệu.
           </div>
         )}
 
@@ -239,10 +245,9 @@ export default function FloodAreaManagementScreen() {
             onChange={(e) => setSearch(e.target.value)}
             className={`${SELECT} min-w-56 flex-1`}
           />
-          <select aria-label="Lọc theo loại vùng" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AreaType | "all" | "unclassified")} className={SELECT}>
-            <option value="all">Tất cả loại vùng và điểm lịch sử</option>
+          <select aria-label="Lọc theo loại vùng" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AreaType | "history")} className={SELECT}>
             {AREA_TYPES.map((type) => <option key={type} value={type}>{AREA_TYPE_LABEL[type]}</option>)}
-            <option value="unclassified">Chưa phân loại</option>
+            <option value="history">Vùng ngập lịch sử</option>
           </select>
           <button
             type="button"

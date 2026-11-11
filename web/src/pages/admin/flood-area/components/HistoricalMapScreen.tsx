@@ -24,6 +24,75 @@ const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
 })[char] ?? char);
 
+// References verified on public websites. They document flooding in Da Nang,
+// but are NOT proof that a particular API feature came from those publications.
+const HISTORICAL_REFERENCES = [
+    {
+        label: 'Bản đồ mưa ngập Đà Nẵng (IOC)',
+        url: 'https://muangap.danang.gov.vn/',
+    },
+    {
+        label: 'Thông tin về bản đồ số và vết lũ Đà Nẵng (Cục Quản lý đê điều)',
+        url: 'https://phongchongthientai.mard.gov.vn/Pages/da-nang-xay-dung-ban-do-so-phuc-vu-ung-pho-lu-lut.aspx',
+    },
+] as const;
+
+const externalHttpUrl = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null;
+    } catch {
+        return null;
+    }
+};
+
+const historicalPopup = (feature: any, layerLabel: string): string => {
+    const props: Record<string, unknown> = feature?.properties &&
+        typeof feature.properties === 'object' && !Array.isArray(feature.properties)
+        ? feature.properties : {};
+
+    const field = (key: string): string | null => {
+        const value = props[key];
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+    };
+    const row = (label: string, value: string | null) => value
+        ? `<div style="margin-top:4px"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`
+        : '';
+
+    const point = feature?.geometry?.type === 'Point' ? feature.geometry.coordinates : null;
+    const coordinates = Array.isArray(point) && point.length >= 2 &&
+        typeof point[0] === 'number' && Number.isFinite(point[0]) &&
+        typeof point[1] === 'number' && Number.isFinite(point[1])
+        ? `${point[1].toFixed(5)}, ${point[0].toFixed(5)}` : null;
+
+    const sourceUrl = externalHttpUrl(props.source_url);
+    const sourceLink = sourceUrl
+        ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Mở nguồn riêng do API cung cấp</a>`
+        : '<span>API chưa cung cấp liên kết nguồn riêng.</span>';
+    const references = HISTORICAL_REFERENCES.map((ref) =>
+        `<div style="margin-top:4px"><a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ref.label)}</a></div>`
+    ).join('');
+
+    return `<div style="font-family:system-ui,sans-serif;font-size:12px;line-height:1.5;color:#0f172a;min-width:240px;max-width:300px;max-height:300px;overflow-y:auto">
+        <strong style="font-size:14px;display:block;margin-bottom:5px">${escapeHtml(field('name') ?? layerLabel)}</strong>
+        ${row('Loại lớp', layerLabel)}
+        ${row('Mã dữ liệu', field('id'))}
+        ${row('Tọa độ (vĩ độ, kinh độ)', coordinates)}
+        ${row('Giai đoạn', field('data_period'))}
+        ${row('Tình trạng tọa độ', field('coordinate_status'))}
+        ${row('Nguồn ghi trong API', field('source'))}
+        ${row('Mô tả', field('description'))}
+        <div style="border-top:1px solid #cbd5e1;margin-top:8px;padding-top:6px">
+            <strong>Nguồn chi tiết:</strong><div>${sourceLink}</div>
+        </div>
+        <div style="border-top:1px solid #cbd5e1;margin-top:8px;padding-top:6px">
+            <strong>Tài liệu tham khảo công khai tại Đà Nẵng:</strong>${references}
+            <div style="font-size:11px;color:#475569;margin-top:6px">Các tài liệu tham khảo chung không xác nhận tọa độ hoặc ranh giới riêng của đối tượng này.</div>
+        </div>
+    </div>`;
+};
+
 const DefaultIcon = L.icon({
     iconUrl: icon,
     shadowUrl: iconShadow,
@@ -240,8 +309,26 @@ export default function HistoricalMapScreen() {
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
 
-                        {radarData && <GeoJSONLayer key={`radar-${layers.radar.version}`} data={radarData as any} style={radarStyle} />}
-                        {buffersData && <GeoJSONLayer key={`buffers-${layers.buffers.version}`} data={buffersData as any} style={bufferStyle} />}
+                        {radarData && (
+                            <GeoJSONLayer
+                                key={`radar-${layers.radar.version}`}
+                                data={radarData as any}
+                                style={radarStyle}
+                                onEachFeature={(feature: any, layer: any) => {
+                                    layer.bindPopup(historicalPopup(feature, 'Vùng trũng (lớp radar tham khảo)'));
+                                }}
+                            />
+                        )}
+                        {buffersData && (
+                            <GeoJSONLayer
+                                key={`buffers-${layers.buffers.version}`}
+                                data={buffersData as any}
+                                style={bufferStyle}
+                                onEachFeature={(feature: any, layer: any) => {
+                                    layer.bindPopup(historicalPopup(feature, 'Vùng đệm điểm ngập lịch sử (tham khảo)'));
+                                }}
+                            />
+                        )}
                         {pointsData && (
                             <GeoJSONLayer
                                 key={`points-${layers.points.version}`}
@@ -256,21 +343,7 @@ export default function HistoricalMapScreen() {
                                     return L.marker(latlng, { icon: redIcon });
                                 }}
                                 onEachFeature={(feature: any, layer: any) => {
-                                    if (feature.properties && feature.properties.name) {
-                                        layer.bindPopup(
-                                            `<div style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont; min-width: 180px; padding: 4px;">
-                                                <strong style="color: #0f172a; font-size: 14px; display: block; margin-bottom: 6px; line-height: 1.4;">${escapeHtml(feature.properties.name)}</strong>
-                                                <div style="display: flex; flex-direction: column; gap: 4px;">
-                                                    <span style="color: #64748b; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
-                                                        <span>ID:</span> <span style="font-family: monospace; font-weight: 500; color: #334155;">${escapeHtml(feature.properties.id || 'N/A')}</span>
-                                                    </span>
-                                                    <span style="color: #64748b; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
-                                                        <span>Giai đoạn:</span> <span style="font-weight: 500; color: #334155;">${escapeHtml(feature.properties.data_period || 'N/A')}</span>
-                                                    </span>
-                                                </div>
-                                            </div>`
-                                        );
-                                    }
+                                    layer.bindPopup(historicalPopup(feature, 'Điểm ngập lịch sử'));
                                 }}
                             />
                         )}
