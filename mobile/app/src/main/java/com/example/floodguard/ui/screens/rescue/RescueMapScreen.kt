@@ -339,6 +339,22 @@ internal fun RescueMapScreen(
                             val historyMarkerIcon = remember {
                                 BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
                             }
+                            // Historical polygons drawn by Web Admin.
+                            // Reference only, never a current flood alert.
+                            historyLayers["areas"]?.polygons.orEmpty()
+                                .forEachIndexed { index, polygon ->
+                                    key("historical-admin-area", index) {
+                                        Polygon(
+                                            points = polygon.outer,
+                                            holes = polygon.holes,
+                                            visible = showFloodLayers,
+                                            fillColor = Color(0xFFC62828).copy(alpha = 0.22f),
+                                            strokeColor = Color(0xFFC62828),
+                                            strokeWidth = 4f,
+                                            zIndex = 4f
+                                        )
+                                    }
+                                }
                             listOf("radar", "buffers").forEach { name ->
                                 historyLayers[name]?.polygons.orEmpty().forEachIndexed { index, polygon ->
                                     key("history-polygon", name, index) {

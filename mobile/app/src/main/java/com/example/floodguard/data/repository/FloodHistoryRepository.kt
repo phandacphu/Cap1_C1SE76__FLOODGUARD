@@ -16,6 +16,10 @@ class FloodHistoryRepository(
             api.getPoints()
         }
 
+    suspend fun getAreas(): Result<JsonObject> =
+        fetchLayer("areas") {
+            api.getAreas()
+        }
     suspend fun getBuffers(): Result<JsonObject> =
         fetchLayer("buffers") {
             api.getBuffers()

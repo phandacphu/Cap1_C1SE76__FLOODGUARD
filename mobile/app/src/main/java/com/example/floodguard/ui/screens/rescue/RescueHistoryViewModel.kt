@@ -46,7 +46,7 @@ internal class RescueHistoryViewModel : ViewModel() {
         .build().create(RescueHistoryApi::class.java)
 
     private val mutableLayers = MutableStateFlow(
-        listOf("points", "buffers", "radar").associateWith { RescueHistoryLayerState() }
+        listOf("points", "areas", "buffers", "radar").associateWith { RescueHistoryLayerState() }
     )
     val layers = mutableLayers.asStateFlow()
     private val jobs = mutableMapOf<String, Job>()
@@ -54,7 +54,7 @@ internal class RescueHistoryViewModel : ViewModel() {
     init { refresh() }
 
     fun refresh() {
-        listOf("points", "buffers", "radar").forEach { layer ->
+        listOf("points", "areas", "buffers", "radar").forEach { layer ->
             jobs[layer]?.cancel()
             // Keep the previous successful layer visible while refreshing.
             mutableLayers.update { it + (layer to it.getValue(layer).copy(loading = true, error = false)) }

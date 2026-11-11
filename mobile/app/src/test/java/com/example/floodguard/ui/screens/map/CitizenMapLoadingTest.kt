@@ -464,6 +464,12 @@ private class FakeCitizenMapApis {
             )
         }
 
+        override suspend fun getAreas(): Response<FloodHistoryResponse> {
+            return citizenFixtureResponse(
+                """{"success":true,"data":{"layer":"areas","geojson":{"type":"FeatureCollection","features":[]}}}""",
+                FloodHistoryResponse::class.java
+            )
+        }
         override suspend fun getBuffers(): Response<FloodHistoryResponse> {
             bufferCalls++
             error("Buffer không được tự tải cùng lớp vùng trũng")
