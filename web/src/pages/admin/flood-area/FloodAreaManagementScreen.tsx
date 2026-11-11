@@ -7,7 +7,8 @@ import { KpiCard } from "../components/KpiCard";
 import { MockTag, Panel } from "../components/Panel";
 import { AreaFormModal } from "./components/AreaFormModal";
 import { DATA_SOURCE } from "./floodAreaService";
-import { fetchHistoricalPoints } from "./historicalMapService";
+import { fetchHistoricalAreas, fetchHistoricalPoints } from "./historicalMapService";
+import { listHistoricalAreas, getHistoricalArea, updateHistoricalArea, deleteHistoricalArea, type HistoricalFloodArea } from "./historicalFloodAreaService";
 import { formatAreaId } from "./areaId";
 import { AREA_TYPES, AREA_TYPE_LABEL, type AreaType, type FloodAreaInput, type FloodAreaItem } from "./floodAreaTypes";
 import { useFloodAreas } from "./useFloodAreas";
@@ -38,6 +39,8 @@ const BTN_RETRY = "shrink-0 rounded border border-warn/50 px-3 py-1 text-xs";
 type Dialog =
   | { kind: "form"; area: FloodAreaItem | null }
   | { kind: "delete"; area: FloodAreaItem }
+  | { kind: "history-form"; area: HistoricalFloodArea }
+  | { kind: "history-delete"; area: HistoricalFloodArea }
   | null;
 
 export default function FloodAreaManagementScreen() {
@@ -46,12 +49,14 @@ export default function FloodAreaManagementScreen() {
   const isMock = DATA_SOURCE === "mock";
 
   const [historicalPoints, setHistoricalPoints] = useState<HistoricalPointFeature[]>([]);
+  const [historicalAreas, setHistoricalAreas] = useState<HistoricalFloodArea[] | null>(null);
+  const [openingHistoricalId, setOpeningHistoricalId] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyRound, setHistoryRound] = useState(0);
 
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<AreaType | "all" | "unclassified">("all");
+  const [typeFilter, setTypeFilter] = useState<AreaType | "all" | "unclassified" | "history">("all");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -59,29 +64,36 @@ export default function FloodAreaManagementScreen() {
   const [uncertainName, setUncertainName] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Service đã kiểm tra success / FeatureCollection / features là mảng,
-  // dữ liệu sai cấu trúc sẽ vào nhánh catch và hiện lỗi có kiểm soát.
+  // Admin catalog drives the HIST rows. Both public map layers are refreshed at the
+  // same time, so an updated/deleted HIST ID disappears from points and polygons.
   useEffect(() => {
-    let isMounted = true;
-    fetchHistoricalPoints()
-      .then((collection) => {
-        if (!isMounted) return;
-        setHistoricalPoints(collection.features as unknown as HistoricalPointFeature[]);
-      })
-      .catch((err: unknown) => {
-        if (!isMounted) return;
-        setHistoricalPoints([]);
-        setHistoryError(
-          err instanceof Error ? err.message : "Không tải được điểm ngập lịch sử.",
-        );
-      })
-      .finally(() => {
-        if (isMounted) setHistoryLoading(false);
+    let mounted = true;
+    void Promise.allSettled([listHistoricalAreas(), fetchHistoricalPoints(), fetchHistoricalAreas()])
+      .then(([catalog, points, polygons]) => {
+        if (!mounted) return;
+        const messages: string[] = [];
+        if (catalog.status === "fulfilled") setHistoricalAreas(catalog.value);
+        else messages.push(`Danh sách HIST: ${catalog.reason instanceof Error ? catalog.reason.message : "Không tải được dữ liệu."}`);
+        if (points.status === "fulfilled") setHistoricalPoints(points.value.features as unknown as HistoricalPointFeature[]);
+        else messages.push(`Lớp điểm: ${points.reason instanceof Error ? points.reason.message : "Không tải được dữ liệu."}`);
+        if (polygons.status === "rejected") {
+          messages.push(`Lớp đa giác: ${polygons.reason instanceof Error ? polygons.reason.message : "Không tải được dữ liệu."}`);
+        }
+        setHistoryError(messages.length ? messages.join(" · ") : null);
+        setHistoryLoading(false);
       });
-    return () => {
-      isMounted = false;
-    };
+    return () => { mounted = false; };
   }, [historyRound]);
+
+  const refreshHistory = () => {
+    setHistoryError(null);
+    setHistoryLoading(true);
+    setHistoryRound((round) => round + 1);
+  };
+
+  const messageOf = (error: unknown) => error instanceof Error ? error.message : "Yêu cầu API thất bại.";
+  const statusOf = (error: unknown) =>
+    error && typeof error === "object" && "status" in error ? Number(error.status) : undefined;
 
   const list = useMemo(() => areas ?? [], [areas]);
 
@@ -104,13 +116,11 @@ export default function FloodAreaManagementScreen() {
 
   const filteredHistory = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (typeFilter !== "all") return [];
-    return historicalPoints.filter((pt) => {
-      const name = (pt.properties?.name ?? "").toLowerCase();
-      const id = (pt.properties?.id ?? "").toLowerCase();
-      return q === "" || name.includes(q) || id.includes(q);
-    });
-  }, [historicalPoints, search, typeFilter]);
+    return (historicalAreas ?? []).filter((area) =>
+      (q === "" || area.name.toLowerCase().includes(q) || area.id.toLowerCase().includes(q)) &&
+      (typeFilter === "all" || typeFilter === "history")
+    );
+  }, [historicalAreas, search, typeFilter]);
 
   const totalRows = filteredAreas.length + filteredHistory.length;
   const kpi = (n: number) => (areas === null ? "—" : String(n));
@@ -124,10 +134,27 @@ export default function FloodAreaManagementScreen() {
   };
 
   const submitForm = async (input: FloodAreaInput) => {
-    if (busy || timeoutUncertain || dialog?.kind !== "form") return;
+    if (busy || timeoutUncertain || (dialog?.kind !== "form" && dialog?.kind !== "history-form")) return;
     setBusy(true);
     setDialogError(null);
     const target = dialog.area;
+    if (dialog.kind === "history-form" && target) {
+      try {
+        const updated = await updateHistoricalArea(target.id, input);
+        setHistoricalAreas((previous) => previous?.map((area) => area.id === target.id ? updated : area) ?? null);
+        setBusy(false);
+        setDialog(null);
+        setNotice(`Đã cập nhật vùng lịch sử ${target.id}; đang tải lại danh sách và các lớp bản đồ.`);
+        refresh();
+        refreshHistory();
+      } catch (err: unknown) {
+        setBusy(false);
+        setDialogError(messageOf(err));
+        setTimeoutUncertain(statusOf(err) === 504);
+        setUncertainName(input.name);
+      }
+      return;
+    }
     const result = target ? await update(target.id, input) : await create(input);
     setBusy(false);
     if (!result.ok) {
@@ -141,9 +168,26 @@ export default function FloodAreaManagementScreen() {
   };
 
   const confirmDelete = async () => {
-    if (busy || dialog?.kind !== "delete") return;
+    if (busy || timeoutUncertain || !dialog || (dialog.kind !== "delete" && dialog.kind !== "history-delete")) return;
     setBusy(true);
     setDialogError(null);
+    if (dialog.kind === "history-delete") {
+      const id = dialog.area.id;
+      try {
+        await deleteHistoricalArea(id);
+        setHistoricalAreas((previous) => previous?.filter((area) => area.id !== id) ?? null);
+        setBusy(false);
+        setDialog(null);
+        setNotice(`Đã xóa mềm ${id}; đang cập nhật danh sách và bản đồ.`);
+        refresh();
+        refreshHistory();
+      } catch (err: unknown) {
+        setBusy(false);
+        setDialogError(messageOf(err));
+        if (statusOf(err) === 504) setTimeoutUncertain(true);
+      }
+      return;
+    }
     const result = await remove(dialog.area.id);
     setBusy(false);
     if (!result.ok) {
@@ -172,6 +216,28 @@ export default function FloodAreaManagementScreen() {
     setDialog({ kind: "delete", area });
   };
 
+  const openHistoricalEdit = async (id: string) => {
+    if (busy || openingHistoricalId) return;
+    setOpeningHistoricalId(id);
+    setHistoryError(null);
+    try {
+      const detail = await getHistoricalArea(id);
+      setTimeoutUncertain(false);
+      setDialogError(null);
+      setDialog({ kind: "history-form", area: detail });
+    } catch (err: unknown) {
+      setHistoryError(`Không thể mở HIST ${id}: ${messageOf(err)}. Dữ liệu cũ vẫn được giữ.`);
+    } finally {
+      setOpeningHistoricalId(null);
+    }
+  };
+
+  const openHistoricalDelete = (area: HistoricalFloodArea) => {
+    setTimeoutUncertain(false);
+    setDialogError(null);
+    setDialog({ kind: "history-delete", area });
+  };
+
   // A timed-out POST/PATCH may have succeeded. Only GET again; never submit a second mutation.
   const verifyAfterTimeout = () => {
     setDialog(null);
@@ -181,6 +247,7 @@ export default function FloodAreaManagementScreen() {
     setTypeFilter("all");
     setNotice(`Đang đọc lại dữ liệu để kiểm tra vùng “${uncertainName ?? "đã lưu"}”. Hãy đối chiếu danh sách và nguồn; không tự gửi lại yêu cầu lưu.`);
     refresh();
+    refreshHistory();
   };
 
   return (
@@ -239,11 +306,16 @@ export default function FloodAreaManagementScreen() {
             onChange={(e) => setSearch(e.target.value)}
             className={`${SELECT} min-w-56 flex-1`}
           />
-          <select aria-label="Lọc theo loại vùng" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AreaType | "all" | "unclassified")} className={SELECT}>
+          <select aria-label="Lọc theo loại vùng" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as AreaType | "all" | "unclassified" | "history")} className={SELECT}>
             <option value="all">Tất cả loại vùng và điểm lịch sử</option>
             {AREA_TYPES.map((type) => <option key={type} value={type}>{AREA_TYPE_LABEL[type]}</option>)}
             <option value="unclassified">Chưa phân loại</option>
+            <option value="history">Vùng ngập lịch sử</option>
           </select>
+          <button type="button" onClick={() => { refresh(); refreshHistory(); }}
+            className="rounded-lg border border-border px-4 py-2 text-sm hover:border-water/50">
+            Làm mới danh sách và lớp lịch sử
+          </button>
           <button
             type="button"
             disabled={areas === null}
@@ -272,7 +344,7 @@ export default function FloodAreaManagementScreen() {
         {historyError && (
           <div role="alert" className={BANNER_WARN}>
             <span>{historyError}</span>
-            <button type="button" onClick={() => { setHistoryLoading(true); setHistoryError(null); setHistoryRound((r) => r + 1); }} className={BTN_RETRY}>
+            <button type="button" onClick={refreshHistory} className={BTN_RETRY}>
               Thử lại
             </button>
           </div>
@@ -290,11 +362,11 @@ export default function FloodAreaManagementScreen() {
           )}
           {historyLoading && (
             <p className="py-4 text-center text-sm text-muted">
-              Đang tải dữ liệu điểm ngập lịch sử...
+              Đang đồng bộ danh sách HIST và lớp điểm/đa giác lịch sử...
             </p>
           )}
 
-          {!loading && !historyLoading && areas !== null && totalRows === 0 && (
+          {!loading && !historyLoading && areas !== null && historicalAreas !== null && totalRows === 0 && (
             <p className="py-8 text-center text-sm text-muted">
               Không có vùng ngập hoặc điểm ngập nào phù hợp.
             </p>
@@ -341,28 +413,25 @@ export default function FloodAreaManagementScreen() {
                     </tr>
                   ))}
 
-                  {filteredHistory.map((pt, idx) => {
-                    const props = pt.properties ?? {};
-                    const lng = pt.geometry?.coordinates?.[0];
-                    const lat = pt.geometry?.coordinates?.[1];
-                    const hasCoords = typeof lat === "number" && typeof lng === "number";
-                    return (
-                      <tr key={`hist-${props.id ?? idx}`} className="border-t border-border">
-                        <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-water">
-                          {props.id ?? `HIST-${idx + 1}`}
-                        </td>
-                        <td className="py-2.5 pr-3 font-medium">
-                          {props.name ?? "Điểm ngập lịch sử"}
-                        </td>
-                        <td className="py-2.5 pr-3">Vùng ngập lịch sử</td>
-                        <td className="py-2.5 pr-3 text-xs text-muted">Dữ liệu tham khảo</td>
-                        <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-muted">
-                          {hasCoords ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "—"}
-                        </td>
-                        <td className="py-2.5" />
-                      </tr>
-                    );
-                  })}
+                  {filteredHistory.map((area) => (
+                    <tr key={`hist-${area.id}`} className="border-t border-border">
+                      <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-water">{area.id}</td>
+                      <td className="py-2.5 pr-3 font-medium">{area.name}</td>
+                      <td className="py-2.5 pr-3">Vùng ngập lịch sử</td>
+                      <td className="max-w-56 break-words py-2.5 pr-3 text-xs text-muted">{area.source ?? "Chưa có nguồn"}</td>
+                      <td className="whitespace-nowrap py-2.5 pr-3 font-mono text-xs text-muted">
+                        {area.geometry ? `${area.geometry.points.length} điểm` : `${area.referencePoint.latitude.toFixed(5)}, ${area.referencePoint.longitude.toFixed(5)}`}
+                      </td>
+                      <td className="whitespace-nowrap py-2.5 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button type="button" disabled={Boolean(openingHistoricalId)} onClick={() => void openHistoricalEdit(area.id)} className={BTN_SMALL}>
+                            {openingHistoricalId === area.id ? "Đang mở..." : "Sửa"}
+                          </button>
+                          <button type="button" onClick={() => openHistoricalDelete(area)} className={BTN_DANGER}>Xóa</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -370,7 +439,7 @@ export default function FloodAreaManagementScreen() {
         </Panel>
       </div>
 
-      {dialog?.kind === "form" && (
+      {(dialog?.kind === "form" || dialog?.kind === "history-form") && (
         <AreaFormModal
           key={dialog.area?.id ?? "new"}
           area={dialog.area}
@@ -381,12 +450,13 @@ export default function FloodAreaManagementScreen() {
           onVerifyTimeout={verifyAfterTimeout}
           timeoutUncertain={timeoutUncertain}
           referencePoints={referencePoints}
+          referencePoint={dialog.kind === "history-form" ? dialog.area.referencePoint : undefined}
         />
       )}
 
-      {dialog?.kind === "delete" && (
+      {(dialog?.kind === "delete" || dialog?.kind === "history-delete") && (
         <ConfirmDialog
-          title="Xóa vùng?"
+          title={dialog.kind === "history-delete" ? "Xóa điểm/vùng ngập lịch sử?" : "Xóa vùng?"}
           confirmLabel="Xóa vùng"
           tone="danger"
           busy={busy}
@@ -394,7 +464,8 @@ export default function FloodAreaManagementScreen() {
           onConfirm={confirmDelete}
           onCancel={closeDialog}
         >
-          <p>Bạn sắp xóa &ldquo;{dialog.area.name}&rdquo;. Thao tác này không thể hoàn tác.</p>
+          <p>Bạn sắp xóa &ldquo;{dialog.area.name}&rdquo; (ID: {dialog.area.id}). Thao tác này không thể hoàn tác trên giao diện.</p>
+          {dialog.kind === "history-delete" && <p className="mt-2 text-xs text-warn">Xóa mềm sẽ loại ID này khỏi danh sách và khỏi cả điểm lẫn đa giác lịch sử. Dữ liệu gốc không bị chỉnh sửa trực tiếp.</p>}
 
         </ConfirmDialog>
       )}

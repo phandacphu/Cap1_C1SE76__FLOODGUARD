@@ -18,6 +18,7 @@ interface Props {
   onChange: (points: GeoPoint[]) => void;
   /** Điểm tham khảo (27 điểm ngập lịch sử), chỉ để xem. */
   referencePoints?: GeoPoint[];
+  referencePoint?: GeoPoint;
   disabled?: boolean;
 }
 
@@ -71,7 +72,7 @@ function FitToPoints({ points }: { points: GeoPoint[] }) {
   return null;
 }
 
-export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY, disabled = false }: Props) {
+export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY, referencePoint, disabled = false }: Props) {
   const latlngs = points.map((p): L.LatLngTuple => [p.latitude, p.longitude]);
   const shape = { color: COLOR, weight: 2, fillColor: COLOR, fillOpacity: 0.2 };
 
@@ -92,8 +93,8 @@ export function PolygonDrawMap({ points, onChange, referencePoints = EMPTY, disa
 
       <div className="isolate h-80 w-full overflow-hidden rounded-lg border border-border">
         <MapContainer
-          center={CENTER}
-          zoom={13}
+          center={referencePoint ? ([referencePoint.latitude, referencePoint.longitude] as L.LatLngTuple) : CENTER}
+          zoom={referencePoint ? 15 : 13}
           style={{ height: "100%", width: "100%", background: "#1e293b" }}
         >
           <TileLayer
