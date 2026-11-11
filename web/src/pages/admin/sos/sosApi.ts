@@ -2,16 +2,12 @@ import { apiGet, ApiError } from "../../../api/http";
 import { parseApiDetail, parseApiList, parseApiSummary } from "./sosContract";
 import type { SosFilters, SosItem, SosListData, SosSummary } from "./sosTypes";
 
-/** Explicit opt-in. Vite eliminates the mock import from a production build. */
+/** Deliberately opt-in in development only. API errors never fall back to mock records. */
 export const SOS_MOCK_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ADMIN_SOS_MOCK === "true";
 
 export function sosError(error: unknown): { status: number; message: string } {
   if (error instanceof ApiError) return { status: error.status, message: error.message };
   return { status: 0, message: error instanceof Error ? error.message : "Không tải được dữ liệu SOS." };
-}
-
-function isAccessError(error: unknown): boolean {
-  return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
 function requireToken(token: string | null): asserts token is string {
@@ -23,37 +19,56 @@ async function mockData() {
   return import("./sosMock");
 }
 
-export async function fetchSosSummary(token: string | null): Promise<SosSummary> {
+/** Convert a selected Vietnam calendar day into an explicit inclusive UTC boundary. */
+function dateBoundary(day: string, endOfDay: boolean): string {
+  const hhmmss = endOfDay ? "23:59:59.999" : "00:00:00.000";
+  const timestamp = new Date(`${day}T${hhmmss}+07:00`);
+  if (!Number.isFinite(timestamp.getTime())) throw new ApiError("Ngày lọc SOS không hợp lệ.", 400);
+  return timestamp.toISOString();
+}
+
+function sosQuery(filters: SosFilters): string {
+  const query = new URLSearchParams();
+  if (filters.condition !== "all") query.set("state", filters.condition);
+  query.set("sort", filters.sort);
+  if (filters.from) query.set("from", dateBoundary(filters.from, false));
+  if (filters.to) query.set("to", dateBoundary(filters.to, true));
+  return `?${query.toString()}`;
+}
+
+export async function fetchSosSummary(token: string | null, filters?: SosFilters): Promise<SosSummary> {
   requireToken(token);
   if (SOS_MOCK_ENABLED) {
     const mock = await mockData();
-    return mock.summarizeMockSos(mock.getMockSos());
+    return mock.summarizeMockSos(mock.filterMockSos(mock.getMockSos(), {
+      ...(filters ?? { condition: "all", from: "", to: "", sort: "newest", search: "" }), search: "",
+    }));
   }
-  return parseApiSummary(await apiGet<unknown>("/admin/rescue-requests/summary", token));
+  return parseApiSummary(await apiGet<unknown>(`/admin/rescue-requests/summary${filters ? sosQuery(filters) : ""}`, token));
 }
 
 export async function fetchSosList(token: string | null, filters: SosFilters): Promise<SosListData> {
   requireToken(token);
   if (SOS_MOCK_ENABLED) {
     const mock = await mockData();
-    const items = mock.filterMockSos(mock.getMockSos(), filters);
+    // Local text search is applied by the screen, not to the server-scope summary.
+    const items = mock.filterMockSos(mock.getMockSos(), { ...filters, search: "" });
     return { items, summary: mock.summarizeMockSos(items), summaryError: null, source: "mock" };
   }
-  if (filters.condition !== "all" || filters.from || filters.to || filters.search.trim()) {
-    throw new Error("Bộ lọc này đang chờ API hỗ trợ.");
-  }
-  // Both requests refer to the whole dataset; sort affects only ordering.
+  const query = sosQuery(filters);
+  // Both endpoints receive exactly the same server-side state/date/sort scope.
   const [list, summary] = await Promise.allSettled([
-    apiGet<unknown>(`/admin/rescue-requests?sort=${filters.sort}`, token).then(parseApiList),
-    fetchSosSummary(token),
+    apiGet<unknown>(`/admin/rescue-requests${query}`, token).then(parseApiList),
+    fetchSosSummary(token, filters),
   ]);
-  // Access failures must clear cached rows even if the other request also failed.
-  if (list.status === "rejected" && isAccessError(list.reason)) throw list.reason;
-  if (summary.status === "rejected" && isAccessError(summary.reason)) throw summary.reason;
+  // Do not display stale rows after losing authentication/authorization.
+  const accessFailure = [list, summary].find(result =>
+    result.status === "rejected" && result.reason instanceof ApiError &&
+    (result.reason.status === 401 || result.reason.status === 403));
+  if (accessFailure?.status === "rejected") throw accessFailure.reason;
   if (list.status === "rejected") throw list.reason;
-  if (summary.status === "rejected") {
-    return { items: list.value, summary: null, summaryError: sosError(summary.reason), source: "api" };
-  }
+  if (summary.status === "rejected") throw summary.reason;
+  // Independent reads can briefly differ if Rescue changes a status between requests.
   return { items: list.value, summary: summary.value, summaryError: null, source: "api" };
 }
 
