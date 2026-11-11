@@ -57,19 +57,49 @@ export async function fetchSosList(token: string | null, filters: SosFilters): P
   }
   const query = sosQuery(filters);
   // Both endpoints receive exactly the same server-side state/date/sort scope.
-  const [list, summary] = await Promise.allSettled([
-    apiGet<unknown>(`/admin/rescue-requests${query}`, token).then(parseApiList),
-    fetchSosSummary(token, filters),
-  ]);
-  // Do not display stale rows after losing authentication/authorization.
-  const accessFailure = [list, summary].find(result =>
-    result.status === "rejected" && result.reason instanceof ApiError &&
-    (result.reason.status === 401 || result.reason.status === 403));
-  if (accessFailure?.status === "rejected") throw accessFailure.reason;
-  if (list.status === "rejected") throw list.reason;
-  if (summary.status === "rejected") throw summary.reason;
-  // Independent reads can briefly differ if Rescue changes a status between requests.
-  return { items: list.value, summary: summary.value, summaryError: null, source: "api" };
+  // Neither response is a prerequisite for starting the other request. Only the
+  // list controls whether rows are available; non-access summary failures are
+  // visible separately as unknown stats (never 0 or last-known values).
+  // Any confirmed 401/403 rejects immediately, even if the peer GET is stalled.
+  return new Promise<SosListData>((resolve, reject) => {
+    let listDone = false;
+    let summaryDone = false;
+    let settled = false;
+    let listFailed = false;
+    let listError: unknown;
+    let items: SosItem[] = [];
+    let summary: SosSummary | null = null;
+    let summaryError: SosListData["summaryError"] = null;
+
+    const rejectAccess = (error: unknown): boolean => {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        if (!settled) { settled = true; reject(error); }
+        return true;
+      }
+      return false;
+    };
+    const finish = () => {
+      if (settled || !listDone || !summaryDone) return;
+      settled = true;
+      if (listFailed) reject(listError);
+      else resolve({ items, summary, summaryError, source: "api" });
+    };
+
+    void apiGet<unknown>(`/admin/rescue-requests${query}`, token).then(parseApiList).then(
+      value => { if (settled) return; items = value; listDone = true; finish(); },
+      error => {
+        if (rejectAccess(error) || settled) return;
+        listFailed = true; listError = error; listDone = true; finish();
+      },
+    );
+    void fetchSosSummary(token, filters).then(
+      value => { if (settled) return; summary = value; summaryDone = true; finish(); },
+      error => {
+        if (rejectAccess(error) || settled) return;
+        summary = null; summaryError = sosError(error); summaryDone = true; finish();
+      },
+    );
+  });
 }
 
 export async function fetchSosDetail(token: string | null, id: string): Promise<SosItem> {

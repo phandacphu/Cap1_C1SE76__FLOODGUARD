@@ -61,6 +61,10 @@ export function SosMonitoringScreen() {
         Đang giữ dữ liệu lần tải thành công lúc {formatSosTime(resource.updatedAt)}. Chưa xác nhận có cập nhật mới.
       </p>}
       <SosSummaryCards summary={data?.summary ?? null} loading={resource.loading} />
+      {data?.summaryError && !resource.loading && <div role="alert" className="rounded-xl border border-warn/50 bg-warn/10 p-4 text-sm text-warn">
+        Không tải được thống kê SOS: {data.summaryError.message}.
+        Danh sách SOS đã tải thành công vẫn được hiển thị. Các số liệu thống kê chưa được xác nhận; bấm Làm mới để thử lại.
+      </div>}
       <section className="rounded-2xl border border-border bg-card/80 p-4" aria-label="Bộ lọc SOS">
         <form onSubmit={event => { event.preventDefault(); if (!invalidDates) applyFilters(draft); }}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
