@@ -24,11 +24,11 @@ try {
 } catch (error) { servers.forEach(server => server.kill()); throw error; }
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
   headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-gl=angle", "--use-angle=swiftshader"] });
-const evidence = process.env.SOS_EVIDENCE_DIR || fileURLToPath(new URL("../../docs/evidence/admin-sos/", import.meta.url));
+const evidence = process.env.SOS_EVIDENCE_DIR || fileURLToPath(new URL("../../docs/evidence/admin-sos/pr131-review/", import.meta.url));
 await mkdir(evidence, { recursive: true });
 const results = [];
 const errors = [];
-const item = (id = "API-SOS-01") => ({ id, residentId: "API-RESIDENT-01", status: "submitted", urgency: "high",
+const item = (id = "API-SOS-01") => ({ id, residentId: "API-RESIDENT-01", state: "active", status: "submitted", situations: ["trapped"], initialLocation: { latitude: 16.04, longitude: 108.19 }, locationCapturedAt: "2026-11-07T01:59:00Z", locationReceivedAt: "2026-11-07T02:00:00Z", statusHistory: [],
   location: { latitude: 16.05, longitude: 108.2 }, numberOfPeople: 3, note: "HTTP fixture for API-mode UI checks",
   createdAt: "2026-11-07T01:00:00Z", updatedAt: "2026-11-07T02:00:00Z" });
 
@@ -39,7 +39,7 @@ async function open(port = 5175, path = "/admin/sos", overrides = {}, session = 
     localStorage.setItem("floodguard_token", "synthetic-ui-fixture-not-a-backend-token");
     localStorage.setItem("floodguard_user", JSON.stringify({ id: "synthetic-ui-fixture", fullName: "UI fixture", role }));
   }, session);
-  const state = { listStatus: 200, summaryStatus: 200, detailStatus: 200, total: 40,
+  const state = { listStatus: 200, summaryStatus: 200, detailStatus: 200, total: 40, active: 20, rescued: 15, legacyOther: 5,
     items: [item()], detail: item(), listDelay: 0, failNetwork: false, ...overrides };
   const calls = [];
   await context.route("http://127.0.0.1:5999/api/**", async route => {
@@ -48,7 +48,10 @@ async function open(port = 5175, path = "/admin/sos", overrides = {}, session = 
     assert.equal(request.method(), "GET", "Admin SOS must never mutate API data");
     if (state.failNetwork) return route.abort("connectionrefused");
     let status = 200, data = {};
-    if (url.pathname === "/api/admin/rescue-requests/summary") { status = state.summaryStatus; data = { total: state.total, byStatus: { submitted: 25, assisted: 15 } }; }
+    if (url.pathname === "/api/admin/rescue-requests/summary") { status = state.summaryStatus; data = state.summaryData ?? (state.total === 0
+        ? { total: 0, active: 0, rescued: 0, legacyOther: 0 }
+        : { total: state.total, active: state.active, rescued: state.rescued, legacyOther: state.legacyOther });
+      if (state.summaryDelay) await new Promise(resolve => setTimeout(resolve, state.summaryDelay)); }
     else if (url.pathname === "/api/admin/rescue-requests") {
       status = state.listStatus;
       data = { rescueRequests: structuredClone(state.bySort ? state.bySort[url.searchParams.get("sort")] : state.items) };
@@ -84,16 +87,16 @@ try {
     await visible(page.getByText("DEMO-SOS-003", { exact: true }));
     await visible(page.getByText("DỮ LIỆU MẪU · CHỈ MÔI TRƯỜNG PHÁT TRIỂN", { exact: true }));
     assert.equal(await page.locator("tbody tr").count(), 3);
-    assert.equal(await page.getByRole("region", { name: "Thống kê SOS" }).count(), 1);
-    const createdAt = await page.locator("tbody tr").filter({ hasText: "DEMO-SOS-002" }).locator("td").nth(3).innerText();
+    assert.equal(await page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" }).count(), 1);
+    const createdAt = await page.locator("tbody tr").filter({ hasText: "DEMO-SOS-002" }).locator("td").nth(2).innerText();
     await shot(page, "01-mock-list");
     await page.getByLabel("Tình trạng SOS", { exact: true }).selectOption("rescued");
     await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
-    await visible(page.getByText("1 dòng hiển thị · Đã áp dụng bộ lọc", { exact: true }));
+    await visible(page.getByText("1 / 1 dòng từ API · Đã áp dụng bộ lọc", { exact: true }));
     assert.equal(await page.locator("tbody tr").count(), 1);
-    const stats = page.getByRole("region", { name: "Thống kê SOS" });
-    assert.match(await stats.innerText(), /Tổng số SOS\s+1/);
-    assert.match(await stats.innerText(), /Còn hoạt động \/ chờ cứu\s+0/);
+    const stats = page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" });
+    assert.match(await stats.innerText(), /Tổng SOS\s+1/);
+    assert.match(await stats.innerText(), /Chờ cứu hộ\s+0/);
     await shot(page, "02-mock-filter");
     await page.getByRole("link", { name: "Xem chi tiết SOS DEMO-SOS-002" }).click();
     await visible(page.getByRole("heading", { name: "Kết quả cứu hộ · Đã cứu" }));
@@ -112,7 +115,7 @@ try {
   await run("mock no matches and invalid dates", async () => {
     const { context, page } = await open(5174);
     await visible(page.getByText("DEMO-SOS-003", { exact: true }));
-    await page.getByLabel("Mã SOS, tên hoặc số điện thoại", { exact: true }).fill("not-found");
+    await page.getByLabel("Tìm mã SOS hoặc mã Resident", { exact: true }).fill("not-found");
     await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
     await visible(page.getByRole("heading", { name: "Không có kết quả theo bộ lọc" }));
     await shot(page, "04-mock-no-matches");
@@ -121,18 +124,23 @@ try {
     assert.equal(await page.getByRole("button", { name: "Áp dụng", exact: true }).isDisabled(), true);
     await context.close();
   });
-  await run("API loading, summary total, disabled unsupported filters and detail location refresh", async () => {
-    const { context, page, state } = await open(5175, "/admin/sos", { listDelay: 1000 });
-    await visible(page.getByRole("status").filter({ hasText: "Đang tải dữ liệu SOS" }));
+  await run("API v2 filters enabled, detail GPS refresh and offline fallback", async () => {
+    const { context, page, state, calls } = await open(5175, "/admin/sos", { listDelay: 250 });
     await visible(page.getByText("API-SOS-01", { exact: true }));
-    const stats = page.getByRole("region", { name: "Thống kê SOS" });
-    assert.match(await stats.innerText(), /Tổng số SOS\s+40/);
-    for (const name of ["Tình trạng SOS", "Gửi từ ngày", "Đến hết ngày", "Mã SOS, tên hoặc số điện thoại"]) assert.equal(await page.getByLabel(name, { exact: true }).isDisabled(), true);
-    assert.equal(await page.getByText("Đã gửi — chờ cứu hộ", { exact: true }).count(), 0, "legacy submitted must not be mapped");
-    await shot(page, "05-api-contract-pending");
+    const stats = page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" });
+    assert.match(await stats.innerText(), /Tổng SOS\s+40/);
+    for (const name of ["Tình trạng SOS", "Gửi từ ngày", "Đến hết ngày", "Tìm mã SOS hoặc mã Resident"])
+      assert.equal(await page.getByLabel(name, { exact: true }).isDisabled(), false);
+    await page.getByLabel("Tình trạng SOS", { exact: true }).selectOption("active");
+    await page.getByLabel("Gửi từ ngày", { exact: true }).fill("2026-11-07");
+    await page.getByLabel("Đến hết ngày", { exact: true }).fill("2026-11-08");
+    await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
+    await page.waitForFunction(() => document.body.innerText.includes("Đã áp dụng bộ lọc"));
+    assert.ok(calls.some(call => call.path.includes("state=active") && call.path.includes("from=") && call.path.includes("to=")));
+    await shot(page, "05-v2-api-filters-http-fixture");
     await page.getByRole("link", { name: "Xem chi tiết SOS API-SOS-01" }).click();
     await visible(page.getByText("16.050000, 108.200000", { exact: true }));
-    state.detail = { ...item(), location: { latitude: 16.06, longitude: 108.21 } };
+    state.detail = { ...item(), location: { latitude: 16.06, longitude: 108.21 }, locationReceivedAt: "2026-11-07T03:00:00Z" };
     await page.getByRole("button", { name: "Làm mới chi tiết", exact: true }).click();
     await visible(page.getByText("16.060000, 108.210000", { exact: true }));
     state.failNetwork = true;
@@ -140,7 +148,7 @@ try {
     await visible(page.getByRole("alert"));
     await visible(page.getByText("16.060000, 108.210000", { exact: true }));
     await visible(page.getByRole("status").filter({ hasText: "Đang giữ thông tin và vị trí" }));
-    await shot(page, "06-api-refresh-error-keeps-location");
+    await shot(page, "06-v2-api-refresh-offline-http-fixture");
     await context.close();
   });
   await run("API empty is distinct from load error; retry recovers", async () => {
@@ -148,18 +156,27 @@ try {
     await visible(page.getByRole("alert"));
     assert.equal(await page.getByRole("heading", { name: "Không có SOS", exact: true }).count(), 0);
     assert.equal(await page.getByText("DEMO-SOS-003", { exact: true }).count(), 0);
-    assert.doesNotMatch(await page.getByRole("region", { name: "Thống kê SOS" }).innerText(), /Tổng số SOS\s+0/);
+    assert.doesNotMatch(await page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" }).innerText(), /Tổng SOS\s+0/);
     await shot(page, "07-api-load-error");
     state.listStatus = 200; state.items = []; state.total = 0;
     await page.getByRole("button", { name: "Thử lại", exact: true }).click();
     await visible(page.getByRole("heading", { name: "Không có SOS", exact: true }));
     await shot(page, "08-api-empty"); await context.close();
   });
-  await run("summary-only failure keeps rows and exposes a separate retryable statistics error", async () => {
-    const { context, page } = await open(5175, "/admin/sos", { summaryStatus: 500 });
+  await run("summary 500 on first load and refresh keeps new successful SOS rows", async () => {
+    const { context, page, state } = await open(5175, "/admin/sos", { summaryStatus: 500 });
     await visible(page.getByText("API-SOS-01", { exact: true }));
     await visible(page.getByRole("alert").filter({ hasText: "Không tải được thống kê SOS" }));
-    assert.doesNotMatch(await page.getByRole("region", { name: "Thống kê SOS" }).innerText(), /Tổng số SOS\s+0/);
+    const stats = page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" });
+    assert.doesNotMatch(await stats.innerText(), /Tổng SOS\s+0/);
+    assert.equal(await page.locator("tbody tr").count(), 1);
+    state.items = [{ ...item("API-RESCUED-NEW"), state: "rescued", completedBy: "staff-1", completedAt: "2026-11-08T02:00:00Z" }];
+    await page.getByRole("button", { name: "Làm mới", exact: true }).click();
+    await visible(page.getByText("API-RESCUED-NEW", { exact: true }));
+    assert.equal(await page.getByText("API-SOS-01", { exact: true }).count(), 0);
+    await visible(page.getByRole("alert").filter({ hasText: "Không tải được thống kê SOS" }));
+    assert.doesNotMatch(await stats.innerText(), /Tổng SOS\s+0/);
+    await shot(page, "12-v2-summary-500-rows-fresh-http-fixture");
     await context.close();
   });
   for (const [status, message] of [
@@ -184,10 +201,34 @@ try {
         if (status === 401) await visible(alert.getByRole("button", { name: "Đăng nhập lại", exact: true }));
         else await visible(alert.getByRole("link", { name: "Về tổng quan", exact: true }));
         assert.deepEqual(calls.slice(beforeRefresh).map(call => call.path).sort(),
-          ["/api/admin/rescue-requests/summary", "/api/admin/rescue-requests?sort=newest"].sort());
+          ["/api/admin/rescue-requests/summary?sort=newest", "/api/admin/rescue-requests?sort=newest"].sort());
       } finally {
         await context.close();
       }
+    });
+  }
+
+  for (const status of [401, 403]) for (const accessFrom of ["summary", "list"]) {
+    await run(`early ${status} from ${accessFrom} clears cached rows before delayed peer`, async () => {
+      const { context, page, state } = await open(5175);
+      try {
+        const row = page.getByText("API-SOS-01", { exact: true });
+        await visible(row);
+        state.summaryStatus = accessFrom === "summary" ? status : 200;
+        state.listStatus = accessFrom === "list" ? status : 200;
+        state.summaryDelay = accessFrom === "list" ? 1600 : 0;
+        state.listDelay = accessFrom === "summary" ? 1600 : 0;
+        const start = Date.now();
+        await page.getByRole("button", { name: "Làm mới", exact: true }).click();
+        const alert = page.getByRole("alert");
+        await visible(alert);
+        assert.ok(Date.now() - start < 1350, "must not wait for slow peer before hiding rows");
+        assert.equal(await row.count(), 0);
+        assert.doesNotMatch(await page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" }).innerText(), /Tổng SOS\s+40/);
+        await page.waitForTimeout(1850);
+        assert.equal(await row.count(), 0, "late peer success cannot restore protected rows");
+        assert.equal(await alert.count(), 1);
+      } finally { await context.close(); }
     });
   }
   await run("401, 403 and 404 have distinct states and hide cached protected data", async () => {
@@ -208,8 +249,8 @@ try {
     }
   });
   await run("an invalid location retains the SOS and shows a safe map fallback", async () => {
-    const { context, page } = await open(5175, "/admin/sos/API-SOS-01", { detail: { ...item(), location: { latitude: 91, longitude: 108 } } });
-    await visible(page.getByText("Chưa có tọa độ hợp lệ", { exact: true }));
+    const { context, page } = await open(5175, "/admin/sos/API-SOS-01", { detail: { ...item(), location: { latitude: 91, longitude: 108 }, initialLocation: null } });
+    await visible(page.getByText("Tọa độ chưa được cung cấp hoặc không hợp lệ. Không thể hiển thị vị trí trên bản đồ.", { exact: true }));
     await visible(page.getByRole("heading", { name: "Thông tin SOS", exact: true }));
     assert.equal(await page.locator(".leaflet-container").count(), 0); await context.close();
   });
@@ -239,7 +280,7 @@ try {
     await apply.click();
     await apply.click();
     await visible(refresh);
-    const expected = ["/api/admin/rescue-requests/summary", "/api/admin/rescue-requests?sort=oldest"].sort();
+    const expected = ["/api/admin/rescue-requests/summary?sort=oldest", "/api/admin/rescue-requests?sort=oldest"].sort();
     assert.deepEqual(calls.slice(initialCount).map(call => call.path).sort(), expected);
 
     const countBeforeRefresh = calls.length;
@@ -295,7 +336,7 @@ try {
     const { context, page, calls } = await open(5174, "/admin/dashboard");
     await visible(page.getByText("DỮ LIỆU MẪU · CHỈ MÔI TRƯỜNG PHÁT TRIỂN", { exact: true }));
     await visible(page.getByText("Toàn bộ dữ liệu mẫu · Chỉ phát triển", { exact: true }));
-    assert.match(await page.getByRole("region", { name: "Thống kê SOS" }).innerText(), /Tổng số SOS\s+3/);
+    assert.match(await page.getByRole("region", { name: "Thống kê SOS theo bộ lọc API" }).innerText(), /Tổng SOS\s+3/);
     assert.equal(calls.filter(call => call.path.startsWith("/api/admin/rescue-requests")).length, 0);
     await context.close();
   });
@@ -303,8 +344,8 @@ try {
     const { context, page, calls } = await open(5176);
     await visible(page.getByText("API-SOS-01", { exact: true }));
     assert.equal(await page.getByText("DEMO-SOS-003", { exact: true }).count(), 0);
-    assert.equal(await page.getByLabel("Tình trạng SOS", { exact: true }).isDisabled(), true);
-    assert.ok(calls.some(call => call.path.endsWith("/summary"))); await context.close();
+    assert.equal(await page.getByLabel("Tình trạng SOS", { exact: true }).isDisabled(), false);
+    assert.ok(calls.some(call => call.path.split("?")[0] === "/api/admin/rescue-requests/summary")); await context.close();
   });
   assert.deepEqual(errors, [], "no unhandled browser errors");
 } finally {

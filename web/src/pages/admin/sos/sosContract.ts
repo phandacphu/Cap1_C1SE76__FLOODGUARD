@@ -1,4 +1,4 @@
-import type { SosItem, SosSummary } from "./sosTypes.ts";
+import type { SosCondition, SosHistoryEvent, SosItem, SosSummary } from "./sosTypes";
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -21,12 +21,37 @@ export function parseLocation(value: unknown): SosItem["location"] {
   return { latitude: point.latitude, longitude: point.longitude };
 }
 
-/** Adapt only the documented current API. Never infer new conditions from legacy status. */
+function parseState(value: unknown): SosCondition {
+  if (value === "active" || value === "rescued" || value === "legacy_other") return value;
+  throw new Error("SOS không có trường state hợp lệ theo hợp đồng API v2.");
+}
+
+function parseHistory(value: unknown): SosHistoryEvent[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("Lịch sử trạng thái SOS sai định dạng.");
+  return value.map((entry, index) => {
+    const item = asRecord(entry);
+    if (!item) throw new Error(`Dòng lịch sử SOS thứ ${index + 1} sai định dạng.`);
+    return {
+      id: optionalText(item.id) ?? `history-${index}`,
+      oldStatus: optionalText(item.oldStatus),
+      newStatus: optionalText(item.newStatus),
+      changedBy: optionalText(item.changedBy),
+      note: optionalText(item.note),
+      changedAt: optionalDate(item.changedAt),
+    };
+  });
+}
+
+/** Read documented fields. Legacy missing facts remain null; never infer urgency/contact/GPS time. */
 export function parseApiSos(value: unknown): SosItem {
   const item = asRecord(value);
   if (!item || typeof item.id !== "string" || !item.id.trim()) {
     throw new Error("Dữ liệu SOS từ máy chủ không hợp lệ.");
   }
+  const situations = item.situations == null ? null :
+    Array.isArray(item.situations) && item.situations.every(value => typeof value === "string")
+      ? item.situations as string[] : null;
   return {
     id: item.id,
     residentId: optionalText(item.residentId),
@@ -34,18 +59,21 @@ export function parseApiSos(value: unknown): SosItem {
     contact: null,
     createdAt: optionalDate(item.createdAt),
     updatedAt: optionalDate(item.updatedAt),
-    // The new form, identity, GPS timestamp and completion fields have no agreed response contract yet.
-    situations: null,
-    numberOfPeople: typeof item.numberOfPeople === "number" && Number.isInteger(item.numberOfPeople) &&
+    situations,
+    numberOfPeople: typeof item.numberOfPeople === "number" && Number.isSafeInteger(item.numberOfPeople) &&
       item.numberOfPeople > 0 ? item.numberOfPeople : null,
-    waterLevel: null,
+    waterLevel: optionalText(item.waterLevel),
     note: optionalText(item.note),
-    condition: null,
+    condition: parseState(item.state),
+    status: optionalText(item.status),
     location: parseLocation(item.location),
-    // updatedAt is a request timestamp, not a GPS timestamp.
+    initialLocation: parseLocation(item.initialLocation),
+    locationCapturedAt: optionalDate(item.locationCapturedAt),
+    locationReceivedAt: optionalDate(item.locationReceivedAt),
     locationUpdatedAt: null,
     confirmedBy: null,
-    completedAt: null,
+    completedBy: optionalText(item.completedBy),
+    completedAt: optionalDate(item.completedAt),
     source: "api",
   };
 }
@@ -64,14 +92,27 @@ export function parseApiList(value: unknown): SosItem[] {
 
 export function parseApiDetail(value: unknown): SosItem {
   const data = asRecord(value);
-  return parseApiSos(data?.rescueRequest);
+  const raw = asRecord(data?.rescueRequest);
+  const item = parseApiSos(raw);
+  return { ...item, statusHistory: parseHistory(raw?.statusHistory) };
+}
+
+function count(value: unknown, name: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Thống kê SOS không có ${name} hợp lệ.`);
+  }
+  return value;
 }
 
 export function parseApiSummary(value: unknown): SosSummary {
   const data = asRecord(value);
-  if (!data || typeof data.total !== "number" || !Number.isSafeInteger(data.total) || data.total < 0) {
-    throw new Error("Thống kê SOS từ máy chủ không hợp lệ.");
+  if (!data) throw new Error("Thống kê SOS từ máy chủ không hợp lệ.");
+  const total = count(data.total, "total");
+  const active = count(data.active, "active");
+  const rescued = count(data.rescued, "rescued");
+  const legacyOther = count(data.legacyOther, "legacyOther");
+  if (total !== active + rescued + legacyOther) {
+    throw new Error("Thống kê SOS không khớp tổng các nhóm trạng thái.");
   }
-  // byStatus belongs to the legacy flow; its buckets are deliberately not mapped.
-  return { total: data.total, active: null, rescued: null, source: "api" };
+  return { total, active, rescued, legacyOther, source: "api" };
 }

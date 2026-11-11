@@ -11,9 +11,8 @@ export function SosModeNotice({ mock }: { mock: boolean }) {
     </div>
   ) : (
     <div role="note" className="rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-muted">
-      <strong className="text-text">Nguồn: API thật · Đang chờ hoàn thiện dữ liệu SOS mới</strong>
-      <p className="mt-1">Tình trạng mới, tình huống, mức nước, liên hệ và thời điểm cập nhật GPS chưa được tích hợp.
-        Thông tin chưa được cung cấp sẽ hiển thị rõ; không suy đoán từ trạng thái cũ.</p>
+      <strong className="text-text">Nguồn: Backend SOS v2 · Admin chỉ xem và theo dõi</strong>
+      <p className="mt-1">Thông tin liên hệ chưa có trong API Admin hiện tại. Dữ liệu cũ có thể thiếu tình huống, GPS hoặc người xác nhận; không tự suy đoán giá trị.</p>
     </div>
   );
 }
@@ -24,7 +23,8 @@ export function SosConditionBadge({ condition }: { condition: SosCondition | nul
       condition === "rescued" ? "border-safe/30 bg-safe/10 text-safe" :
       condition === "active" ? "border-warn/30 bg-warn/10 text-warn" : "border-border text-muted"
     }`}>
-      {condition === "rescued" ? "Đã cứu" : condition === "active" ? "Đã gửi — chờ cứu hộ" : "Chưa có dữ liệu tình trạng mới"}
+      {condition === "rescued" ? "Đã cứu" : condition === "active" ? "Chờ cứu hộ" :
+        condition === "legacy_other" ? "Trạng thái cũ khác" : "Chưa có trạng thái"}
     </span>
   );
 }
@@ -36,7 +36,8 @@ export function SosErrorPanel({ error, retry }: {
   const navigate = useNavigate();
   const message = error.status === 401 ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." :
     error.status === 403 ? "Bạn không có quyền xem dữ liệu Admin SOS." :
-    error.status === 404 ? "SOS không tồn tại hoặc không còn được cung cấp." : error.message;
+    error.status === 404 ? "SOS không tồn tại hoặc không còn được cung cấp." :
+    error.status === 400 ? `Tham số hoặc hợp đồng API SOS chưa hợp lệ: ${error.message}` : error.message;
   return (
     <div role="alert" className="rounded-xl border border-sos/40 bg-sos/10 p-4">
       <div className="flex items-start gap-3"><Icon name="alert" className="mt-0.5 h-5 w-5 shrink-0 text-sos" />

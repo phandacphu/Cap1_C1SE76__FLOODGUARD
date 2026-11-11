@@ -5,7 +5,7 @@ import ts from "typescript";
 import { parseApiList, parseApiDetail, parseApiSos, parseApiSummary, parseLocation } from "../src/pages/admin/sos/sosContract.ts";
 import { createMockSos, filterMockSos, summarizeMockSos } from "../src/pages/admin/sos/sosMock.ts";
 
-const item = (id = "sos-1") => ({ id, residentId: "resident-1", status: "submitted", urgency: "critical",
+const item = (id = "sos-1") => ({ id, residentId: "resident-1", state: "active", status: "submitted", situations: ["trapped"], initialLocation: { latitude: 16.04, longitude: 108.19 }, locationCapturedAt: "2026-11-07T01:59:00Z", locationReceivedAt: "2026-11-07T02:00:00Z",
   location: { latitude: 16.05, longitude: 108.2 }, numberOfPeople: 3, note: "Need help",
   createdAt: "2026-11-07T01:00:00Z", updatedAt: "2026-11-07T02:00:00Z" });
 const defaults = { condition: "all", from: "", to: "", search: "", sort: "newest" };
@@ -19,13 +19,15 @@ test("malformed list data is an error, never a successful empty list", () => {
   }
   assert.throws(() => parseApiList({ rescueRequests: [item(), item()] }), /trùng/);
 });
-test("none of the legacy statuses is guessed to mean waiting or rescued", () => {
+test("legacy status text never overrides documented v2 state", () => {
   for (const status of ["submitted", "received", "in_progress", "assisted", "cancelled", "future"]) {
-    const parsed = parseApiSos({ ...item(), status, assignment: { rescueStaffId: "staff-1" } });
-    assert.equal(parsed.condition, null);
+    const parsed = parseApiSos({ ...item(), state: "legacy_other", status, assignment: { rescueStaffId: "staff-1" } });
+    assert.equal(parsed.condition, "legacy_other");
     assert.equal(parsed.confirmedBy, null);
     assert.equal(parsed.completedAt, null);
   }
+  assert.throws(() => parseApiSos({ ...item(), state: undefined }), /state/);
+  assert.throws(() => parseApiSos({ ...item(), state: "submitted" }), /state/);
 });
 test("request updatedAt does not become GPS or completion time", () => {
   const parsed = parseApiDetail({ rescueRequest: item() });
@@ -34,7 +36,7 @@ test("request updatedAt does not become GPS or completion time", () => {
   assert.equal(parsed.completedAt, null);
 });
 test("missing new-contract information stays missing instead of becoming fabricated identity or numbers", () => {
-  const parsed = parseApiSos({ id: "sos-1", numberOfPeople: -1 });
+  const parsed = parseApiSos({ id: "sos-1", state: "active", numberOfPeople: -1 });
   for (const key of ["senderName", "contact", "situations", "waterLevel", "numberOfPeople", "location"]) assert.equal(parsed[key], null);
 });
 test("coordinates require finite numbers and valid geographic ranges; zero is valid", () => {
@@ -44,20 +46,23 @@ test("coordinates require finite numbers and valid geographic ranges; zero is va
     assert.equal(parseLocation(point), null);
   }
 });
-test("summary uses the server total and does not map old byStatus buckets", () => {
-  assert.deepEqual(parseApiSummary({ total: 120, byStatus: { submitted: 20, assisted: 100 } }),
-    { total: 120, active: null, rescued: null, source: "api" });
-  assert.equal(parseApiSummary({ total: 0 }).total, 0);
-  for (const total of [null, "0", NaN, Infinity, -1, 0.5]) assert.throws(() => parseApiSummary({ total }));
+test("v2 summary requires all state buckets and never trusts legacy byStatus", () => {
+  assert.deepEqual(parseApiSummary({ total: 7, active: 3, rescued: 2, legacyOther: 2 }),
+    { total: 7, active: 3, rescued: 2, legacyOther: 2, source: "api" });
+  assert.equal(parseApiSummary({ total: 0, active: 0, rescued: 0, legacyOther: 0 }).total, 0);
+  assert.throws(() => parseApiSummary({ total: 7, byStatus: { submitted: 3, assisted: 4 } }));
+  assert.throws(() => parseApiSummary({ total: 7, active: 3, rescued: 2, legacyOther: 1 }), /khớp/);
+  for (const total of [null, "0", NaN, Infinity, -1, 0.5])
+    assert.throws(() => parseApiSummary({ total, active: 0, rescued: 0, legacyOther: 0 }));
 });
 test("mock summary and rows use the same entire filtered dataset", () => {
   const source = createMockSos(new Date("2026-11-07T08:00:00Z"));
-  assert.deepEqual(summarizeMockSos(source), { total: 3, active: 2, rescued: 1, source: "mock" });
+  assert.deepEqual(summarizeMockSos(source), { total: 3, active: 2, rescued: 1, legacyOther: 0, source: "mock" });
   for (const condition of ["active", "rescued"]) {
     const rows = filterMockSos(source, { ...defaults, condition });
     const summary = summarizeMockSos(rows);
     assert.equal(summary.total, rows.length);
-    assert.equal(summary.active + summary.rescued, rows.length);
+    assert.equal(summary.active + summary.rescued + summary.legacyOther, rows.length);
     assert.ok(rows.every(row => row.condition === condition && row.source === "mock"));
   }
 });
@@ -69,7 +74,7 @@ test("date bounds use Vietnam days and include the entire ending day", () => {
 test("search and sorting work across all mock rows without mutating their source", () => {
   const source = createMockSos(new Date("2026-11-07T08:00:00Z"));
   assert.equal(filterMockSos(source, { ...defaults, search: "demo-sos-002" })[0].id, "DEMO-SOS-002");
-  assert.equal(filterMockSos(source, { ...defaults, search: "NGƯỜI DÂN MẪU 03" }).length, 1);
+  assert.equal(filterMockSos(source, { ...defaults, search: "DEMO-RESIDENT-03" }).length, 1);
   assert.equal(filterMockSos(source, { ...defaults, search: "not-found" }).length, 0);
   assert.equal(filterMockSos(source, { ...defaults, sort: "oldest" })[0].id, "DEMO-SOS-001");
   assert.equal(source[0].id, "DEMO-SOS-003");
@@ -93,41 +98,62 @@ async function withHttp(handler, run) {
   globalThis.fetch = handler; globalThis.window = globalThis;
   try { await run(); } finally { globalThis.fetch = previousFetch; if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; }
 }
-test("API mode sends only documented GET requests and uses summary total rather than row count", async () => {
+test("API mode sends only documented GETs and uses v2 summary with the same filters", async () => {
   const calls = [];
   await withHttp(async (url, options) => {
     calls.push(String(url)); assert.ok(!options.method || options.method === "GET");
     assert.equal(options.headers.Authorization, "Bearer unit-test-token");
-    return String(url).endsWith("/summary") ? response({ total: 900 }) : response({ rescueRequests: [item()] });
+    return String(url).includes("/summary") ? response({ total: 9, active: 5, rescued: 3, legacyOther: 1 })
+      : response({ rescueRequests: [item()] });
   }, async () => {
     const result = await api.fetchSosList("unit-test-token", { ...defaults, sort: "oldest" });
-    assert.equal(result.items.length, 1); assert.equal(result.summary.total, 900);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.summary.total, 9);
+    assert.equal(result.summary.legacyOther, 1);
+    assert.equal(result.summaryError, null);
     assert.equal(result.source, "api"); assert.equal(api.SOS_MOCK_ENABLED, false);
   });
-  assert.deepEqual(calls.sort(), ["https://contract.invalid/api/admin/rescue-requests/summary", "https://contract.invalid/api/admin/rescue-requests?sort=oldest"].sort());
+  assert.deepEqual(calls.sort(), [
+    "https://contract.invalid/api/admin/rescue-requests/summary?sort=oldest",
+    "https://contract.invalid/api/admin/rescue-requests?sort=oldest",
+  ].sort());
 });
-test("unsupported API filters are rejected before any request is sent", async () => {
-  await withHttp(() => { assert.fail("must not send a partial or invented query"); }, async () => {
-    for (const filter of [{ condition: "active" }, { from: "2026-11-07" }, { search: "name" }])
-      await assert.rejects(api.fetchSosList("unit-test-token", { ...defaults, ...filter }), /chờ API/);
+test("v2 state/date/sort filters are sent to both endpoints; text search stays local", async () => {
+  const calls = [];
+  await withHttp(async (url, options) => {
+    calls.push(new URL(url));
+    assert.ok(!options.method || options.method === "GET");
+    return String(url).includes("/summary") ? response({ total: 1, active: 1, rescued: 0, legacyOther: 0 })
+      : response({ rescueRequests: [item()] });
+  }, async () => {
+    const data = await api.fetchSosList("unit-test-token", { ...defaults, condition: "active", from: "2026-11-07", to: "2026-11-07", search: "not-an-api-filter" });
+    assert.equal(data.items.length, 1);
   });
+  assert.equal(calls.length, 2);
+  for (const url of calls) {
+    assert.equal(url.searchParams.get("state"), "active");
+    assert.equal(url.searchParams.get("from"), "2026-11-06T17:00:00.000Z");
+    assert.equal(url.searchParams.get("to"), "2026-11-07T16:59:59.999Z");
+    assert.equal(url.searchParams.get("sort"), "newest");
+    assert.equal(url.searchParams.has("search"), false);
+  }
 });
 test("summary failure preserves successful rows and exposes an error instead of zero counts", async () => {
-  await withHttp(async url => String(url).endsWith("/summary") ? response(null, 500) : response({ rescueRequests: [item()] }), async () => {
+  await withHttp(async url => String(url).includes("/summary") ? response(null, 500) : response({ rescueRequests: [item()] }), async () => {
     const result = await api.fetchSosList("unit-test-token", defaults);
     assert.equal(result.items.length, 1); assert.equal(result.summary, null); assert.equal(result.summaryError.status, 500);
   });
 });
 test("list failure and malformed list data are errors, never mock or empty success", async () => {
   for (const result of [() => response(null, 500), () => response({ rescueRequests: {} })]) {
-    await withHttp(async url => String(url).endsWith("/summary") ? response({ total: 20 }) : result(), async () => {
+    await withHttp(async url => String(url).includes("/summary") ? response({ total: 20, active: 10, rescued: 9, legacyOther: 1 }) : result(), async () => {
       await assert.rejects(api.fetchSosList("unit-test-token", defaults));
     });
   }
 });
 test("expired sessions, forbidden summary and missing details retain their distinct HTTP meanings", async () => {
   await assert.rejects(api.fetchSosSummary(null), error => error.status === 401);
-  await withHttp(async url => String(url).endsWith("/summary") ? response(null, 403) : response({ rescueRequests: [item()] }), async () => {
+  await withHttp(async url => String(url).includes("/summary") ? response(null, 403) : response({ rescueRequests: [item()] }), async () => {
     await assert.rejects(api.fetchSosList("unit-test-token", defaults), error => error.status === 403);
   });
   await withHttp(async () => response(null, 404), async () => {
@@ -162,6 +188,55 @@ test("explicit development mock keeps event timestamps stable across list, detai
     const next = await mockApi.fetchSosDetail("unit-test-token", original.id);
     assert.equal(next.note, original.note);
     assert.deepEqual(next.situations, original.situations);
-    assert.deepEqual(await mockApi.fetchSosSummary("unit-test-token"), { total: 3, active: 2, rescued: 1, source: "mock" });
+    assert.deepEqual(await mockApi.fetchSosSummary("unit-test-token"), { total: 3, active: 2, rescued: 1, legacyOther: 0, source: "mock" });
+  });
+});
+
+
+test("summary 500 returns fresh SOS rows (including newly rescued) and unknown statistics", async () => {
+  const changed = { ...item("SOS-RESCUED-NEW"), state: "rescued", status: "completed", completedBy: "staff-2", completedAt: "2026-11-07T03:00:00Z" };
+  await withHttp(async url => String(url).includes("/summary") ? response(null, 500) : response({ rescueRequests: [changed] }), async () => {
+    const data = await api.fetchSosList("unit-test-token", defaults);
+    assert.equal(data.items[0].id, "SOS-RESCUED-NEW");
+    assert.equal(data.items[0].condition, "rescued");
+    assert.equal(data.summary, null);
+    assert.equal(data.summaryError.status, 500);
+  });
+});
+
+test("401/403 from either GET rejects immediately, before its delayed peer finishes", async () => {
+  for (const status of [401, 403]) for (const forbiddenSide of ["summary", "list"]) {
+    let release;
+    await withHttp(url => {
+      const side = String(url).includes("/summary") ? "summary" : "list";
+      if (side === forbiddenSide) return Promise.resolve(response(null, status));
+      return new Promise(resolve => { release = resolve; });
+    }, async () => {
+      const pending = api.fetchSosList("unit-test-token", defaults);
+      try {
+        await assert.rejects(Promise.race([
+          pending,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("WAITED_FOR_SLOW_PEER")), 300)),
+        ]), error => error.status === status);
+      } finally {
+        assert.equal(typeof release, "function");
+        release(forbiddenSide === "summary" ? response({ rescueRequests: [item()] }) :
+          response({ total: 1, active: 1, rescued: 0, legacyOther: 0 }));
+      }
+      await assert.rejects(pending, error => error.status === status);
+    });
+  }
+});
+
+test("list 500 waits for possible later authorization failure from summary, with 403 taking priority", async () => {
+  let releaseSummary;
+  await withHttp(url => String(url).includes("/summary")
+    ? new Promise(resolve => { releaseSummary = resolve; })
+    : Promise.resolve(response(null, 500)), async () => {
+    const pending = api.fetchSosList("unit-test-token", defaults);
+    // This test deliberately defers summary to validate priority, not elapsed time.
+    await Promise.resolve();
+    releaseSummary(response(null, 403));
+    await assert.rejects(pending, error => error.status === 403);
   });
 });
