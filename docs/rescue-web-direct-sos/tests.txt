@@ -1,0 +1,48 @@
+✔ an explicitly empty API array is a successful empty list (1.849492ms)
+✔ malformed list data is an error, never a successful empty list (0.775763ms)
+✔ legacy status text never overrides documented v2 state (1.209757ms)
+✔ request updatedAt does not become GPS or completion time (0.421692ms)
+✔ missing new-contract information stays missing instead of becoming fabricated identity or numbers (0.544032ms)
+✔ coordinates require finite numbers and valid geographic ranges; zero is valid (0.614677ms)
+✔ v2 summary requires all state buckets and never trusts legacy byStatus (1.358242ms)
+✔ mock summary and rows use the same entire filtered dataset (1.137924ms)
+✔ date bounds use Vietnam days and include the entire ending day (0.721052ms)
+✔ search and sorting work across all mock rows without mutating their source (0.485162ms)
+✔ API mode sends only documented GETs and uses v2 summary with the same filters (5.990011ms)
+✔ v2 state/date/sort filters are sent to both endpoints; text search stays local (1.145269ms)
+✔ summary failure preserves successful rows and exposes an error instead of zero counts (0.959963ms)
+✔ list failure and malformed list data are errors, never mock or empty success (2.103263ms)
+✔ expired sessions, forbidden summary and missing details retain their distinct HTTP meanings (1.037296ms)
+✔ a detail response for a different SOS is rejected (0.459073ms)
+✔ explicit development mock keeps event timestamps stable across list, detail and refresh (51.372186ms)
+✔ summary 500 returns fresh SOS rows (including newly rescued) and unknown statistics (1.044372ms)
+✔ 401/403 from either GET rejects immediately, before its delayed peer finishes (1.674598ms)
+✔ list 500 waits for possible later authorization failure from summary, with 403 taking priority (0.998319ms)
+✔ pending alert request takes precedence over a zero or previous result (0.942808ms)
+✔ dashboard distinguishes an unavailable SOS count from a successful zero (17.802345ms)
+✔ reads real nested envelope, shares in-flight requests and cache; explicit refresh bypasses cache (95.895314ms)
+✔ empty array is valid; malformed envelope, success=false and invalid JSON fail explicitly (95.717056ms)
+✔ propagates HTTP 401/403/500 and network failures; failed refresh can recover (54.006043ms)
+✔ rejects entire invalid geometry without deleting bad vertices or inventing a polygon (9.126104ms)
+✔ accepts live areaType contract including null and omitted legacy classification (8.376233ms)
+﹣ validates the captured live response when LIVE_FLOOD_AREAS is provided (0.11884ms) # SKIP
+✔ shares alert list and count; rejects invalid warning fields (42.237006ms)
+✔ read contract uses state and newest/oldest with one /api and Bearer token (133.400837ms)
+✔ empty list is valid; invalid envelopes and duplicate or wrong-id results fail (256.221666ms)
+✔ legacy nulls and malformed coordinates never invent state, GPS or urgency (18.634608ms)
+✔ reject old queries; convert Vietnam date bounds to explicit UTC milliseconds (14.978313ms)
+✔ completion writes only assisted and trimmed note; server confirmer/time retained (18.570199ms)
+✔ 409 conflict reads true confirmer; never repeats PATCH or reports own success (21.468011ms)
+✔ timeout or 500 reconciles detail; an unknown result is never success (55.446125ms)
+✔ 401/403/404/400 are preserved; missing session never sends a write (91.165428ms)
+✔ poll serializes refreshes, pauses hidden tab and aborts on leaving screen (19.63225ms)
+✔ poll keeps markers on network failure, then replaces list when SOS completed elsewhere (8.449909ms)
+✔ poll discards protected data after forbidden response and stops automatic retries (11.524339ms)
+ℹ tests 40
+ℹ suites 0
+ℹ pass 39
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1056.285201
