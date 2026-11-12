@@ -77,7 +77,7 @@ private val OverviewFont = FontFamily(
 // These are UI destinations, not registered navigation routes.
 // Enable each destination only after its Rescue route and role guard exist.
 enum class RescueOverviewDestination {
-    MAP, SOS_LIST, SOS_NEW, SOS_IN_PROGRESS, MY_TASKS,
+    MAP, SOS_LIST, SOS_NEW, SOS_RESCUED, SOS_IN_PROGRESS, MY_TASKS,
     MY_COMPLETED_TASKS, HISTORY, SAFE_LOCATIONS, WARNINGS
 }
 
@@ -88,8 +88,8 @@ enum class RescueSummaryMetric(
     val scope: String,
     val destination: RescueOverviewDestination
 ) {
-    NEW_SOS("SOS mới", "Yêu cầu được phép xem", RescueOverviewDestination.SOS_NEW),
-    IN_PROGRESS("Đang xử lý", "Yêu cầu được phép xem", RescueOverviewDestination.SOS_IN_PROGRESS),
+    NEW_SOS("Đang chờ cứu", "SOS chưa hoàn tất", RescueOverviewDestination.SOS_NEW),
+    RESCUED_SOS("Đã cứu", "SOS đã hoàn tất", RescueOverviewDestination.SOS_RESCUED),
     MY_TASKS("Nhiệm vụ của tôi", "Tài khoản hiện tại", RescueOverviewDestination.MY_TASKS),
     COMPLETED("Đã hoàn tất", "Nhiệm vụ của tôi", RescueOverviewDestination.MY_COMPLETED_TASKS)
 }
@@ -109,6 +109,7 @@ sealed interface RescueOverviewSectionState {
     data object Loading : RescueOverviewSectionState
     data class Empty(val message: String) : RescueOverviewSectionState
     data class Failed(val message: String) : RescueOverviewSectionState
+    data class Ready(val message: String) : RescueOverviewSectionState
 }
 
 data class RescueOverviewUiState(
@@ -322,8 +323,8 @@ fun RescueOverviewScreen(
                         }
                     }
                     item(key = "priority") {
-                        OverviewPanel("SOS ưu tiên cao") {
-                            OverviewLabel("Yêu cầu được phép xem, sắp xếp theo mức độ ưu tiên.", 12.sp, OverviewMuted)
+                        OverviewPanel("SOS đang chờ cứu") {
+                            OverviewLabel("Danh sách theo thời gian gửi mới nhất; không tự suy đoán mức ưu tiên.", 12.sp, OverviewMuted)
                             SectionStatus(
                                 state = uiState.prioritySos,
                                 pendingMessage = "Chưa có dữ liệu SOS để hiển thị.",
@@ -407,7 +408,7 @@ private fun SummaryTile(
 ) {
     val accent = when (metric) {
         RescueSummaryMetric.NEW_SOS -> OverviewRed
-        RescueSummaryMetric.IN_PROGRESS -> OverviewCyan
+        RescueSummaryMetric.RESCUED_SOS -> OverviewCyan
         else -> OverviewGreen
     }
     Card(
@@ -459,6 +460,7 @@ private fun SectionStatus(
             OverviewLabel("Đang tải…", 13.sp, OverviewMuted)
         }
         is RescueOverviewSectionState.Empty -> OverviewLabel(state.message, 13.sp, OverviewMuted)
+        is RescueOverviewSectionState.Ready -> OverviewLabel(state.message, 13.sp, OverviewMuted)
         is RescueOverviewSectionState.Failed -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OverviewLabel("Không thể tải dữ liệu", 13.sp, OverviewRed, FontWeight.SemiBold)
             OverviewLabel(state.message, 12.sp, OverviewMuted)
@@ -528,7 +530,7 @@ private fun RescueOverviewPartialPreview() {
         uiState = RescueOverviewUiState(
             summaries = mapOf(
                 RescueSummaryMetric.NEW_SOS to RescueSummaryState.Loading,
-                RescueSummaryMetric.IN_PROGRESS to RescueSummaryState.Failed("Không có kết nối mạng."),
+                RescueSummaryMetric.RESCUED_SOS to RescueSummaryState.Failed("Không có kết nối mạng."),
                 RescueSummaryMetric.MY_TASKS to RescueSummaryState.Empty,
                 RescueSummaryMetric.COMPLETED to RescueSummaryState.Value(0)
             ),

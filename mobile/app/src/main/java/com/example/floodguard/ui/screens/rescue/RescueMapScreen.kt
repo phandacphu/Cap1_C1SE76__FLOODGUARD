@@ -80,7 +80,8 @@ private val MapFont = FontFamily(
 @Composable
 internal fun RescueMapScreen(
     onBack: () -> Unit,
-    location: RescueMapLocationController
+    location: RescueMapLocationController,
+    onSosTab: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -227,7 +228,7 @@ internal fun RescueMapScreen(
             val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
             val warningLoadFailed = dataState.activeWarnings is RescueMapLoadState.Error
             val historyLoadFailed = historyLayers.values.any { it.error }
-            if (showFloodLayers && (layers.unclassifiedCount > 0 || layers.skippedCount > 0 ||
+            if (showFloodLayers && (layers.skippedCount > 0 ||
                     areaLoadFailed || warningLoadFailed || historyLoadFailed)) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -239,16 +240,6 @@ internal fun RescueMapScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            if (layers.legacyFormatCount > 0) {
-                                MapLabel("Máy chủ trả dữ liệu vùng định dạng cũ (${layers.legacyFormatCount} bản ghi).")
-                            }
-                            val needsClassification = layers.unclassifiedCount - layers.legacyFormatCount
-                            if (needsClassification > 0) {
-                                MapLabel("$needsClassification vùng chưa có loại hợp lệ; Admin cần phân loại.")
-                            }
-                            if (layers.unclassifiedCount > 0) {
-                                MapLabel("Chưa hiển thị các vùng này trên bản đồ.")
-                            }
                             if (layers.skippedCount > 0) {
                                 MapLabel("${layers.skippedCount} vùng có thông tin hoặc ranh giới không hợp lệ.")
                             }
@@ -275,14 +266,19 @@ internal fun RescueMapScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val fix = location.state.fix
+                val freshFix = location.state.fix
+                val fix = freshFix ?: location.state.lastKnownFix
                 Column(modifier = Modifier.weight(1f)) {
                     if (fix == null) {
                         MapLabel(location.state.message)
                     } else {
-                        MapLabel(if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí lần lấy gần nhất", MapCyan)
+                        if (freshFix == null) {
+                            MapLabel("Mất kết nối GPS · vị trí lần cuối (chưa cập nhật)", MapCyan)
+                        } else {
+                            MapLabel(if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí lần lấy gần nhất", MapCyan)
+                        }
                         MapLabel(fix.accuracyMeters?.let {
-                            "Độ chính xác khoảng ${ceil(it.toDouble()).toLong()} m"
+                            "Độ chính xác lần lấy cuối khoảng ${ceil(it.toDouble()).toLong()} m"
                         } ?: "Thiết bị chưa cung cấp độ chính xác")
                         if (fix.isApproximate) {
                             TextButton(onClick = location.openAppSettings) {
@@ -407,9 +403,10 @@ internal fun RescueMapScreen(
                                     )
                                 }
                             }
-                            location.state.fix?.let { fix ->
+                            val freshFix = location.state.fix
+                            (freshFix ?: location.state.lastKnownFix)?.let { fix ->
                                 val point = LatLng(fix.latitude, fix.longitude)
-                                fix.accuracyMeters?.takeIf { it > 0f }?.let { accuracy ->
+                                fix.accuracyMeters?.takeIf { it > 0f && freshFix != null }?.let { accuracy ->
                                     Circle(
                                         center = point,
                                         radius = accuracy.toDouble(),
@@ -421,9 +418,13 @@ internal fun RescueMapScreen(
                                 }
                                 Marker(
                                     state = rememberUpdatedMarkerState(position = point),
-                                    title = "Vị trí cứu hộ (lần lấy gần nhất)",
-                                    snippet = if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí từ thiết bị",
-                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN)
+                                    title = if (freshFix == null) "GPS cuối (chưa cập nhật)" else "Vị trí cứu hộ (lần lấy gần nhất)",
+                                    snippet = if (freshFix == null) "Mất kết nối GPS · Không dùng như vị trí hiện tại"
+                                        else if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí từ thiết bị",
+                                    icon = BitmapDescriptorFactory.defaultMarker(
+                                        if (freshFix == null) BitmapDescriptorFactory.HUE_YELLOW
+                                        else BitmapDescriptorFactory.HUE_CYAN
+                                    )
                                 )
                             }
                         }
@@ -515,6 +516,7 @@ internal fun RescueMapScreen(
 
             RescueBottomBar(
                 selectedTab = RescueMainTab.MAP,
+                onSos = onSosTab,
                 onOverview = onBack
             )
         }

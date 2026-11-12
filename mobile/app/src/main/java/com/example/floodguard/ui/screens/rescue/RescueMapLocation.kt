@@ -51,6 +51,8 @@ internal data class RescueMapLocationFix(
 
 internal data class RescueMapLocationState(
     val fix: RescueMapLocationFix? = null,
+    // Session-only last valid foreground fix. Never treated as a live location.
+    val lastKnownFix: RescueMapLocationFix? = null,
     val isLoading: Boolean = false,
     val message: String = "Bấm “Vị trí của tôi” để lấy vị trí.",
     val centerRequestId: Long = 0L,
@@ -122,13 +124,22 @@ internal fun rememberRescueMapLocation(autoLocate: Boolean = false): RescueMapLo
     }
 
     fun fail(failure: RescueGpsFailure) {
-        state = gpsFailure(failure)
+        // Keep the last position only for temporary GPS problems. Revoke it if location
+        // permission is denied or blocked. This never makes a stale fix "current".
+        val retained = when (failure) {
+            RescueGpsFailure.LOCATION_OFF, RescueGpsFailure.TIMEOUT,
+            RescueGpsFailure.UNAVAILABLE -> state.fix ?: state.lastKnownFix
+            else -> null
+        }
+        state = gpsFailure(failure).copy(lastKnownFix = retained)
         consumedRequestId = requestId
         activeCancellation?.cancel()
     }
 
     fun enqueueLocation() {
-        state = RescueMapLocationState(isLoading = true, message = "Đang lấy vị trí…")
+        // Retain a valid foreground fix while a newer request is in flight.
+        // Any permission/GPS failure still clears it through fail().
+        state = state.copy(isLoading = true, message = "Đang cập nhật vị trí…", failure = null)
         requestId++
     }
 
@@ -185,8 +196,9 @@ internal fun rememberRescueMapLocation(autoLocate: Boolean = false): RescueMapLo
                     activeCancellation?.cancel()
                     consumedRequestId = requestId
                     state = state.copy(
+                        lastKnownFix = state.fix ?: state.lastKnownFix,
                         fix = null, isLoading = false, centerRequestId = 0L,
-                        message = state.failure?.message ?: "Bấm “Vị trí của tôi” để cập nhật vị trí khi quay lại."
+                        message = state.failure?.message ?: "GPS chưa cập nhật sau khi quay lại ứng dụng."
                     )
                 }
                 else -> Unit
@@ -223,7 +235,8 @@ internal fun rememberRescueMapLocation(autoLocate: Boolean = false): RescueMapLo
                 retryAfterSettings = false
                 fail(RescueGpsFailure.LOCATION_OFF)
             }
-            retryAfterSettings || changedPermission || state.failure == RescueGpsFailure.LOCATION_OFF -> {
+            retryAfterSettings || changedPermission || state.failure == RescueGpsFailure.LOCATION_OFF ||
+                (autoLocate && state.fix == null && state.lastKnownFix != null) -> {
                 retryAfterSettings = false
                 if (!state.isLoading) enqueueLocation()
             }
@@ -271,17 +284,22 @@ internal fun rememberRescueMapLocation(autoLocate: Boolean = false): RescueMapLo
                         result.latitude, result.longitude, result.elapsedRealtimeNanos,
                         SystemClock.elapsedRealtimeNanos()
                     )
-                    state = if (failure != null) gpsFailure(failure) else RescueMapLocationState(
-                        fix = RescueMapLocationFix(
+                    if (failure != null) {
+                        fail(failure)
+                    } else {
+                        val newFix = RescueMapLocationFix(
                             latitude = result.latitude,
                             longitude = result.longitude,
                             accuracyMeters = result.accuracy.takeIf {
                                 result.hasAccuracy() && it.isFinite() && it >= 0f
                             },
                             isApproximate = currentPermission == RescueGpsPermission.APPROXIMATE
-                        ),
-                        centerRequestId = SystemClock.elapsedRealtimeNanos()
-                    )
+                        )
+                        state = RescueMapLocationState(
+                            fix = newFix, lastKnownFix = newFix,
+                            centerRequestId = SystemClock.elapsedRealtimeNanos()
+                        )
+                    }
                 }
             }
         } catch (_: TimeoutCancellationException) {

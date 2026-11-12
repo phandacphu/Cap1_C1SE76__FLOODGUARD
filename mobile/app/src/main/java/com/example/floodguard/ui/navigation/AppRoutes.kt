@@ -12,6 +12,10 @@ object AppRoutes {
 
     const val RESCUE_MAP = "rescue_map"
 
+    const val RESCUE_SOS = "rescue_sos"
+
+    const val RESCUE_SOS_DETAIL = "rescue_sos_detail"
+
     const val ACCESS_DENIED = "access_denied"
 
     const val MAP = "map"
