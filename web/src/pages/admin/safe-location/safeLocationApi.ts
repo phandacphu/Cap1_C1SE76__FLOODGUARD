@@ -9,6 +9,9 @@ import {
 } from "./safeLocationTypes";
 
 const TIMEOUT_MS = 70_000;
+const BASE_PATH = "/admin/safe-locations";
+
+type Method = "GET" | "POST" | "PATCH" | "DELETE";
 
 function adminToken(): string {
   const token = localStorage.getItem("floodguard_token");
@@ -16,75 +19,71 @@ function adminToken(): string {
   return token;
 }
 
-/** No mock fallback; errors must remain visible instead of becoming empty lists. */
-async function request<T>(path: string, method: "GET" | "POST" | "PATCH" | "DELETE", body?: SafeLocationFields): Promise<T> {
+/** Strict API v2 envelope. Never fallback to the development fixture on failures. */
+async function request(path: string, method: Method, token: string, body?: unknown): Promise<unknown> {
+  if (!token) throw new ApiError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", 401);
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
+  let result: unknown;
   try {
     response = await fetch(`${API_URL}${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${adminToken()}`,
-        ...(body ? { "Content-Type": "application/json" } : {}),
+        Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: controller.signal,
       cache: "no-store",
     });
+    try {
+      result = await response.json();
+    } catch {
+      if (!response.ok) throw new ApiError(`Máy chủ trả lỗi HTTP ${response.status}.`, response.status);
+      throw new ApiError("Phản hồi API không phải JSON hợp lệ.", 500);
+    }
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiError("Kết nối quá hạn. Nếu vừa lưu hoặc xóa, hãy tải lại danh sách để xác minh trước khi thử lại.", 504);
+      throw new ApiError("Yêu cầu quá hạn. Cần đọc lại dữ liệu để đối chiếu; không tự gửi lại thao tác ghi.", 504);
     }
     throw new ApiError("Không thể kết nối máy chủ.", 0);
   } finally {
-    window.clearTimeout(timeout);
+    clearTimeout(timeout);
   }
 
-  let result: unknown;
-  try {
-    result = await response.json();
-  } catch {
-    throw new ApiError(`Máy chủ trả dữ liệu không hợp lệ (HTTP ${response.status}).`, response.status);
-  }
-  if (typeof result !== "object" || result === null) {
-    throw new ApiError("Phản hồi API sai định dạng.", response.status);
-  }
-  const envelope = result as { success?: unknown; message?: unknown; data?: unknown };
+  const envelope = asRecord(result, response.status);
   if (!response.ok || envelope.success !== true) {
     throw new ApiError(
       typeof envelope.message === "string" && envelope.message ? envelope.message : `Máy chủ trả lỗi HTTP ${response.status}.`,
       response.status,
     );
   }
-  if (method === "POST" && response.status !== 201) {
-    throw new ApiError("Máy chủ chưa xác nhận tạo địa điểm (HTTP 201). Hãy tải lại danh sách trước khi thử lại.", response.status);
+  const expected = method === "POST" ? 201 : 200;
+  if (response.status !== expected) {
+    throw new ApiError(`Máy chủ chưa xác nhận ${method} bằng HTTP ${expected}; cần đọc lại dữ liệu.`, response.status);
   }
-  return envelope.data as T;
+  return envelope.data;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new ApiError("Cấu trúc dữ liệu địa điểm từ API không hợp lệ.", 500);
+function asRecord(value: unknown, status = 500): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError("Phản hồi API sai định dạng.", status);
   }
   return value as Record<string, unknown>;
 }
 
-function parseSafeLocation(raw: unknown): SafeLocation {
+export function parseSafeLocation(raw: unknown): SafeLocation {
   const item = asRecord(raw);
   if (typeof item.id !== "string" || !item.id.trim()) {
-    throw new ApiError("Địa điểm trả về không có ID hợp lệ.", 500);
+    throw new ApiError("Địa điểm không có ID hợp lệ.", 500);
   }
-  const point = item.location;
-  const coordinates = point && typeof point === "object" && !Array.isArray(point)
-    ? point as Record<string, unknown>
-    : null;
-  const location = coordinates &&
-    typeof coordinates.latitude === "number" && typeof coordinates.longitude === "number" &&
-    validCoordinates({ latitude: coordinates.latitude, longitude: coordinates.longitude })
-    ? { latitude: coordinates.latitude, longitude: coordinates.longitude }
-    : null;
+  const position = item.location && typeof item.location === "object" && !Array.isArray(item.location)
+    ? item.location as Record<string, unknown> : null;
+  const location = position && typeof position.latitude === "number" && typeof position.longitude === "number"
+    && validCoordinates({ latitude: position.latitude, longitude: position.longitude })
+    ? { latitude: position.latitude, longitude: position.longitude } : null;
   return {
     id: item.id,
     name: typeof item.name === "string" ? item.name : "",
@@ -97,26 +96,54 @@ function parseSafeLocation(raw: unknown): SafeLocation {
   };
 }
 
-const basePath = "/admin/safe-locations";
+/** Shared by Dashboard and Admin management: only published non-deleted Admin results. */
+export async function fetchAdminSafeLocations(token: string): Promise<SafeLocation[]> {
+  const data = asRecord(await request(BASE_PATH, "GET", token));
+  if (!Array.isArray(data.safeLocations)) throw new ApiError("API không trả data.safeLocations hợp lệ.", 500);
+  return data.safeLocations.map(parseSafeLocation);
+}
+
+export async function fetchAdminSafeLocation(id: string, token: string): Promise<SafeLocation> {
+  const data = asRecord(await request(`${BASE_PATH}/${encodeURIComponent(id)}`, "GET", token));
+  return parseSafeLocation(data.safeLocation);
+}
+
+/** PATCH sends only fields differing from the original; location is always an entire pair. */
+export function buildSafeLocationPatch(original: SafeLocation, next: SafeLocationFields): Partial<SafeLocationFields> {
+  const patch: Partial<SafeLocationFields> = {};
+  if (original.name !== next.name) patch.name = next.name;
+  if (original.address !== next.address) patch.address = next.address;
+  if (original.type !== next.type) patch.type = next.type;
+  if (original.description !== next.description) patch.description = next.description;
+  if (!original.location || original.location.latitude !== next.location.latitude || original.location.longitude !== next.location.longitude) {
+    patch.location = { latitude: next.location.latitude, longitude: next.location.longitude };
+  }
+  return patch;
+}
 
 export const safeLocationApi: SafeLocationSource = {
   demo: false,
-  async list() {
-    const data = asRecord(await request<unknown>(basePath, "GET"));
-    if (!Array.isArray(data.safeLocations)) {
-      throw new ApiError("API không trả mảng data.safeLocations.", 500);
+  list() { return fetchAdminSafeLocations(adminToken()); },
+  get(id) { return fetchAdminSafeLocation(id, adminToken()); },
+  async save(id, fields, original) {
+    const token = adminToken();
+    if (!id) {
+      const data = asRecord(await request(BASE_PATH, "POST", token, fields));
+      return parseSafeLocation(data.safeLocation);
     }
-    return data.safeLocations.map(parseSafeLocation);
-  },
-  async save(id, fields) {
-    const path = id ? `${basePath}/${encodeURIComponent(id)}` : basePath;
-    const data = asRecord(await request<unknown>(path, id ? "PATCH" : "POST", fields));
-    return parseSafeLocation(data.safeLocation);
+    const current = original && original.id === id ? original : await fetchAdminSafeLocation(id, token);
+    const changes = buildSafeLocationPatch(current, fields);
+    if (Object.keys(changes).length === 0) return fetchAdminSafeLocation(id, token);
+    const data = asRecord(await request(`${BASE_PATH}/${encodeURIComponent(id)}`, "PATCH", token, changes));
+    const saved = parseSafeLocation(data.safeLocation);
+    if (saved.id !== id) throw new ApiError("Máy chủ trả ID khác bản ghi đã sửa. Hãy tải lại danh sách.", 500);
+    return saved;
   },
   async remove(id) {
-    const data = asRecord(await request<unknown>(`${basePath}/${encodeURIComponent(id)}`, "DELETE"));
+    const token = adminToken();
+    const data = asRecord(await request(`${BASE_PATH}/${encodeURIComponent(id)}`, "DELETE", token));
     if (data.deleted !== true || data.id !== id) {
-      throw new ApiError("Máy chủ chưa xác nhận xóa mềm. Hãy làm mới danh sách để kiểm tra.", 500);
+      throw new ApiError("Máy chủ chưa xác nhận xóa mềm; hãy tải lại danh sách để đối chiếu.", 500);
     }
   },
 };
