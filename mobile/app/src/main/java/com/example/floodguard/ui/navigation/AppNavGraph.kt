@@ -1,6 +1,20 @@
 package com.example.floodguard.ui.navigation
 
 import android.widget.Toast
+import android.net.Uri
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.floodguard.ui.screens.rescue.RescueOverviewUiState
+import com.example.floodguard.ui.screens.rescue.RescueSummaryMetric
+import com.example.floodguard.ui.screens.rescue.RescueSummaryState
+import com.example.floodguard.ui.screens.rescue.RescueOverviewSection
+import com.example.floodguard.ui.screens.rescue.RescueOverviewSectionState
+import com.example.floodguard.data.remote.dto.rescue.sos.RescueSosApi
+import com.example.floodguard.data.remote.dto.rescue.sos.RescueRouteDistanceApi
+import com.example.floodguard.ui.screens.rescue.sos.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,7 +97,11 @@ fun AppNavGraph(
         ) { token, user ->
             NavigationSession(
                 isLoggedIn = !token.isNullOrBlank(),
-                role = user.role
+                role = user.role,
+                accountKey = user.id.orEmpty() + ":" + token?.let { value ->
+                    java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
+                }.orEmpty()
             )
         }
             .catch {
@@ -164,6 +182,37 @@ fun AppNavGraph(
         null
     }
 
+    // Session-owned state is isolated from Resident's shared SOS API/DTO.
+    val rescueSos = if (session.isLoggedIn && session.role == "rescue" && isRescueRoute(currentRoute)) {
+        val store = remember(session.accountKey) {
+            val api = ApiClient.createAuthenticatedRetrofit(sessionManager).create(RescueSosApi::class.java)
+            RescueSosStore(RescueSosRepository(api), scope)
+        }
+        DisposableEffect(store) { onDispose { store.close() } }
+        store
+    } else null
+    // One authenticated route-distance repository per Rescue session; its short-lived
+    // in-memory road distance cache survives switching between SOS list and detail.
+    val rescueDistanceRepository = if (session.isLoggedIn && session.role == "rescue" &&
+        isRescueRoute(currentRoute)) {
+        remember(session.accountKey) {
+            val api = ApiClient.createAuthenticatedRetrofit(sessionManager)
+                .create(RescueRouteDistanceApi::class.java)
+            RescueRouteDistanceRepository(api)
+        }
+    } else null
+    var rescueFilter by rememberSaveable(session.accountKey) { mutableStateOf(SosFilter.ACTIVE) }
+    fun openRescueTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(AppRoutes.RESCUE_HOME) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+    fun openRescueSos(id: String) {
+        navController.navigate("${AppRoutes.RESCUE_SOS_DETAIL}/${Uri.encode(id)}") { launchSingleTop = true }
+    }
+
     val safeLocationViewModel: SafeLocationViewModel = viewModel {
         SafeLocationViewModel(
             repository = SafeLocationRepository(
@@ -177,14 +226,44 @@ fun AppNavGraph(
         startDestination = startDestination
     ) {
         composable(route = AppRoutes.RESCUE_HOME) {
+            val sos = rescueSos?.state?.collectAsStateWithLifecycle()?.value ?: RescueSosState()
+            rescueSos?.let { store ->
+                RescueSosRefresh(store)
+                RescueSosRefresh(store, SosFilter.RESCUED)
+            }
+            fun metric(resource: SosResource<List<RescueSos>>): RescueSummaryState = when {
+                sos.accessError != null -> RescueSummaryState.Failed(sos.accessError!!)
+                resource.error != null -> RescueSummaryState.Failed(resource.error)
+                resource.data != null -> RescueSummaryState.Value(resource.data.size)
+                resource.loading -> RescueSummaryState.Loading
+                else -> RescueSummaryState.NotReady
+            }
             RescueOverviewScreen(
-                availableDestinations = setOf(RescueOverviewDestination.MAP),
+                uiState = RescueOverviewUiState(
+                    summaries = mapOf(RescueSummaryMetric.NEW_SOS to metric(sos.active),
+                        RescueSummaryMetric.RESCUED_SOS to metric(sos.rescued)),
+                    prioritySos = when {
+                        sos.accessError != null -> RescueOverviewSectionState.Failed(sos.accessError!!)
+                        sos.active.error != null -> RescueOverviewSectionState.Failed(sos.active.error!!)
+                        sos.active.data != null -> RescueOverviewSectionState.Ready("${sos.active.data!!.size} yêu cầu đang chờ cứu. Mở danh sách để xem chi tiết.")
+                        sos.active.loading -> RescueOverviewSectionState.Loading
+                        else -> RescueOverviewSectionState.NotReady
+                    }),
+                onRetry = { section ->
+                    if (section == RescueOverviewSection.SUMMARY || section == RescueOverviewSection.PRIORITY_SOS) {
+                        rescueSos?.refresh(SosFilter.ACTIVE)
+                        rescueSos?.refresh(SosFilter.RESCUED)
+                    }
+                },
+                availableDestinations = setOf(RescueOverviewDestination.MAP,
+                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED),
                 onOpenDestination = { destination ->
-                    if (destination == RescueOverviewDestination.MAP) {
-                        navController.navigate(AppRoutes.RESCUE_MAP) {
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                    when (destination) {
+                        RescueOverviewDestination.MAP -> openRescueTab(AppRoutes.RESCUE_MAP)
+                        RescueOverviewDestination.SOS_NEW -> { rescueFilter = SosFilter.ACTIVE; openRescueTab(AppRoutes.RESCUE_SOS) }
+                        RescueOverviewDestination.SOS_RESCUED -> { rescueFilter = SosFilter.RESCUED; openRescueTab(AppRoutes.RESCUE_SOS) }
+                        RescueOverviewDestination.SOS_LIST -> openRescueTab(AppRoutes.RESCUE_SOS)
+                        else -> Unit
                     }
                 },
                 onLogout = {
@@ -205,6 +284,7 @@ fun AppNavGraph(
             rescueLocation?.let { location ->
                 RescueMapScreen(
                     location = location,
+                    onSosTab = { openRescueTab(AppRoutes.RESCUE_SOS) },
                     onBack = {
                         val returnedHome = navController.popBackStack(
                             route = AppRoutes.RESCUE_HOME,
@@ -219,6 +299,27 @@ fun AppNavGraph(
                         }
                     }
                 )
+            }
+        }
+
+        composable(route = AppRoutes.RESCUE_SOS) {
+            rescueSos?.let { store ->
+                RescueSosListScreen(store = store, filter = rescueFilter,
+                    rescueLocation = rescueLocation, distanceRepository = rescueDistanceRepository,
+                    onFilterChange = { rescueFilter = it }, onOpen = ::openRescueSos,
+                    onOverview = { openRescueTab(AppRoutes.RESCUE_HOME) },
+                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) })
+            }
+        }
+        composable(route = "${AppRoutes.RESCUE_SOS_DETAIL}/{requestId}") { entry ->
+            val id = entry.arguments?.getString("requestId")
+            rescueSos?.let { store ->
+                val distanceRepository = rescueDistanceRepository
+                if (!id.isNullOrBlank() && distanceRepository != null) RescueSosDetailScreen(id = id, store = store,
+                    rescueLocation = rescueLocation, distanceRepository = distanceRepository,
+                    onBack = { openRescueTab(AppRoutes.RESCUE_SOS) },
+                    onOverview = { openRescueTab(AppRoutes.RESCUE_HOME) },
+                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) })
             }
         }
 
