@@ -1,3 +1,4 @@
+import { SosHistoricalLayers } from './SosHistoricalLayers';
 import { useCallback, useRef, useState } from 'react';
 import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, useMap } from 'react-leaflet';
 import { Link } from 'react-router-dom';
@@ -38,6 +39,8 @@ function Controls({ items }: { items: DirectSosRequest[] }) {
 }
 
 export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }) {
+  const [areaFilter, setAreaFilter] = useState('all');
+  const [onlyAlerted, setOnlyAlerted] = useState(false);
   const [showAreas, setShowAreas] = useState(true);
   const [tileError, setTileError] = useState(false);
   const [round, setRound] = useState(0);
@@ -68,6 +71,13 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
       <label className="text-sm"><input type="checkbox" checked={showAreas} onChange={event => setShowAreas(event.target.checked)} /> Vùng ngập / vùng trũng và cảnh báo</label>
       <button type="button" disabled={context.loading} onClick={() => { forceRef.current = true; context.refresh(); }} className="rounded border border-border px-3 py-2 text-sm">Tải lại thông tin khu vực</button>
     </div>
+    <div className="flex flex-wrap gap-3 text-sm">
+      <label>Loại vùng <select className="rounded border border-border bg-bg p-2" value={areaFilter} onChange={event => setAreaFilter(event.target.value)}>
+        <option value="all">Tất cả</option><option value="flood">Vùng ngập</option><option value="low_lying">Vùng trũng</option><option value="unknown">Chưa phân loại</option>
+      </select></label>
+      <label><input type="checkbox" checked={onlyAlerted} onChange={event => setOnlyAlerted(event.target.checked)} /> Chỉ vùng có cảnh báo hiệu lực</label>
+    </div>
+    {onlyAlerted && (!data?.alerts || data.alertsError || context.loading) && <p role="status" className="text-amber-300">Đang tải hoặc chưa cập nhật được cảnh báo; bộ lọc chỉ tham khảo dữ liệu đã tải nếu có.</p>}
     <p className="text-sm">🔴 Chờ cứu hộ (cần cứu/chưa cứu) · 🟢 Đã cứu · ⚪ Trạng thái cũ/khác</p>
     <p className="text-xs text-muted">Vùng ngập: vàng; vùng trũng: đỏ. Viền vùng thể hiện mức cảnh báo hiệu lực: thấp (xanh), vừa (vàng), cao (cam), khẩn cấp (đỏ). Không có cảnh báo không đồng nghĩa an toàn.</p>
     {context.loading && <p role="status" className="text-sm">Đang tải thông tin khu vực…</p>}
@@ -80,7 +90,8 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
           url={`https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`}
           attribution='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
           eventHandlers={{ tileerror: () => setTileError(true) }} />}
-        {showAreas && data?.areas?.map(area => {
+        {showAreas && data?.areas?.filter(area => (areaFilter === 'all' || (area.areaType ?? 'unknown') === areaFilter) &&
+          (!onlyAlerted || (data.alerts && areaAlert(data.alerts, area.id, data.checkedAt)))).map(area => {
           const alert = data.alerts ? areaAlert(data.alerts, area.id, data.checkedAt) : null;
           const fill = area.areaType === 'flood' ? '#facc15' : area.areaType === 'low_lying' ? '#ef4444' : '#94a3b8';
           return <Polygon key={area.id} positions={area.geometry.points.map(point => [point.latitude, point.longitude])}
@@ -103,9 +114,16 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
             {' · '}<a href={directionsUrl(item)!} target="_blank" rel="noopener noreferrer">Mở chỉ đường</a>
           </Popup>
         </CircleMarker>)}
+        <SosHistoricalLayers />
         <Controls items={items ?? []} />
       </MapContainer>
     </div>
+    <details className="rounded border border-border p-3 text-sm"><summary>Danh sách vùng ({data?.areas?.length ?? 'chưa tải'})</summary>
+      {data?.areas?.filter(area => (areaFilter === 'all' || (area.areaType ?? 'unknown') === areaFilter) &&
+        (!onlyAlerted || (data.alerts && areaAlert(data.alerts, area.id, data.checkedAt)))).map(area => <p key={area.id} className="mt-2 border-t border-border pt-2">
+        {area.name} · {area.areaType === 'flood' ? 'Vùng ngập' : area.areaType === 'low_lying' ? 'Vùng trũng' : 'Chưa phân loại'} · {data.alertsError || !data.alerts ? 'Chưa cập nhật được cảnh báo' : areaAlert(data.alerts, area.id, data.checkedAt) ? 'Có cảnh báo hiệu lực' : 'Chưa có cảnh báo hiệu lực'}
+      </p>)}
+    </details>
     <p className="text-xs text-muted">{items === null ? 'Chưa tải được số SOS.' : `${located.length}/${items.length} SOS trong bộ lọc có tọa độ hợp lệ; ${items.length - located.length} SOS thiếu tọa độ vẫn xem được trong danh sách.`} GPS được cập nhật theo lần đọc API, camera chỉ di chuyển khi bạn thao tác.</p>
     <p className="text-xs text-muted">Chỉ đường mở theo tọa độ mới nhất đã tải; tuyến đường chưa được đánh giá an toàn trước ngập.</p>
     <p className="text-xs text-muted">Thông tin khu vực kiểm tra lúc: {data?.alertsAt ? timeLabel(new Date(data.alertsAt).toISOString()) : MISSING}. Cảnh báo không tải được sẽ không được coi là mức an toàn thấp.</p>
