@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../api/http";
+import { useAuth } from "../../../context/AuthContext";
 import { AdminHeader } from "../../../components/layout/AdminHeader";
 import { AppShell } from "../../../components/layout/AppShell";
 import { ADMIN_NAV } from "../../../components/layout/navConfig";
@@ -19,160 +20,310 @@ type LoadState = {
   locations: SafeLocation[] | null;
   error: unknown | null;
 };
+type DetailState = {
+  id: string | null;
+  kind: "idle" | "loading" | "ready" | "error";
+  item: SafeLocation | null;
+  error: unknown | null;
+};
+type Review = {
+  kind: "post" | "patch" | "delete";
+  id: string | null;
+  fields: SafeLocationFields | null;
+  previousIds: string[];
+  status: "checking" | "checked" | "error";
+  notice: string;
+};
+
+const emptyDetail: DetailState = { id: null, kind: "idle", item: null, error: null };
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
-    if (error.status === 403) return "Bạn không có quyền quản lý điểm an toàn.";
+    if (error.status === 403) return "Bạn không có quyền quản lý điểm an toàn hoặc tài khoản không còn hoạt động.";
     if (error.status === 404) return "Địa điểm không còn được cung cấp.";
-    if (error.status === 504) return "Yêu cầu quá hạn. Hãy làm mới để kiểm tra trước khi thử thao tác ghi lần nữa.";
+    if (error.status === 504) return "Yêu cầu quá hạn. Cần đọc lại dữ liệu trước khi thử ghi lần nữa.";
   }
   return error instanceof Error ? error.message : "Không thể thực hiện thao tác. Hãy thử lại.";
 }
 
+function authFailure(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
+// No response, timeout, server error, malformed or unconfirmed 2xx response: the write may have happened.
+function unconfirmedWrite(error: unknown): boolean {
+  return !(error instanceof ApiError && [400, 401, 403, 404, 409, 422].includes(error.status));
+}
+
+function sameFields(actual: SafeLocation, fields: SafeLocationFields): boolean {
+  return actual.name === fields.name && actual.address === fields.address &&
+    actual.type === fields.type && actual.description === fields.description &&
+    actual.location?.latitude === fields.location.latitude &&
+    actual.location?.longitude === fields.location.longitude;
+}
+
 export default function SafeLocationManagementScreen({ source }: { source: SafeLocationSource }) {
+  const { logout } = useAuth();
   const [load, setLoad] = useState<LoadState>({ kind: "loading", locations: null, error: null });
   const [loadVersion, setLoadVersion] = useState(0);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<SafeLocation | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailState, setDetailState] = useState<DetailState>(emptyDetail);
+  const [detailRetry, setDetailRetry] = useState(0);
   const [editor, setEditor] = useState<SafeLocation | null | undefined>(undefined);
   const [pendingDelete, setPendingDelete] = useState<SafeLocation | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<{ message: string; uncertain: boolean } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; tone: "success" | "warn" } | null>(null);
+  const [authError, setAuthError] = useState<ApiError | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const authRef = useRef<ApiError | null>(null);
+  const reviewRef = useRef(false);
   const savingRef = useRef(false);
   const loadedRef = useRef<SafeLocation[] | null>(null);
+  const missingIdsRef = useRef<Set<string>>(new Set());
+  const listEpoch = useRef(0);
+  const detailEpoch = useRef(0);
+
+  // Lock synchronously, so a late successful list/detail/verification cannot restore protected data.
+  const lockAccess = useCallback((error: ApiError) => {
+    if (authRef.current) return;
+    authRef.current = error;
+    listEpoch.current += 1;
+    detailEpoch.current += 1;
+    loadedRef.current = null;
+    reviewRef.current = false;
+    setAuthError(error);
+    setLoad({ kind: "error", locations: null, error });
+    setSelectedId(null);
+    setDetailState(emptyDetail);
+    setEditor(undefined);
+    setPendingDelete(null);
+    setReview(null);
+    setSaveError(null);
+    setDeleteError(null);
+    setMessage(null);
+  }, []);
+
+  const reload = useCallback(() => {
+    if (authRef.current) return;
+    listEpoch.current += 1;
+    setLoad({ kind: "loading", locations: loadedRef.current, error: null });
+    setLoadVersion((version) => version + 1);
+  }, []);
+
+  const applyList = useCallback((locations: SafeLocation[]) => {
+    if (authRef.current) return;
+    // Known missing/soft-deleted IDs must not be revived by stale list responses.
+    locations = locations.filter((item) => !missingIdsRef.current.has(item.id));
+    loadedRef.current = locations;
+    setLoad({ kind: "ready", locations, error: null });
+    setSelectedId((id) => id && locations.some((item) => item.id === id) ? id : null);
+  }, []);
+
+  // If a specific ID is confirmed missing, immediately remove that row/marker before the reload.
+  const missingLocation = useCallback((id: string) => {
+    if (authRef.current) return;
+    missingIdsRef.current.add(id);
+    const current = loadedRef.current;
+    if (current !== null) {
+      const rest = current.filter((item) => item.id !== id);
+      loadedRef.current = rest;
+      setLoad({ kind: "ready", locations: rest, error: null });
+    }
+    setSelectedId((selected) => selected === id ? null : selected);
+    setDetailState((state) => state.id === id ? emptyDetail : state);
+    setEditor(undefined);
+    setPendingDelete(null);
+    setMessage({ tone: "warn", text: "Địa điểm không còn được cung cấp. Đang tải lại danh sách để đồng bộ bảng và ghim." });
+    reload();
+  }, [reload]);
 
   useEffect(() => {
+    if (authRef.current) return;
     let current = true;
+    const epoch = listEpoch.current;
     source.list().then(
       (locations) => {
-        if (!current) return;
-        loadedRef.current = locations;
-        setLoad({ kind: "ready", locations, error: null });
-        // Never keep a detail panel for an item that no longer exists in a refreshed list.
-        setSelectedId((id) => id && locations.some((item) => item.id === id) ? id : null);
+        if (!current || authRef.current || epoch !== listEpoch.current) return;
+        applyList(locations);
       },
       (error: unknown) => {
-        if (!current) return;
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-          loadedRef.current = null;
-          setSelectedId(null);
-          setDetail(null);
-          setLoad({ kind: "error", locations: null, error });
+        if (!current || authRef.current || epoch !== listEpoch.current) return;
+        if (authFailure(error)) {
+          lockAccess(error);
         } else {
           setLoad({ kind: "error", locations: loadedRef.current, error });
         }
       },
     );
     return () => { current = false; };
-  }, [source, loadVersion]);
+  }, [source, loadVersion, applyList, lockAccess]);
 
-  // Selecting a row or pin reads the actual Admin detail by stable ID.
-  // A deleted point returns 404; do not display stale detail or keep its pin.
   useEffect(() => {
-    if (!selectedId) return;
-    let active = true;
+    if (!selectedId || authRef.current) return;
+    let current = true;
+    const id = selectedId;
+    const epoch = ++detailEpoch.current;
     source.get(selectedId).then(
       (item) => {
-        if (!active) return;
-        if (item.id !== selectedId) {
-          setDetailError("Máy chủ trả chi tiết không khớp ID. Hãy làm mới danh sách.");
-          setDetail(null);
-          return;
+        if (!current || authRef.current || epoch !== detailEpoch.current) return;
+        if (item.id !== id) {
+          setDetailState({ id, kind: "error", item: null,
+            error: new Error("Máy chủ trả chi tiết không khớp ID. Hãy thử lại.") });
+        } else {
+          setDetailState({ id, kind: "ready", item, error: null });
         }
-        setDetail(item);
-        setDetailError(null);
       },
       (error: unknown) => {
-        if (!active) return;
-        setDetail(null);
-        setDetailError(describeError(error));
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-          loadedRef.current = null;
-          setLoad({ kind: "error", locations: null, error });
-          setSelectedId(null);
+        if (!current || authRef.current || epoch !== detailEpoch.current) return;
+        if (authFailure(error)) {
+          lockAccess(error);
         } else if (error instanceof ApiError && error.status === 404) {
-          setSelectedId(null);
-          setLoadVersion((version) => version + 1);
+          missingLocation(id);
+        } else {
+          setDetailState({ id, kind: "error", item: null, error });
         }
       },
     );
-    return () => { active = false; };
-  }, [source, selectedId, loadVersion]);
+    return () => { current = false; };
+  }, [source, selectedId, detailRetry, loadVersion, lockAccess, missingLocation]);
 
   function chooseLocation(id: string) {
-    setDetail(null);
-    setDetailError(null);
+    if (authRef.current) return;
+    if (selectedId === id) {
+      // Keep the successful detail. Retry explicitly when the previous detail failed.
+      if (detailState.id === id && detailState.kind === "error") {
+        setDetailState({ id, kind: "loading", item: null, error: null });
+        setDetailRetry((retry) => retry + 1);
+      }
+      return;
+    }
     setSelectedId(id);
+    setDetailState({ id, kind: "loading", item: null, error: null });
   }
 
-  const data = load.locations;
-  const busy = saving || load.kind === "loading";
+  const data = authError ? null : load.locations;
+  const busy = saving || load.kind === "loading" || !!authError;
   const stale = load.kind === "error" && data !== null;
 
   function refresh() {
-    if (savingRef.current || load.kind === "loading") return;
+    if (savingRef.current || load.kind === "loading" || authRef.current) return;
     setMessage(null);
-    setLoad({ kind: "loading", locations: loadedRef.current, error: null });
-    setLoadVersion((version) => version + 1);
+    reload();
   }
 
   function openEditor(location: SafeLocation | null) {
+    if (authRef.current || savingRef.current || reviewRef.current) return;
     setSaveError(null);
     setMessage(null);
     setEditor(location);
   }
 
+  /** Read-only reconciliation; never auto-reissue a POST, PATCH or DELETE. */
+  async function compareWrite(attempt: Review) {
+    if (authRef.current) return;
+    const checking = { ...attempt, status: "checking" as const, notice: "Đang đọc lại dữ liệu để đối chiếu…" };
+    setReview(checking);
+    try {
+      if (attempt.kind === "post") {
+        const locations = await source.list();
+        if (authRef.current) return;
+        applyList(locations);
+        const matchingNew = locations.filter((row) =>
+          !attempt.previousIds.includes(row.id) && attempt.fields && sameFields(row, attempt.fields));
+        const notice = matchingNew.length
+          ? `Danh sách có ${matchingNew.length} ID mới khớp đủ trường đã nhập (${matchingNew.map((row) => row.id).join(", ")}). Không tự POST lại; hãy xác minh bản ghi trước khi tiếp tục.`
+          : "Đã đọc lại danh sách nhưng chưa thấy ID mới khớp đầy đủ. Chưa thể khẳng định POST thất bại; không tự gửi lại.";
+        setReview({ ...checking, status: "checked", notice });
+      } else {
+        const id = attempt.id;
+        if (!id) throw new Error("Thiếu ID cần đối chiếu.");
+        let actual: SafeLocation | null = null;
+        let missing = false;
+        try {
+          actual = await source.get(id);
+        } catch (error) {
+          if (authFailure(error)) { lockAccess(error); return; }
+          if (error instanceof ApiError && error.status === 404) missing = true;
+          else throw error;
+        }
+        if (authRef.current) return;
+        if (missing) {
+          missingIdsRef.current.add(id);
+          // The ID is gone, regardless of whether the previous write caused it.
+          const current = loadedRef.current;
+          if (current) {
+            loadedRef.current = current.filter((row) => row.id !== id);
+            setLoad({ kind: "ready", locations: loadedRef.current, error: null });
+          }
+          setSelectedId((selected) => selected === id ? null : selected);
+          setDetailState((state) => state.id === id ? emptyDetail : state);
+        }
+        const locations = await source.list();
+        if (authRef.current) return;
+        applyList(locations);
+        const notice = missing
+          ? `GET chi tiết ID ${id} trả 404. Địa điểm không còn được cung cấp, nhưng thao tác ghi trước đó chưa có phản hồi xác nhận.`
+          : attempt.kind === "patch" && actual && attempt.fields && sameFields(actual, attempt.fields)
+            ? `GET chi tiết ID ${id} khớp đầy đủ dữ liệu đã nhập. PATCH trước đó vẫn chưa có phản hồi xác nhận; không tự gửi lại.`
+            : `GET chi tiết ID ${id} còn trả dữ liệu nhưng chưa xác nhận kết quả ${attempt.kind.toUpperCase()}. Hãy đối chiếu trước khi thao tác lại.`;
+        setReview({ ...checking, status: "checked", notice });
+      }
+    } catch (error) {
+      if (authRef.current) return;
+      if (authFailure(error)) { lockAccess(error); return; }
+      setReview({ ...checking, status: "error", notice: `Chưa thể cập nhật/đối chiếu: ${describeError(error)}. Không gửi lại thao tác ghi.` });
+      setLoad({ kind: "error", locations: loadedRef.current, error });
+    }
+  }
+
   async function save(fields: SafeLocationFields) {
-    if (savingRef.current || editor === undefined) return;
+    if (savingRef.current || editor === undefined || authRef.current || reviewRef.current) return;
     const editingId = editor?.id ?? null;
+    const previousIds = (loadedRef.current ?? []).map((row) => row.id);
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
       const saved = await source.save(editingId, fields, editor ?? null);
+      if (authRef.current) return;
       if (!saved?.id || (editingId && saved.id !== editingId)) {
-        throw new Error("Nguồn dữ liệu không xác nhận đúng ID bản ghi đã sửa; cần tải lại danh sách.");
+        throw new Error("Nguồn chưa xác nhận đúng ID của thao tác ghi.");
       }
       const current = loadedRef.current ?? [];
-      if (!editingId && current.some((item) => item.id === saved.id)) {
-        throw new Error("Nguồn dữ liệu trả ID đã tồn tại; cần tải lại để xác minh.");
+      if (!editingId && current.some((row) => row.id === saved.id)) {
+        throw new Error("Nguồn trả ID đã tồn tại; cần đọc lại danh sách trước khi thử tiếp.");
       }
       const locations = editingId
-        ? current.map((item) => item.id === editingId ? saved : item)
+        ? current.map((row) => row.id === editingId ? saved : row)
         : [saved, ...current];
       loadedRef.current = locations;
       setLoad({ kind: "ready", locations, error: null });
-      setDetail(null);
-      setDetailError(null);
+      setDetailState({ id: saved.id, kind: "loading", item: null, error: null });
       setSelectedId(saved.id);
+      // Editing a selected ID does not change selectedId; explicitly reload its detail.
+      setDetailRetry((retry) => retry + 1);
       setEditor(undefined);
-      setMessage({ tone: "success", text: source.demo ? "Đã lưu trong dữ liệu mẫu (không ghi lên hệ thống chung)." : "API đã xác nhận lưu thành công. Đang đồng bộ danh sách." });
-      setLoadVersion((version) => version + 1);
+      setMessage({ tone: "success", text: source.demo
+        ? "Đã lưu trong dữ liệu mẫu." : "API đã xác nhận lưu thành công. Đang đồng bộ danh sách." });
+      reload();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 504 && editingId) {
-        // PATCH timeout: read the same ID to compare, never automatically repeat PATCH.
-        try {
-          const actual = await source.get(editingId);
-          const matches = actual.name === fields.name && actual.address === fields.address &&
-            actual.type === fields.type && actual.description === fields.description &&
-            actual.location?.latitude === fields.location.latitude &&
-            actual.location?.longitude === fields.location.longitude;
-          setSaveError({
-            message: matches
-              ? "PATCH quá hạn nhưng GET chi tiết hiện khớp dữ liệu vừa nhập. Đóng form và làm mới để xác minh danh sách."
-              : "PATCH quá hạn; GET chi tiết hiện chưa khớp dữ liệu vừa nhập. Hãy đối chiếu trước khi thử lại.",
-            uncertain: true,
-          });
-        } catch {
-          setSaveError({ message: "PATCH quá hạn, chưa đọc lại được chi tiết. Đóng form, làm mới và đối chiếu trước khi thử lại.", uncertain: true });
-        }
+      if (authRef.current) return;
+      if (authFailure(error)) { lockAccess(error); return; }
+      if (error instanceof ApiError && error.status === 404 && editingId) {
+        missingLocation(editingId);
+        return;
+      }
+      if (unconfirmedWrite(error)) {
+        reviewRef.current = true;
+        setSaveError({ message: `Chưa xác nhận kết quả ghi: ${describeError(error)}. Đang đọc lại dữ liệu. Không thử gửi lại.`, uncertain: true });
+        await compareWrite({ kind: editingId ? "patch" : "post", id: editingId, fields, previousIds,
+          status: "checking", notice: "Đang đọc lại để đối chiếu…" });
       } else {
-        setSaveError({ message: describeError(error), uncertain: error instanceof ApiError && error.status === 504 });
+        setSaveError({ message: describeError(error), uncertain: false });
       }
     } finally {
       savingRef.current = false;
@@ -181,33 +332,38 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
   }
 
   async function confirmDelete() {
-    if (!pendingDelete || savingRef.current) return;
+    if (!pendingDelete || savingRef.current || authRef.current || reviewRef.current) return;
     const id = pendingDelete.id;
+    const previousIds = (loadedRef.current ?? []).map((row) => row.id);
     savingRef.current = true;
     setSaving(true);
     setDeleteError(null);
     try {
       await source.remove(id);
-      const locations = (loadedRef.current ?? []).filter((item) => item.id !== id);
+      if (authRef.current) return;
+      missingIdsRef.current.add(id);
+      const locations = (loadedRef.current ?? []).filter((row) => row.id !== id);
       loadedRef.current = locations;
       setLoad({ kind: "ready", locations, error: null });
       setSelectedId((selected) => selected === id ? null : selected);
-      setDetail(null);
+      setDetailState(emptyDetail);
       setPendingDelete(null);
-      setMessage({ tone: "success", text: source.demo ? "Đã xóa mềm trong dữ liệu mẫu; ghim và dòng đã được gỡ." : "API đã xác nhận xóa mềm thành công. Đang đồng bộ danh sách." });
-      setLoadVersion((version) => version + 1);
+      setMessage({ tone: "success", text: source.demo
+        ? "Đã xóa mềm trong dữ liệu mẫu." : "API đã xác nhận xóa mềm thành công. Đang đồng bộ danh sách." });
+      reload();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 504) {
-        setPendingDelete(null); // Do not offer immediate duplicate DELETE after an uncertain write.
-        try {
-          await source.get(id);
-          setMessage({ tone: "warn", text: "DELETE quá hạn; GET chi tiết vẫn thấy địa điểm. Hãy tải lại và đối chiếu, không tự gửi lại." });
-        } catch (lookupError) {
-          setMessage({ tone: "warn", text: lookupError instanceof ApiError && lookupError.status === 404
-            ? "DELETE quá hạn; GET chi tiết trả 404 (địa điểm không còn được cung cấp). Đang tải lại danh sách để đối chiếu."
-            : "DELETE quá hạn và chưa đối chiếu được GET chi tiết. Hãy tải lại, không tự gửi lại." });
-        }
-        setLoadVersion((version) => version + 1);
+      if (authRef.current) return;
+      if (authFailure(error)) { lockAccess(error); return; }
+      if (error instanceof ApiError && error.status === 404) {
+        missingLocation(id); // A missing record is not a confirmed successful DELETE.
+        return;
+      }
+      if (unconfirmedWrite(error)) {
+        reviewRef.current = true;
+        setPendingDelete(null); // No button to send the same DELETE again while unconfirmed.
+        setMessage({ tone: "warn", text: "Chưa xác nhận kết quả DELETE. Đang đọc lại theo ID, không gửi lại thao tác." });
+        await compareWrite({ kind: "delete", id, fields: null, previousIds,
+          status: "checking", notice: "Đang đối chiếu xóa mềm…" });
       } else {
         setDeleteError(describeError(error));
       }
@@ -217,12 +373,23 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
     }
   }
 
+  function finishReview() {
+    if (authRef.current || !review || review.status !== "checked") return;
+    reviewRef.current = false;
+    setReview(null);
+    setSaveError(null);
+    setEditor(undefined);
+    setPendingDelete(null);
+    setMessage({ tone: "warn", text: "Đã kết thúc bước đối chiếu thủ công. Chỉ thực hiện ghi mới sau khi xác minh ID và dữ liệu trên danh sách." });
+  }
+
   const search = query.trim().toLocaleLowerCase("vi");
   const visible = (data ?? []).filter((item) => !search ||
     [item.name, item.address].some((value) => value.toLocaleLowerCase("vi").includes(search)));
   const selected = visible.find((item) => item.id === selectedId) ?? null;
-  const selectedDetail = selected && detail?.id === selected.id ? detail : null;
-  const status = load.error instanceof ApiError ? load.error.status : 0;
+  const selectedDetail = selected && detailState.id === selected.id && detailState.kind === "ready"
+    ? detailState.item : null;
+  const status = authError?.status ?? (load.error instanceof ApiError ? load.error.status : 0);
 
   return (
     <AppShell nav={ADMIN_NAV} brandSub="COMMAND C4I" brandTag="ADMIN" roleLabel="QUẢN TRỊ VIÊN C4I" accent="water" header={<AdminHeader title={title} />}>
@@ -239,11 +406,23 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
                 <Icon name="refresh" className="h-4 w-4" /> Làm mới
               </button>
               <button type="button" className="rounded-lg bg-safe px-4 py-2 text-sm font-bold text-bg hover:bg-safe/85 disabled:opacity-50"
-                disabled={!data || busy || stale} onClick={() => openEditor(null)}>+ Thêm địa điểm</button>
+                disabled={!data || busy || stale || !!review} onClick={() => openEditor(null)}>+ Thêm địa điểm</button>
             </div>
           </div>
         </section>
 
+        {review && <section role="alert" className="space-y-3 rounded-xl border border-warn/50 bg-warn/10 p-4 text-sm text-warn">
+          <h2 className="font-semibold">Kết quả ghi chưa được xác nhận – cần đối chiếu</h2>
+          <p>{review.notice}</p>
+          <p>Đã khóa thao tác ghi tiếp để tránh tạo trùng hoặc gửi lại ngoài ý muốn. Không coi kết quả GET là phản hồi POST/PATCH/DELETE thành công.</p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={button} disabled={review.status === "checking" || saving || !!authError}
+              onClick={() => void compareWrite(review)}>{review.status === "checking" ? "Đang đối chiếu…" : "Đọc lại để đối chiếu"}</button>
+            {review.status === "checked" && <button type="button" className={button} onClick={finishReview}>
+              Tôi đã kiểm tra ID và danh sách, kết thúc đối chiếu
+            </button>}
+          </div>
+        </section>}
         {source.demo && <aside role="note" className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm text-warn">
           <strong>DỮ LIỆU MẪU · CHỈ KIỂM THỬ GIAO DIỆN</strong>
           <p className="mt-1">Mọi thao tác chỉ lưu trong phiên thử trên trình duyệt này. Không ghi Backend/Firebase và không cung cấp điểm thực cho Resident/Rescue.</p>
@@ -257,7 +436,7 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
           <h2 className="font-semibold text-sos">{stale ? "Chưa thể cập nhật" : "Không thể tải danh sách điểm an toàn"}</h2>
           <p className="text-sm">{describeError(load.error)}</p>
           {stale && <p className="text-sm text-warn">Dữ liệu đã tải trước đó vẫn được giữ. Chưa xác nhận trạng thái mới nhất.</p>}
-          {status === 401 ? <Link to="/login" className={button}>Đăng nhập lại</Link> : status !== 403 &&
+          {status === 401 ? <Link to="/login" onClick={logout} className={button}>Đăng nhập lại</Link> : status !== 403 &&
             <button type="button" className={button} onClick={refresh}>Thử lại</button>}
         </section>}
 
@@ -298,9 +477,9 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
                       <td className="px-3 py-4"><div className="flex flex-wrap gap-2">
                         <button type="button" className={button} aria-label={`Xem ${item.name}`}
                           onClick={(event) => { event.stopPropagation(); chooseLocation(item.id); }}>Xem</button>
-                        <button type="button" className={button} disabled={busy || stale} aria-label={`Sửa ${item.name}`}
+                        <button type="button" className={button} disabled={busy || stale || !!review} aria-label={`Sửa ${item.name}`}
                           onClick={(event) => { event.stopPropagation(); openEditor(item); }}>Sửa</button>
-                        <button type="button" className={button} disabled={busy || stale} aria-label={`Xóa ${item.name}`}
+                        <button type="button" className={button} disabled={busy || stale || !!review} aria-label={`Xóa ${item.name}`}
                           onClick={(event) => { event.stopPropagation(); setDeleteError(null); setPendingDelete(item); }}>Xóa</button>
                       </div></td>
                     </tr>)}
@@ -314,7 +493,14 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
               <SafeLocationOverviewMap locations={visible} selectedId={selectedId} onSelect={chooseLocation} demo={source.demo} />
               <div aria-label="Chi tiết điểm an toàn" className="rounded-xl border border-border bg-bg/40 p-4">
                 <h3 className="mb-3 font-semibold">Chi tiết địa điểm</h3>
-                {detailError && <p role="alert" className="mb-3 text-sm text-sos">{detailError}</p>}
+                {selected && detailState.id === selected.id && detailState.kind === "error" && <div role="alert" className="mb-3 space-y-2 text-sm text-sos">
+                  <p>Không thể tải chi tiết: {describeError(detailState.error)}</p>
+                  <button type="button" className={button} disabled={!!authError}
+                    onClick={() => {
+                      setDetailState({ id: selected.id, kind: "loading", item: null, error: null });
+                      setDetailRetry((retry) => retry + 1);
+                    }}>Thử lại chi tiết</button>
+                </div>}
                 {selectedDetail ? <dl className="space-y-3 text-sm">
                   {([
                     ["Tên", selectedDetail.name],
@@ -327,7 +513,9 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
                     <dt className="text-xs text-muted">{label}</dt>
                     <dd className="mt-1 break-words">{value}</dd>
                   </div>)}
-                </dl> : <p className="text-sm text-muted">{selected ? "Đang tải chi tiết địa điểm theo ID…" : detailError ? "Hãy làm mới danh sách và chọn lại." : "Chọn dòng trong bảng hoặc ghim xanh lá trên bản đồ để xem chi tiết."}</p>}
+                </dl> : <p className="text-sm text-muted">{selected
+                  ? detailState.kind === "loading" ? "Đang tải chi tiết địa điểm theo ID…" : "Chi tiết chưa tải được. Chọn Thử lại chi tiết."
+                  : "Chọn dòng trong bảng hoặc ghim xanh lá trên bản đồ để xem chi tiết."}</p>}
               </div>
             </section>
           </div>
