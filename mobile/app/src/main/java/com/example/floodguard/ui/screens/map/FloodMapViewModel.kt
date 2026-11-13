@@ -229,6 +229,7 @@ class FloodMapViewModel(
             state.copy(
                 isFloodLayerEnabled = enabled,
                 isHistoryPointsLayerEnabled = enabled,
+                isHistoryAreasLayerEnabled = enabled,
                 isHistoryBuffersLayerEnabled = false,
                 isHistoryRadarLayerEnabled = enabled,
                 selectedCitizenAreaId =
@@ -308,6 +309,54 @@ class FloodMapViewModel(
         }
     }
 
+
+    fun toggleHistoryAreasLayer() {
+        _uiState.update {
+            it.copy(isHistoryAreasLayerEnabled = !it.isHistoryAreasLayerEnabled)
+        }
+    }
+
+    fun loadHistoryAreas() {
+        if (_uiState.value.isLoadingHistoryAreas) return
+        _uiState.update {
+            it.copy(
+                isLoadingHistoryAreas = true,
+                historyAreasLoadStatus = HistoricalLoadStatus.LOADING
+            )
+        }
+        launchMapRequest(
+            request = {
+                val geojson = floodHistoryRepository.getAreas().getOrThrow()
+                withContext(parsingDispatcher) {
+                    parseHistoricalDrawnAreas(geojson).getOrThrow()
+                }
+            },
+            onSuccess = { areas ->
+                _uiState.update {
+                    it.copy(
+                        historyAreas = areas,
+                        historyAreasLoadedAt = System.currentTimeMillis(),
+                        historyAreasLoadStatus = HistoricalLoadStatus.SUCCESS,
+                        isLoadingHistoryAreas = false,
+                        historyAreasError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                _uiState.update {
+                    it.copy(
+                        historyAreasLoadStatus = HistoricalLoadStatus.FAILED,
+                        isLoadingHistoryAreas = false,
+                        historyAreasError = mapLoadError(
+                            sourceName = "đa giác HIST do Admin vẽ",
+                            loadedAt = it.historyAreasLoadedAt,
+                            error = error
+                        )
+                    )
+                }
+            }
+        )
+    }
 
     fun loadHistoryPoints() {
         if (_uiState.value.isLoadingHistoryPoints) return
@@ -557,6 +606,7 @@ class FloodMapViewModel(
             state.isLoadingFloodAreas ||
             state.isLoadingFloodAlerts ||
             state.isLoadingSafeLocations ||
+            state.isLoadingHistoryAreas ||
             state.isLoadingHistoryPoints ||
             state.isLoadingHistoryBuffers ||
             state.isLoadingHistoryRadar
@@ -568,6 +618,7 @@ class FloodMapViewModel(
         loadFloodAlerts()
         loadSafeLocations()
         loadHistoryPoints()
+        loadHistoryAreas()
         loadHistoryRadar()
     }
 

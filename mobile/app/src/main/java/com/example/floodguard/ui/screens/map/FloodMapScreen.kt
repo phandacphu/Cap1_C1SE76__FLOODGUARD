@@ -170,6 +170,15 @@ private fun buildCitizenMapBounds(
         }
     }
 
+    if (state.isHistoryAreasLayerEnabled) {
+        state.historyAreas.forEach { area ->
+            area.polygon.outer.forEach { point ->
+                builder.include(LatLng(point.latitude, point.longitude))
+                hasCoordinates = true
+            }
+        }
+    }
+
     if (state.isHistoryRadarLayerEnabled) {
         state.historyRadarMapPolygons.forEach { polygon ->
             polygon.outer.forEach { coordinate ->
@@ -253,6 +262,8 @@ fun FloodMapRoute(
         onRetryFloodAlerts = viewModel::loadFloodAlerts,
         onToggleHistoryPointsLayer = viewModel::toggleHistoryPointsLayer,
         onRetryHistoryPoints = viewModel::loadHistoryPoints,
+        onRetryHistoryAreas = viewModel::loadHistoryAreas,
+        onToggleHistoryAreasLayer = viewModel::toggleHistoryAreasLayer,
         onToggleHistoryBuffersLayer = viewModel::toggleHistoryBuffersLayer,
         onRetryHistoryBuffers = viewModel::loadHistoryBuffers,
         onToggleHistoryRadarLayer = viewModel::toggleHistoryRadarLayer,
@@ -289,6 +300,8 @@ fun FloodMapScreen(
     onRetryFloodAlerts: () -> Unit,
     onToggleHistoryPointsLayer: () -> Unit,
     onRetryHistoryPoints: () -> Unit,
+    onRetryHistoryAreas: () -> Unit,
+    onToggleHistoryAreasLayer: () -> Unit,
     onToggleHistoryBuffersLayer: () -> Unit,
     onRetryHistoryBuffers: () -> Unit,
     onToggleHistoryRadarLayer: () -> Unit,
@@ -358,6 +371,8 @@ fun FloodMapScreen(
                 onRetryAlerts = onRetryFloodAlerts,
                 onRetryShelters = onRetrySafeLocations,
                 onRetryHistory = onRetryHistoryPoints,
+                onRetryHistoryAreas = onRetryHistoryAreas,
+                onToggleHistoryAreas = onToggleHistoryAreasLayer,
                 onRetryRadar = onRetryHistoryRadar
             )
 
@@ -1351,6 +1366,35 @@ private fun FloodGoogleMap(
                     }
                 }
 
+                // Separate HIST IDs/geometry from ordinary Admin areas and radar.
+                state.historyAreas.forEach { area ->
+                    key("historical-admin-area", area.id) {
+                        val outer = remember(area.polygon) {
+                            area.polygon.outer.map { LatLng(it.latitude, it.longitude) }
+                        }
+                        val holes = remember(area.polygon) {
+                            area.polygon.holes.map { ring ->
+                                ring.map { LatLng(it.latitude, it.longitude) }
+                            }
+                        }
+                        val color = when (area.areaType) {
+                            CitizenAreaType.FLOOD -> CitizenFloodColor
+                            CitizenAreaType.LOW_LYING -> CitizenLowLyingColor
+                        }
+                        Polygon(
+                            points = outer,
+                            holes = holes,
+                            fillColor = color.copy(alpha = 0.35f),
+                            strokeColor = color,
+                            strokeWidth = 3f,
+                            zIndex = 12f,
+                            visible = state.isFloodLayerEnabled &&
+                                    state.isHistoryAreasLayerEnabled,
+                            clickable = false
+                        )
+                    }
+                }
+
                 state.historyRadarMapPolygons.forEachIndexed { index, polygon ->
                     key("citizen-radar", index) {
                         Polygon(
@@ -1559,6 +1603,7 @@ private fun FloodGoogleMap(
         val hasMapGeometry = state.isFloodLayerEnabled &&
                 (
                         state.citizenAreas.isNotEmpty() ||
+                                (state.isHistoryAreasLayerEnabled && state.historyAreas.isNotEmpty()) ||
                                 (
                                         state.isHistoryPointsLayerEnabled &&
                                                 state.historyPoints.isNotEmpty()
@@ -2053,11 +2098,14 @@ private fun CitizenMapDataPanel(
     onRetryAlerts: () -> Unit,
     onRetryShelters: () -> Unit,
     onRetryHistory: () -> Unit,
+    onRetryHistoryAreas: () -> Unit,
+    onToggleHistoryAreas: () -> Unit,
     onRetryRadar: () -> Unit
 ) {
     val busy = state.isLoadingFloodAreas ||
             state.isLoadingFloodAlerts ||
             state.isLoadingSafeLocations ||
+            state.isLoadingHistoryAreas ||
             state.isLoadingHistoryPoints ||
             state.isLoadingHistoryBuffers ||
             state.isLoadingHistoryRadar
@@ -2160,6 +2208,29 @@ private fun CitizenMapDataPanel(
                 fontSize = 12.sp
             )
         }
+
+        OutlinedButton(
+            onClick = onToggleHistoryAreas,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (state.isHistoryAreasLayerEnabled) "Ẩn đa giác HIST" else "Hiện đa giác HIST")
+        }
+
+        CitizenSourceStatus(
+            title = "Đa giác HIST do Admin vẽ — tham khảo",
+            count = state.historyAreas.size,
+            loading = state.isLoadingHistoryAreas,
+            error = state.historyAreasError,
+            loadedAt = state.historyAreasLoadedAt,
+            onRetry = onRetryHistoryAreas
+        )
+
+        Text(
+            text = "Đa giác HIST: vàng là vùng ngập, đỏ là vùng trũng. " +
+                    "Đây là dữ liệu lịch sử tham khảo, không phải cảnh báo ngập hiện tại.",
+            color = MapSecondary,
+            fontSize = 12.sp
+        )
 
         CitizenSourceStatus(
             title = "Ngập lịch sử",

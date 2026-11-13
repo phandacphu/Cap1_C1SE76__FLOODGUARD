@@ -359,6 +359,83 @@ class CitizenMapLoadingTest {
             assertNull(vm.uiState.value.historyRadarError)
             assertEquals(3, vm.uiState.value.historyRadarMapPolygons.size)
         }
+    @Test
+    fun drawnAreas_refreshReplacesGeometryAndRemovesDeletedHistory() = runTest(dispatcher) {
+        val apis = FakeCitizenMapApis()
+        val vm = createViewModel(apis)
+        advanceUntilIdle()
+
+        val first = vm.uiState.value.historyAreas.single()
+        assertEquals("HIST-01", first.id)
+        assertFalse(first.currentFloodAlert)
+        assertEquals(108.0, first.polygon.outer.first().longitude, 0.0)
+
+        apis.historyAreasJson = UNIT_DRAWN_AREAS_JSON
+            .replace("108.0", "108.2")
+            .replace("\"flood\"", "\"low_lying\"")
+        vm.refreshMapData()
+        advanceUntilIdle()
+        val edited = vm.uiState.value.historyAreas.single()
+        assertEquals(108.2, edited.polygon.outer.first().longitude, 0.0)
+        assertEquals(CitizenAreaType.LOW_LYING, edited.areaType)
+
+        apis.historyAreasJson = """{"success":true,"data":{"layer":"areas","geojson":{"type":"FeatureCollection","features":[]}}}"""
+        apis.historyPointsJson = """{"success":true,"data":{"layer":"points","geojson":{"type":"FeatureCollection","features":[]}}}"""
+        vm.refreshMapData()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.historyAreas.isEmpty())
+        assertTrue(vm.uiState.value.historyPoints.isEmpty())
+        assertTrue(vm.uiState.value.citizenAreas.isNotEmpty())
+        assertTrue(vm.uiState.value.historyRadarMapPolygons.isNotEmpty())
+    }
+
+    @Test
+    fun drawnAreas_failureKeepsCache_retryRecovers_toggleDoesNotFetch() = runTest(dispatcher) {
+        val apis = FakeCitizenMapApis()
+        val vm = createViewModel(apis)
+        advanceUntilIdle()
+        val before = vm.uiState.value
+
+        apis.historyAreasOffline = true
+        vm.loadHistoryAreas()
+        advanceUntilIdle()
+        assertSame(before.historyAreas, vm.uiState.value.historyAreas)
+        assertEquals(before.historyAreasLoadedAt, vm.uiState.value.historyAreasLoadedAt)
+        assertNotNull(vm.uiState.value.historyAreasError)
+
+        apis.historyAreasOffline = false
+        vm.loadHistoryAreas()
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.historyAreasError)
+        val calls = apis.historyAreaCalls
+        vm.toggleHistoryAreasLayer()
+        assertFalse(vm.uiState.value.isHistoryAreasLayerEnabled)
+        vm.toggleHistoryAreasLayer()
+        advanceUntilIdle()
+        assertEquals(calls, apis.historyAreaCalls)
+    }
+
+    @Test
+    fun drawnAreas_retryDeduplicatesAndWrongLayerDoesNotClearExistingData() = runTest(dispatcher) {
+        val apis = FakeCitizenMapApis()
+        val vm = createViewModel(apis)
+        advanceUntilIdle()
+        val before = vm.uiState.value.historyAreas
+        val gate = CompletableDeferred<Unit>()
+        apis.historyAreasGate = gate
+        vm.loadHistoryAreas()
+        runCurrent()
+        repeat(10) { vm.loadHistoryAreas() }
+        runCurrent()
+        assertEquals(2, apis.historyAreaCalls)
+        apis.historyAreasJson = UNIT_DRAWN_AREAS_JSON.replace("\"areas\"", "\"radar\"")
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertSame(before, vm.uiState.value.historyAreas)
+        assertNotNull(vm.uiState.value.historyAreasError)
+        assertFalse(vm.uiState.value.isLoadingHistoryAreas)
+    }
+
 }
 
 private class FakeCitizenMapApis {
@@ -367,6 +444,11 @@ private class FakeCitizenMapApis {
     var areaHttpCode = 200
     var areaGate: CompletableDeferred<Unit>? = null
     var areasJson = UNIT_AREAS_JSON
+    var historyAreaCalls = 0
+    var historyAreasOffline = false
+    var historyAreasGate: CompletableDeferred<Unit>? = null
+    var historyAreasJson = UNIT_DRAWN_AREAS_JSON
+    var historyPointsJson = UNIT_HISTORY_JSON
     var bufferCalls = 0
     var radarOffline = false
     var radarGate: CompletableDeferred<Unit>? = null
@@ -459,14 +541,18 @@ private class FakeCitizenMapApis {
             checkOnline()
 
             return citizenFixtureResponse(
-                UNIT_HISTORY_JSON,
+                historyPointsJson,
                 FloodHistoryResponse::class.java
             )
         }
 
         override suspend fun getAreas(): Response<FloodHistoryResponse> {
+            historyAreaCalls++
+            historyAreasGate?.await()
+            checkOnline()
+            if (historyAreasOffline) throw IOException("isolated-history-area-offline")
             return citizenFixtureResponse(
-                """{"success":true,"data":{"layer":"areas","geojson":{"type":"FeatureCollection","features":[]}}}""",
+                historyAreasJson,
                 FloodHistoryResponse::class.java
             )
         }
@@ -597,6 +683,22 @@ private const val UNIT_HISTORY_JSON = """
           }
         }
       ]
+    }
+  }
+}
+"""
+private const val UNIT_DRAWN_AREAS_JSON = """
+{
+  "success":true,
+  "data":{
+    "layer":"areas",
+    "geojson":{
+      "type":"FeatureCollection",
+      "features":[{
+        "type":"Feature",
+        "properties":{"id":"HIST-01","name":"TEST ONLY HIST","areaType":"flood","source":"unit-test"},
+        "geometry":{"type":"Polygon","coordinates":[[[108.0,16.0],[108.1,16.0],[108.1,16.1],[108.0,16.0]]]}
+      }]
     }
   }
 }

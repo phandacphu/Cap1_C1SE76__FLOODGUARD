@@ -95,6 +95,13 @@ data class FloodMapUiState(
     val selectedFloodAlertId: String? = null,
 
 
+    val isHistoryAreasLayerEnabled: Boolean = true,
+    val historyAreas: List<HistoricalDrawnArea> = emptyList(),
+    val isLoadingHistoryAreas: Boolean = false,
+    val historyAreasLoadStatus: HistoricalLoadStatus = HistoricalLoadStatus.NOT_STARTED,
+    val historyAreasError: String? = null,
+    val historyAreasLoadedAt: Long? = null,
+
     val isHistoryPointsLayerEnabled: Boolean = true,
     val historyPoints: List<HistoricalFloodPoint> = emptyList(),
     val isLoadingHistoryPoints: Boolean = false,
