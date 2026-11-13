@@ -1,3 +1,4 @@
+import { SosOperationsMap } from './components/SosOperationsMap';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { RescueLayout } from '../../components/layout/RescueLayout';
@@ -9,8 +10,9 @@ import { dateBoundary, MISSING, STATE_LABEL, WATER_LABEL, situationsLabel, sosCo
 export function RescueSosList() {
   const [query, setQuery] = useSearchParams();
   const requestedState = query.get('state');
-  const state: SosState = requestedState === 'rescued' || requestedState === 'legacy_other' ? requestedState : 'active';
-  const setState = (value: SosState) => setQuery({ state: value });
+  const state: SosState | undefined = requestedState === 'all' ? undefined : requestedState === 'rescued' || requestedState === 'legacy_other' ? requestedState : 'active';
+  const setState = (value: SosState | 'all') => setQuery({ state: value });
+  const [view, setView] = useState<'list' | 'map' | 'both'>('both');
   const [sort, setSort] = useState<SosSort>('newest');
   const [search, setSearch] = useState('');
   const [from, setFrom] = useState('');
@@ -31,6 +33,8 @@ export function RescueSosList() {
         <h1 className="text-2xl font-bold">Yêu cầu SOS</h1>
         <p className="text-sm text-muted">Xem yêu cầu, đến cứu và xác nhận đã cứu tại trang chi tiết.</p>
         <div className="flex flex-wrap gap-2" aria-label="Nhóm SOS">
+          <button type="button" aria-pressed={state === undefined} onClick={() => setState('all')}
+            className={`rounded-lg border px-4 py-2 ${state === undefined ? 'border-safe bg-safe/20' : 'border-border'}`}>Tất cả</button>
           {(Object.keys(STATE_LABEL) as SosState[]).map(value => (
             <button key={value} type="button" aria-pressed={state === value} onClick={() => setState(value)}
               className={`rounded-lg border px-4 py-2 ${state === value ? 'border-safe bg-safe/20' : 'border-border'}`}>
@@ -51,6 +55,12 @@ export function RescueSosList() {
             className="ml-2 rounded border border-border bg-bg p-2" /></label>
           <button type="button" disabled={result.loading} onClick={result.refresh} className="rounded border border-border px-3 py-2">Làm mới</button>
         </div>
+        <div className="flex gap-2" aria-label="Chế độ hiển thị">
+          {(['both', 'list', 'map'] as const).map(mode => <button type="button" key={mode} aria-pressed={view === mode}
+            className={`rounded border border-border px-4 py-2 ${view === mode ? 'bg-safe/20' : ''}`}
+            onClick={() => setView(mode)}>{mode === 'both' ? 'Bản đồ và danh sách' : mode === 'map' ? 'Bản đồ' : 'Danh sách'}</button>)}
+        </div>
+        {view !== 'list' && <SosOperationsMap items={rows ?? null} />}
         {datesInvalid && <p role="alert" className="text-red-300">Ngày bắt đầu phải trước ngày kết thúc.</p>}
         <DirectSosFeedback {...result} stale={Boolean(result.requests)} retry={result.refresh} />
         {rows && <p className="text-xs text-muted">
@@ -58,7 +68,7 @@ export function RescueSosList() {
           {' '}Cập nhật lúc {result.updatedAt?.toLocaleString('vi-VN')}.
         </p>}
         {rows?.length === 0 && <p className="rounded-xl border border-border p-8 text-center">Không có yêu cầu phù hợp.</p>}
-        {rows && rows.length > 0 && (
+        {view !== 'map' && rows && rows.length > 0 && (
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <table className="min-w-full text-left text-sm">
               <thead><tr>{['Mã SOS / Thời điểm gửi', 'Số người', 'Tình huống', 'Mức nước', 'Trạng thái', 'Backend nhận vị trí lúc', 'Thao tác']
