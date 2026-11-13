@@ -1,6 +1,6 @@
 # Rescue Web — SOS direct rescue v2
 
-Ngày bàn giao: 2026-11-12. Nhánh: feature/rescue-web-direct-sos.
+Ngày cập nhật sau review 7c7c587: 2026-11-13. Nhánh: feature/rescue-web-direct-sos.
 Base: develop 6ad4a28, đã có backend SOS PR #124 (merge 4119c61).
 Nguồn contract: backend/docs/sos-direct-rescue-api.md trên develop.
 
@@ -42,15 +42,15 @@ Tab ẩn dừng lịch; tab hiện tải lại. Rời màn hủy request và b�
 Lỗi mạng giữ dữ liệu/ghim, gắn nhãn dữ liệu cũ. 401/403/404 bỏ dữ liệu protected và dừng polling tự động; có thao tác thử lại/đăng nhập.
 Response mới thay toàn bộ tập active; ca hoàn tất ở nơi khác biến mất ở lần đọc kế tiếp.
 GPS cập nhật chỉ di chuyển ghim. Camera giữ vị trí người dùng, có nút đưa về SOS.
-History tải riêng: lỗi mạng giữ history đã tải với nhãn lỗi, lỗi quyền ẩn thông tin.
+History dùng statusHistory trong GET chi tiết. Không poll /history thêm. Lỗi mạng giữ toàn bộ chi tiết/lịch sử đã tải; lỗi quyền đọc ẩn dữ liệu.
 Hiển thị thời điểm Backend nhận vị trí để người cứu hộ đánh giá độ cũ.
 
 ## Kiểm tra đã chạy
 
 - npm run lint: PASS.
 - npm run build: PASS; cảnh báo chunk JS >500 kB.
-- node --test tests/rescue-direct.test.cjs: 11 PASS, 0 FAIL.
-- Hồi quy bản đồ/trạng thái tải/Admin SOS được chạy cùng test mới: tổng 39 PASS, 1 SKIP, 0 FAIL. Test skip là capture API lưu sẵn chưa cung cấp; xem tests.txt.
+- node --test tests/rescue-direct.test.cjs: 25 PASS, 0 FAIL.
+- Hồi quy bản đồ/trạng thái tải/Admin SOS được chạy cùng test mới: tổng 53 PASS, 1 SKIP, 0 FAIL. Test skip là capture API lưu sẵn chưa cung cấp; xem tests.txt.
 - git diff --check: PASS.
 - GET Render /api/rescue-requests?state=active&sort=newest không token: HTTP 401,
   {"success":false,"message":"Authentication token is required"}.
@@ -63,7 +63,7 @@ timeout/500; quyền; serialization/visibility/abort; giữ ghim khi offline; b�
 ## Ca còn chờ trên Render
 
 Chưa có tài khoản test/phiên Rescue và Resident hay bộ SOS TEST do Phú cấp trong môi trường này.
-Vite đã chạy local ở 127.0.0.1:5174, nhưng cloud browser trả ERR_CONNECTION_REFUSED.
+Vite đã chạy local ở 127.0.0.1:5175, nhưng cloud browser trả ERR_CONNECTION_REFUSED.
 Chưa có ảnh/video UI API thật hoặc xác minh thao tác ghi Render. Không coi fixture test là E2E Render.
 
 | Ca | Trạng thái |
@@ -94,3 +94,41 @@ npm run dev
 Cấu hình VITE_API_URL hiện có và VITE_MAPTILER_KEY trong web/.env.local.
 Đăng nhập Rescue và vào /rescue/sos, /rescue/dashboard, /rescue/sos/:id.
 Sau nghiệm thu thật, cập nhật bảng với thời gian, Chrome/macOS, SHA, mã TEST, HTTP và ảnh/video đã che token/key.
+
+## Sửa sau review 7c7c587 — 2026-11-13
+
+1. Nút Đăng nhập lại gọi logout của AuthContext (xóa token/user trong React và localStorage)
+   trước khi navigate /login. Cùng component feedback cho lỗi 401 GET và PATCH.
+   PATCH 401 ẩn dữ liệu chi tiết cho đến đăng nhập lại.
+2. PATCH 403/404 chỉ khóa thao tác ghi và giữ chi tiết khi GET cho phép đọc. Không còn
+   cờ blocked che chi tiết vĩnh viễn. Sau thao tác luôn đọc lại; GET 403/404 hiển thị lỗi đọc và bỏ dữ liệu.
+3. Parser của PATCH 200 sai rescueRequest được đổi thành kết quả chưa xác định (502 nội bộ).
+   confirmRescued đọc lại đúng ID; nếu trạng thái không biết hoặc đọc lại lỗi thì giữ khóa.
+   Không gửi lại PATCH tự động. Chỉ bản đọc thành công xác nhận state mới cho phép xem xét thao tác tiếp.
+4. Loại outcome override trong UI. Kết quả PATCH cập nhật resource ngay; polling tạm dừng khi
+   ghi và các GET bắt đầu trước thao tác ghi bị invalidation/abort. Kết quả sau unmount không được publish.
+   GET mới hợp lệ cập nhật cả tọa độ/URL chỉ đường/history; dữ liệu cũ hơn server timestamp bị từ chối
+   và không được tính là một lần làm mới thành công. Không cho snapshot active mở lại rescued.
+5. Mỗi chu kỳ chi tiết chỉ GET /rescue-requests/:id, lấy statusHistory trong response.
+   Nếu history sai cấu trúc thì hiện nhãn lỗi lịch sử, vẫn giữ phần chi tiết hợp lệ.
+
+Test bổ sung kiểm tra các lỗi trên bằng fixture TEST, render cây component và scheduler có điều khiển.
+Đây là test Node/component, không phải test trình duyệt. Có kiểm tra bấm đôi chỉ gọi một lần,
+late GET trước PATCH, GET mới sau PATCH và late PATCH sau GET mới.
+
+### Trình duyệt sau review
+
+Đã thử mở http://127.0.0.1:5175/login sau khi Vite báo ready. Cloud browser trả
+net::ERR_CONNECTION_REFUSED. Chưa có kết quả trình duyệt cho Dashboard, danh sách,
+ghim, chi tiết, modal xác nhận, đăng nhập lại và lịch sử ở bản sửa này.
+Chưa có ảnh/video API thật. Cần tài khoản Rescue/Resident TEST và mã SOS TEST Phú thống nhất
+qua kênh riêng để kiểm tra Resident đổi GPS, Rescue khác xác nhận trước và hoàn tất trực tiếp.
+Không đưa credentials/token/key vào file báo cáo hoặc commit.
+
+Tiêu chí cần chụp/quay trên máy Khoa:
+- 401 GET trên Dashboard/danh sách và 401 PATCH: bấm Đăng nhập lại thấy form, phiên cũ bị xóa.
+- PATCH 403/404 + GET 200: giữ dữ liệu, thao tác ghi khóa; GET 403/404: hiện lỗi đọc.
+- PATCH 200 body null: Network có GET đọc lại, UI hiển thị người/giờ từ GET hoặc giữ khóa khi chưa biết.
+- PATCH xong, GET GPS mới: ghim và link hướng dẫn dùng tọa độ mới; phản hồi cũ không làm lùi dữ liệu.
+- Network chỉ có một GET chi tiết mỗi chu kỳ, history xuất hiện từ statusHistory.
+- SOS TEST của Resident đổi GPS và SOS TEST được Rescue khác xác nhận: đối chiếu Backend và lịch sử.

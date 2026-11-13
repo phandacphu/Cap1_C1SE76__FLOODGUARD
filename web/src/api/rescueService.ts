@@ -1,4 +1,4 @@
-import type { DirectSosFilters, DirectSosRequest } from '../types/rescueDirect';
+import type { DirectSosDetail, DirectSosFilters, DirectSosRequest } from '../types/rescueDirect';
 import { directSosQuery, isRecord, parseDirectHistory, parseDirectList, parseDirectSos } from './rescueDirectContract';
 
 const RAW_API_URL =
@@ -36,7 +36,9 @@ async function request(path: string, init: RequestInit = {}, signal?: AbortSigna
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
       const message = response.status === 401 ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
-        : response.status === 403 ? 'Tài khoản không có quyền truy cập hoặc không còn hoạt động.'
+        : response.status === 403 ? (init.method === 'PATCH'
+          ? 'Máy chủ từ chối quyền xác nhận đã cứu.'
+          : 'Tài khoản không có quyền truy cập hoặc không còn hoạt động.')
         : response.status === 404 ? 'Yêu cầu SOS không tồn tại.'
         : isRecord(body) && typeof body.message === 'string' ? body.message : `Lỗi máy chủ (${response.status}).`;
       throw new RescueApiError(message, response.status,
@@ -70,7 +72,15 @@ export const rescueService = {
     const data = await request('/rescue-requests/' + encodeURIComponent(id), {}, signal);
     const item = parseDirectSos(data.rescueRequest);
     if (item.id !== id) throw new RescueApiError('API trả sai mã SOS.', 502);
-    return item;
+    let statusHistory = null;
+    let historyError = null;
+    try {
+      if (!isRecord(data.rescueRequest)) throw new Error('Chi tiết SOS sai cấu trúc.');
+      statusHistory = parseDirectHistory(data.rescueRequest.statusHistory);
+    } catch {
+      historyError = 'Chưa đọc được lịch sử trong chi tiết SOS. Hãy làm mới để thử lại.';
+    }
+    return { ...item, statusHistory, historyError } satisfies DirectSosDetail;
   },
   async getHistory(id: string, signal?: AbortSignal) {
     const data = await request('/rescue-requests/' + encodeURIComponent(id) + '/history', {}, signal);
@@ -84,7 +94,13 @@ export const rescueService = {
       method: 'PATCH',
       body: JSON.stringify({ status: 'assisted', note: trimmed || null }),
     });
-    const item = parseDirectSos(data.rescueRequest);
+    let item: DirectSosRequest;
+    try {
+      item = parseDirectSos(data.rescueRequest);
+    } catch {
+      // HTTP 200 may follow a committed write even when its body is unusable.
+      throw new RescueApiError('Phản hồi xác nhận không hợp lệ. Cần đọc lại SOS.', 502);
+    }
     if (item.id !== id || item.state !== 'rescued' || item.status !== 'assisted') {
       throw new RescueApiError('Máy chủ chưa xác nhận trạng thái đã cứu.', 502);
     }
@@ -114,6 +130,9 @@ export async function confirmRescued(id: string, note: string): Promise<Completi
     } catch (readError) {
       if (readError instanceof RescueApiError && [401, 403, 404].includes(readError.status)) throw readError;
       throw new RescueApiError('Chưa xác định được kết quả. Hãy làm mới chi tiết trước khi xác nhận lại.', 0);
+    }
+    if (item.state !== 'active' && item.state !== 'rescued') {
+      throw new RescueApiError('Chưa xác định được trạng thái sau xác nhận. Hãy làm mới chi tiết trước khi thử lại.', 0);
     }
     return {
       kind: 'reconciled',

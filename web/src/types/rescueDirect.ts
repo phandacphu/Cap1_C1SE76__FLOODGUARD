@@ -40,3 +40,8 @@ export interface DirectSosFilters {
   from?: string;
   to?: string;
 }
+
+export interface DirectSosDetail extends DirectSosRequest {
+  statusHistory: DirectSosEvent[] | null;
+  historyError: string | null;
+}

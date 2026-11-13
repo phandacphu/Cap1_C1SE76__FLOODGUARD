@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { useAuth } from '../../context/AuthContext';
 import { confirmRescued, RescueApiError } from '../../api/rescueService';
-import type { DirectSosRequest } from '../../types/rescueDirect';
+import { applySosCompletion } from './sosDetailData';
 import { DirectSosFeedback } from './components/DirectSosFeedback';
 import { DirectSosFacts } from './components/DirectSosFacts';
 import { DirectSosMap } from './components/DirectSosMap';
@@ -22,17 +22,19 @@ function SosDetail({ id }: { id: string | undefined }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const locked = useRef(false);
-  const [outcome, setOutcome] = useState<DirectSosRequest | null>(null);
+
   const [message, setMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState(false);
+  const [writeDenied, setWriteDenied] = useState(false);
+  const [actionStatus, setActionStatus] = useState<number | null>(null);
   const [needsRefresh, setNeedsRefresh] = useState(false);
-  const [refreshAfterFailure, setRefreshAfterFailure] = useState<Date | null>(null);
-  const reconciledByRefresh = needsRefresh && result.updatedAt !== null &&
-    result.updatedAt !== refreshAfterFailure && !result.error;
-  const item = result.request && !blocked ? (outcome?.state === 'rescued' ? outcome : result.request) : null;
+  const [failureRevision, setFailureRevision] = useState(0);
+  const item = actionStatus === 401 ? null : result.request;
+  const reconciledByRefresh = result.revision > failureRevision && !result.error &&
+    (item?.state === 'active' || item?.state === 'rescued');
   const canComplete = item?.state === 'active' && user?.role === 'RESCUE_STAFF' &&
-    !result.error && !result.loading && (!needsRefresh || reconciledByRefresh);
+    !writeDenied && !result.error && !result.loading &&
+    (!needsRefresh || reconciledByRefresh);
 
   const complete = async () => {
     if (!id || !canComplete || locked.current || note.trim().length > 200) return;
@@ -41,20 +43,27 @@ function SosDetail({ id }: { id: string | undefined }) {
     setBusy(true);
     setMessage(null);
     setActionError(null);
+    setActionStatus(null);
+    const finishUpdate = result.beginUpdate();
+    let updated = false;
     try {
       const response = await confirmRescued(id, note);
-      setOutcome(response.request);
+      finishUpdate(current => applySosCompletion(current, response.request));
+      updated = true;
       setMessage(response.message);
       setNeedsRefresh(false);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Chưa xác nhận được kết quả.');
-      if (error instanceof RescueApiError && [401, 403, 404].includes(error.status)) setBlocked(true);
+      if (error instanceof RescueApiError) {
+        setActionStatus(error.status);
+        if (error.status === 403 || error.status === 404) setWriteDenied(true);
+      }
       setNeedsRefresh(true);
-      setRefreshAfterFailure(result.updatedAt);
+      setFailureRevision(result.revision);
     } finally {
       setBusy(false);
       locked.current = false;
-      result.refresh();
+      if (!updated) finishUpdate();
     }
   };
 
@@ -69,9 +78,9 @@ function SosDetail({ id }: { id: string | undefined }) {
       <div className="mx-auto max-w-7xl space-y-5">
         <Link to="/rescue/sos" className="text-water underline">← Yêu cầu SOS</Link>
         <DirectSosFeedback {...result} stale={Boolean(item)} retry={result.refresh} />
-        {actionError && <p role="alert" className="rounded border border-red-500 p-3 text-red-200">{actionError}</p>}
+        <DirectSosFeedback error={result.status === 401 ? null : actionError} status={actionStatus} stale={false} loading={busy} retry={result.refresh} />
         {message && <p role="status" className="rounded border border-water p-3">{message}</p>}
-        {blocked && <p>Không thể tiếp tục truy cập yêu cầu này. <Link to="/login" className="underline">Đăng nhập lại</Link></p>}
+        {writeDenied && item && <p role="status" className="text-amber-300">Máy chủ từ chối thao tác xác nhận. Bạn vẫn có thể xem và làm mới dữ liệu được phép đọc.</p>}
         {item && (
           <>
             <h1 className="text-2xl font-bold">{sosCode(item.id)} — {item.state ? STATE_LABEL[item.state] : MISSING}</h1>

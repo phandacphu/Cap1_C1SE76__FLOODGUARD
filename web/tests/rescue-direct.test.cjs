@@ -169,7 +169,7 @@ test('401/403/404/400 are preserved; missing session never sends a write', async
   assert.equal(calls, 0);
 });
 
-function hookHarness(load) {
+function hookHarness(load, merge) {
   let state;
   let cleanup;
   const refs = [];
@@ -203,7 +203,7 @@ function hookHarness(load) {
       useEffect: effect => { cleanup = effect(); },
     } : name.includes('AuthContext') ? { useAuth: () => ({ token: 'TEST-TOKEN' }) } : { RescueApiError },
   });
-  const result = exports.useSosResource('TEST', load);
+  const result = exports.useSosResource('TEST', load, merge);
   return {
     result, timers, document, listeners, RescueApiError,
     state: () => state,
@@ -274,4 +274,333 @@ test('poll discards protected data after forbidden response and stops automatic 
   assert.equal(h.state().status, 403);
   assert.equal(h.timers.size, 0);
   h.stop();
+});
+
+test('HTTP 200 with malformed completion body reconciles once using the exact SOS ID', async () => {
+  for (const rescueRequest of [null, {}, payload({ id: 'OTHER' })]) {
+    const calls = [];
+    const { service } = loader(async (url, init) => {
+      calls.push({ url, init });
+      if (init.method === 'PATCH') return body({ rescueRequest });
+      return body({ rescueRequest: payload({
+        state: 'rescued', status: 'assisted', completedBy: 'OTHER-RESCUER',
+        completedAt: '2026-11-12T03:00:00.000Z',
+      }) });
+    });
+    const result = await service.confirmRescued('TEST-SOS', '');
+    assert.equal(result.kind, 'reconciled');
+    assert.equal(result.request.completedBy, 'OTHER-RESCUER');
+    assert.equal(calls[1].url, 'https://test.invalid/api/rescue-requests/TEST-SOS');
+    assert.equal(calls.filter(call => call.init.method === 'PATCH').length, 1);
+  }
+});
+
+test('malformed write followed by unknown or invalid detail remains an uncertain result', async () => {
+  for (const value of [null, payload({ state: null }), payload({ id: 'OTHER' })]) {
+    const { service } = loader(async (_url, init) =>
+      body({ rescueRequest: init.method === 'PATCH' ? null : value }));
+    await assert.rejects(service.confirmRescued('TEST-SOS', ''), error => error.status === 0);
+  }
+});
+
+test('detail uses embedded history and flags malformed history without a second read', async () => {
+  const calls = [];
+  const event = { id: 'event', oldStatus: null, newStatus: 'submitted', changedBy: 'TEST-RESIDENT', changedAt: '2026-11-12T01:00:00Z', note: null };
+  const { service } = loader(async url => {
+    calls.push(url);
+    return body({ rescueRequest: { ...payload(), statusHistory: [event] } });
+  });
+  const item = await service.rescueService.getRescueDetail('TEST-SOS');
+  assert.equal(item.statusHistory[0].id, 'event');
+  assert.equal(item.historyError, null);
+  assert.equal(calls.length, 1);
+  const bad = loader(async () => body({ rescueRequest: { ...payload(), statusHistory: {} } }));
+  const invalid = await bad.service.rescueService.getRescueDetail('TEST-SOS');
+  assert.equal(invalid.id, 'TEST-SOS');
+  assert.equal(invalid.statusHistory, null);
+  assert.match(invalid.historyError, /lịch sử/);
+});
+
+test('new GET updates GPS/directions data after completion; stale snapshots cannot roll it back', () => {
+  const { labels } = loader(() => {});
+  assert.equal(typeof labels.coordsLabel, 'function');
+  const file = path.join(root, 'pages/rescue/sosDetailData.ts');
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { exports, Date });
+  const old = { ...payload({
+    state: 'rescued', status: 'assisted', updatedAt: '2026-11-12T02:00:00Z',
+    completedBy: 'TEST-RESCUE', completedAt: '2026-11-12T02:00:00Z',
+  }), statusHistory: [], historyError: null };
+  const fresh = { ...old, location: { latitude: 17, longitude: 109 },
+    updatedAt: '2026-11-12T03:00:00Z', locationReceivedAt: '2026-11-12T03:00:00Z' };
+  const current = exports.mergeSosDetail(old, fresh);
+  assert.equal(current.location.latitude, 17);
+  assert.equal(exports.mergeSosDetail(current, old), current);
+  assert.equal(exports.applySosCompletion(current, old), current);
+  assert.equal(exports.mergeSosDetail(current, { ...old, state: 'active' }), current);
+});
+
+test('late pre-mutation GET is discarded; a GET started after completion replaces the immediate update', async () => {
+  const pending = [];
+  const signals = [];
+  const h = hookHarness(signal => {
+    signals.push(signal);
+    return new Promise(resolve => pending.push(resolve));
+  });
+  pending.shift()({ id: 'TEST', state: 'active' }); await flush();
+  h.tick();
+  const finish = h.result.beginUpdate();
+  assert.equal(signals[1].aborted, true);
+  finish(() => ({ id: 'TEST', state: 'rescued', location: 'PATCH' }));
+  assert.equal(h.state().data.location, 'PATCH');
+  pending.shift()({ id: 'TEST', state: 'active', location: 'OLD' }); await flush();
+  assert.equal(h.state().data.location, 'PATCH');
+  h.tick();
+  pending.shift()({ id: 'TEST', state: 'rescued', location: 'NEW GET' }); await flush();
+  assert.equal(h.state().data.location, 'NEW GET');
+  h.stop();
+});
+
+test('a paused write blocks polling and a late response after leaving detail cannot publish data', async () => {
+  const pending = [];
+  let calls = 0;
+  const h = hookHarness(() => {
+    calls++;
+    return new Promise(resolve => pending.push(resolve));
+  });
+  pending.shift()({ id: 'TEST' }); await flush();
+  const finish = h.result.beginUpdate();
+  h.result.refresh(); h.hide(); h.show();
+  assert.equal(calls, 1);
+  assert.equal(h.timers.size, 0);
+  const before = h.state();
+  h.stop();
+  finish(() => ({ id: 'TEST', state: 'rescued' }));
+  assert.equal(h.state(), before);
+});
+
+function feedbackHarness() {
+  const exports = {};
+  const session = { token: 'OLD', user: { role: 'RESCUE_STAFF' } };
+  const actions = [];
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, 'pages/rescue/components/DirectSosFeedback.tsx'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  vm.runInNewContext(code, {
+    exports,
+    require: name => name === 'react/jsx-runtime' ? require(name)
+      : name === 'react-router-dom' ? { useNavigate: () => path => actions.push(['navigate', path, session.token, session.user]) }
+      : { useAuth: () => ({ logout: () => { session.token = null; session.user = null; actions.push(['logout']); } }) },
+  });
+  return { exports, session, actions };
+}
+
+function elements(tree) {
+  if (!tree || typeof tree !== 'object') return [];
+  const children = tree.props?.children;
+  return [tree, ...[children].flat(Infinity).flatMap(elements)];
+}
+
+test('401 login button clears the old session before navigation, including completion errors', () => {
+  for (const error of ['401 khi tải SOS', '401 khi xác nhận']) {
+    const h = feedbackHarness();
+    const tree = h.exports.DirectSosFeedback({ error, status: 401, stale: false, loading: false, retry: () => {} });
+    const login = elements(tree).find(item => item.type === 'button' && item.props.children === 'Đăng nhập lại');
+    login.props.onClick();
+    assert.equal(h.session.token, null);
+    assert.equal(h.session.user, null);
+    assert.equal(h.actions[0][0], 'logout');
+    assert.equal(h.actions[1][1], '/login');
+    assert.equal(h.actions[1][2], null);
+    assert.equal(h.actions[1][3], null);
+  }
+});
+
+function detailHarness(confirm) {
+  const state = [];
+  const refs = [];
+  let stateIndex = 0;
+  let refIndex = 0;
+  const api = loader(() => {}).service;
+  const result = {
+    request: { ...payload(), statusHistory: [], historyError: null },
+    history: [], historyError: null, data: null,
+    error: null, status: null, loading: false, updatedAt: new Date(), revision: 1,
+    refresh: () => {},
+    beginUpdate: () => update => {
+      if (update) result.request = update(result.request);
+    },
+  };
+  const mergeExports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'pages/rescue/sosDetailData.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { exports: mergeExports, Date });
+  const labelExports = loader(() => {}).labels;
+  const exports = {};
+  const source = fs.readFileSync(path.join(root, 'pages/rescue/RescueSosDetail.tsx'), 'utf8')
+    .replace('function SosDetail(', 'export function SosDetail(');
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  vm.runInNewContext(code, {
+    exports, Error,
+    window: { confirm: () => true },
+    require: name => {
+      if (name === 'react/jsx-runtime') return require(name);
+      if (name === 'react') return {
+        useRef: initial => { const index = refIndex++; return refs[index] ?? (refs[index] = { current: initial }); },
+        useState: initial => {
+          const index = stateIndex++;
+          if (!(index in state)) state[index] = initial;
+          return [state[index], next => { state[index] = typeof next === 'function' ? next(state[index]) : next; }];
+        },
+      };
+      if (name.includes('react-router')) return { Link: 'a', useParams: () => ({ id: 'TEST-SOS' }) };
+      if (name.includes('AuthContext')) return { useAuth: () => ({ user: { role: 'RESCUE_STAFF' } }) };
+      if (name.endsWith('rescueService')) return { ...api, confirmRescued: confirm };
+      if (name.endsWith('useRescueDetail')) return { useRescueDetail: () => result };
+      if (name.endsWith('sosDetailData')) return mergeExports;
+      if (name.endsWith('sosDirect')) return labelExports;
+      return new Proxy({}, { get: (_target, key) => String(key) });
+    },
+  });
+  const render = () => {
+    stateIndex = 0; refIndex = 0;
+    return elements(exports.SosDetail({ id: 'TEST-SOS' }));
+  };
+  return {
+    api, result, render,
+    button: () => render().find(item => item.type === 'button' && item.props.children === 'Xác nhận đã cứu'),
+  };
+}
+
+test('PATCH 403/404 retains readable detail after a successful refresh but disables writing', async () => {
+  for (const status of [403, 404]) {
+    let h;
+    h = detailHarness(async () => { throw new h.api.RescueApiError('TEST write denied', status); });
+    h.button().props.onClick();
+    await flush();
+    h.result.request = { ...h.result.request, location: { latitude: 17, longitude: 109 } };
+    h.result.revision++;
+    const tree = h.render();
+    assert(tree.some(item => item.type === 'h1'));
+    assert(tree.some(item => typeof item.props?.href === 'string' && item.props.href.includes('17%2C109')));
+    assert.equal(h.button().props.disabled, true);
+    h.result.request = null; h.result.status = status; h.result.error = 'TEST read denied';
+    assert.equal(h.render().some(item => item.type === 'h1'), false);
+  }
+});
+
+test('401 during completion hides protected detail and exposes the relogin feedback', async () => {
+  let h;
+  h = detailHarness(async () => { throw new h.api.RescueApiError('TEST expired', 401); });
+  h.button().props.onClick();
+    await flush();
+  const tree = h.render();
+  assert.equal(tree.some(item => item.type === 'h1'), false);
+  assert(tree.some(item => item.type === 'DirectSosFeedback' && item.props.status === 401));
+});
+
+test('immediate completion data yields to the next GET including directions; double clicks only write once', async () => {
+  let resolve;
+  let writes = 0;
+  const h = detailHarness(() => {
+    writes++;
+    return new Promise(done => { resolve = done; });
+  });
+  const button = h.button();
+  const sending = button.props.onClick();
+  await button.props.onClick();
+  assert.equal(writes, 1);
+  resolve({ kind: 'confirmed', request: payload({
+    state: 'rescued', status: 'assisted', completedBy: 'TEST-RESCUER',
+    completedAt: '2026-11-12T02:00:00Z', updatedAt: '2026-11-12T02:00:00Z',
+  }), message: 'TEST confirmed' });
+  await sending;
+  await flush();
+  h.result.request = { ...h.result.request, location: { latitude: 18, longitude: 110 }, updatedAt: '2026-11-12T03:00:00Z' };
+  h.result.revision++;
+  const tree = h.render();
+  assert(tree.some(item => item.props?.href?.includes('18%2C110')));
+  assert.equal(h.button(), undefined);
+});
+
+test('uncertain completion stays locked until a valid fresh state is read', async () => {
+  let h;
+  h = detailHarness(async () => { throw new h.api.RescueApiError('Unknown result', 0); });
+  h.button().props.onClick();
+    await flush();
+  assert.equal(h.button().props.disabled, true);
+  h.result.revision++;
+  h.result.request = { ...h.result.request, state: null };
+  assert.equal(h.button(), undefined);
+  h.result.request = { ...h.result.request, state: 'active' };
+  assert.equal(h.button().props.disabled, false);
+});
+
+test('a rejected stale snapshot cannot mark uncertain data freshly reconciled', async () => {
+  let value = { version: 2 };
+  const h = hookHarness(async () => value, (current, incoming) =>
+    current && current.version > incoming.version ? current : incoming);
+  await flush();
+  const revision = h.state().revision;
+  const timestamp = h.state().updatedAt;
+  value = { version: 1 };
+  h.tick(); await flush();
+  assert.equal(h.state().data.version, 2);
+  assert.equal(h.state().revision, revision);
+  assert.equal(h.state().updatedAt, timestamp);
+  assert.match(h.state().error, /cũ hơn/);
+  h.stop();
+});
+
+test('detail hook creates one polling resource and reads embedded history without /history', async () => {
+  let polls = 0;
+  const calls = [];
+  const fixture = { ...payload(), statusHistory: [{ id: 'TEST-EVENT' }], historyError: null };
+  const exports = {};
+  const code = ts.transpileModule(fs.readFileSync(path.join(root, 'pages/rescue/useRescueDetail.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  let load;
+  vm.runInNewContext(code, {
+    exports,
+    require: name => {
+      if (name === 'react') return { useCallback: fn => fn };
+      if (name.endsWith('rescueService')) return {
+        rescueService: {
+          getRescueDetail: async id => { calls.push(['detail', id]); return fixture; },
+          getHistory: async () => { calls.push(['history']); },
+        },
+      };
+      if (name.endsWith('sosDetailData')) return { mergeSosDetail: (_current, incoming) => incoming };
+      return { useSosResource: (_key, fn) => { polls++; load = fn; return { data: fixture }; } };
+    },
+  });
+  const result = exports.useRescueDetail('TEST-SOS');
+  await load(new AbortController().signal);
+  await load(new AbortController().signal);
+  assert.equal(polls, 1);
+  assert.deepEqual(calls, [['detail', 'TEST-SOS'], ['detail', 'TEST-SOS']]);
+  assert.equal(result.history, fixture.statusHistory);
+});
+
+test('late PATCH result cannot replace newer GPS already received by detail', async () => {
+  let resolve;
+  const h = detailHarness(() => new Promise(done => { resolve = done; }));
+  h.button().props.onClick();
+  const fresh = { ...h.result.request, state: 'rescued', status: 'assisted',
+    location: { latitude: 19, longitude: 111 }, updatedAt: '2026-11-12T05:00:00Z',
+    completedAt: '2026-11-12T02:00:00Z', completedBy: 'TEST-RESCUE' };
+  h.result.request = fresh;
+  h.result.revision++;
+  resolve({ kind: 'confirmed', request: payload({
+    state: 'rescued', status: 'assisted', updatedAt: '2026-11-12T02:00:00Z',
+    completedAt: '2026-11-12T02:00:00Z', completedBy: 'TEST-RESCUE',
+  }), message: 'TEST confirmed' });
+  await flush();
+  assert.equal(h.result.request, fresh);
+  assert(h.render().some(item => item.props?.href?.includes('19%2C111')));
 });
