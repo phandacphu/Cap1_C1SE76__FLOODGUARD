@@ -1,206 +1,175 @@
-import { useCallback, useEffect, useState } from "react";
-import { rescueService } from "../../api/rescueService";
-import type { RescueRequest, SosStatus, UrgencyLevel, Assignment } from "../../types/rescue";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { rescueService, RescueApiError } from '../../api/rescueService';
+import { useAuth } from '../../context/AuthContext';
+import type { DirectSosFilters } from '../../types/rescueDirect';
 
-const AUTO_REFRESH_MS = 15_000;
-
-interface ListParams {
-  status?: SosStatus;
-  urgency?: UrgencyLevel;
-  sort?: "priority";
-}
-
-interface ListState {
-  requests: RescueRequest[] | null;
-  error: string | null;
+interface ResourceState<T> {
   key: string;
+  data: T | null;
+  error: string | null;
+  status: number | null;
   updatedAt: Date | null;
+  loading: boolean;
+  revision: number;
 }
 
-interface RescueDetailResponse {
-  data?: {
-    assignment?: Assignment;
-    rescueStaffId?: string | number;
-  };
-  assignment?: Assignment;
-  rescueStaffId?: string | number;
+type ResourceUpdate<T> = (current: T | null) => T | null;
+type FinishUpdate<T> = (update?: ResourceUpdate<T>) => void;
+type MergeData<T> = (current: T | null, incoming: T) => T;
+
+function replaceData<T>(_current: T | null, incoming: T): T {
+  return incoming;
 }
 
-/** Loads SOS requests and refreshes every 15 seconds or on demand. */
-export function useRescueRequests(params: ListParams = {}) {
-  const { status, urgency, sort } = params;
-  const [round, setRound] = useState(0);
-  const [state, setState] = useState<ListState>({
-    requests: null,
-    error: null,
-    key: "",
-    updatedAt: null,
+/** Poll serially; invalidate reads started before a write and refetch after it settles. */
+export function useSosResource<T>(
+  key: string,
+  load: (signal: AbortSignal) => Promise<T>,
+  merge: MergeData<T> = replaceData,
+) {
+  const { token } = useAuth();
+  const resourceKey = JSON.stringify([token, key]);
+  const refreshRef = useRef<() => void>(() => {});
+  const beginUpdateRef = useRef<() => FinishUpdate<T>>(() => () => {});
+  const [value, setValue] = useState<ResourceState<T>>({
+    key: '', data: null, error: null, status: null, updatedAt: null, loading: true, revision: 0,
   });
 
-  const key = `${status ?? ""}|${urgency ?? ""}|${sort ?? ""}|${round}`;
-
   useEffect(() => {
-    let cancelled = false;
+    let disposed = false;
+    let running = false;
+    let queued = false;
+    let stopped = false;
+    let paused = false;
+    let generation = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | null = null;
 
-    rescueService
-      .getRescueRequests({ status, urgency, sort })
-      .then(async (requests) => {
-        if (cancelled) return;
-
-        const activeRequests = requests.filter(
-          (r) => r.status === "received" || r.status === "in_progress"
-        );
-
-        const details = await Promise.all(
-          activeRequests.map(async (r) => {
-            try {
-              const detailRes = await rescueService.getRescueDetail(r.id);
-              return { id: r.id, data: detailRes };
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        const mergedRequests = requests.map((r) => {
-          const detailObj = details.find((d) => d?.id === r.id);
-          const rawData = detailObj?.data as unknown as RescueDetailResponse | undefined;
-          const actualData = rawData?.data || rawData;
-          
-          let assignmentObj = actualData?.assignment;
-          if (!assignmentObj && actualData?.rescueStaffId) {
-            assignmentObj = {
-              rescueStaffId: String(actualData.rescueStaffId),
-            } as Assignment;
+    const run = async () => {
+      if (disposed || document.hidden || stopped || paused) return;
+      if (running) {
+        queued = true;
+        return;
+      }
+      clearTimeout(timer);
+      queued = false;
+      running = true;
+      const readGeneration = generation;
+      controller = new AbortController();
+      setValue(previous => ({
+        ...(previous.key === resourceKey ? previous : {
+          key: resourceKey, data: null, error: null, status: null, updatedAt: null, revision: 0,
+        }),
+        loading: true,
+      }));
+      try {
+        const data = await load(controller.signal);
+        if (!disposed && readGeneration === generation) setValue(previous => {
+          const currentData = previous.key === resourceKey ? previous.data : null;
+          const merged = merge(currentData, data);
+          if (currentData !== null && merged === currentData && data !== currentData) {
+            return {
+              ...previous,
+              loading: false,
+              status: 0,
+              error: 'Máy chủ trả dữ liệu cũ hơn. Chưa xác nhận được bản cập nhật mới nhất.',
+            };
           }
-
-          return assignmentObj ? { ...r, assignment: assignmentObj } : r;
-        });
-
-        if (!cancelled) {
-          setState({
-            requests: mergedRequests,
+          return {
+            key: resourceKey,
+            data: merged,
             error: null,
-            key,
+            status: null,
             updatedAt: new Date(),
+            loading: false,
+            revision: previous.revision + 1,
+          };
+        });
+      } catch (error) {
+        if (!disposed && readGeneration === generation) {
+          stopped = error instanceof RescueApiError && [401, 403, 404].includes(error.status);
+          setValue(previous => {
+            const status = error instanceof RescueApiError ? error.status : 0;
+            const discard = [401, 403, 404].includes(status);
+            return {
+              ...previous,
+              key: resourceKey,
+              data: discard ? null : previous.data,
+              updatedAt: discard ? null : previous.updatedAt,
+              error: error instanceof Error ? error.message : 'Không thể tải SOS.',
+              status,
+              loading: false,
+            };
           });
         }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-
-        const message =
-          err instanceof Error
-            ? err.message
-            : "Không thể tải danh sách SOS.";
-
-        setState((prev) => ({
-          ...prev,
-          error: message,
-          key,
-        }));
-      });
-
-    return () => {
-      cancelled = true;
+      } finally {
+        running = false;
+        if (!disposed && !document.hidden && !stopped && !paused) {
+          const delay = queued ? 0 : 15_000;
+          queued = false;
+          timer = setTimeout(() => void run(), delay);
+        }
+      }
     };
-  }, [status, urgency, sort, key]);
+    const visibility = () => {
+      clearTimeout(timer);
+      if (!document.hidden) void run();
+    };
+    refreshRef.current = () => {
+      stopped = false;
+      void run();
+    };
+    beginUpdateRef.current = () => {
+      paused = true;
+      const updateGeneration = ++generation;
+      clearTimeout(timer);
+      controller?.abort();
+      setValue(previous => ({ ...previous, loading: false }));
+      return update => {
+        if (disposed || updateGeneration !== generation) return;
+        if (update) setValue(previous => ({
+          ...previous,
+          data: update(previous.data),
+          error: null,
+          status: null,
+          revision: previous.revision + 1,
+        }));
+        paused = false;
+        stopped = false;
+        queued = true;
+        void run();
+      };
+    };
+    document.addEventListener('visibilitychange', visibility);
+    void run();
+    return () => {
+      disposed = true;
+      generation++;
+      clearTimeout(timer);
+      controller?.abort();
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [load, resourceKey, merge]);
 
-  useEffect(() => {
-    const id = window.setInterval(
-      () => setRound((current) => current + 1),
-      AUTO_REFRESH_MS,
-    );
-
-    return () => window.clearInterval(id);
-  }, []);
-
-  const refresh = useCallback(() => {
-    setRound((current) => current + 1);
-  }, []);
-
+  const refresh = useCallback(() => refreshRef.current(), []);
+  const beginUpdate = useCallback(() => beginUpdateRef.current(), []);
+  const current = value.key === resourceKey;
   return {
-    requests: state.requests,
-    error: state.error,
-    updatedAt: state.updatedAt,
-    loading: state.key !== key,
+    data: current ? value.data : null,
+    error: current ? value.error : null,
+    status: current ? value.status : null,
+    updatedAt: current ? value.updatedAt : null,
+    revision: current ? value.revision : 0,
+    loading: !current || value.loading,
     refresh,
+    beginUpdate,
   };
 }
 
-/** Accepts SOS requests and updates statuses through the backend API. */
-export function useRescueActions(
-  _userIdOrRefresh?: string | number | (() => void),
-  maybeRefresh?: () => void
-) {
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  let refresh: (() => void) | undefined;
-  if (typeof _userIdOrRefresh === "function") {
-    refresh = _userIdOrRefresh;
-  } else {
-    refresh = maybeRefresh;
-  }
-
-  const accept = useCallback(
-    async (id: string): Promise<boolean> => {
-      setBusyId(id);
-      setError(null);
-      let ok = false;
-      try {
-        await rescueService.acceptRequest(id);
-        ok = true;
-      } catch (err: unknown) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Không thể tiếp nhận ca cứu hộ.",
-        );
-      } finally {
-        setBusyId(null);
-        refresh?.();
-      }
-      return ok;
-    },
-    [refresh],
-  );
-
-  const advance = useCallback(
-    async (id: string, next: "in_progress" | "assisted", note?: string): Promise<boolean> => {
-      setBusyId(id);
-      setError(null);
-      let ok = false;
-      try {
-        const text =
-          note?.trim() ||
-          (next === "in_progress"
-            ? "Đội cứu hộ đang có mặt tại hiện trường"
-            : "Đã hoàn tất hỗ trợ an toàn");
-        await rescueService.updateStatus(id, next, text);
-        ok = true;
-      } catch (err: unknown) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Cập nhật trạng thái thất bại.",
-        );
-      } finally {
-        setBusyId(null);
-        refresh?.();
-      }
-      return ok;
-    },
-    [refresh],
-  );
-
-  const clearError = useCallback(() => setError(null), []);
-
-  return {
-    busyId,
-    error,
-    accept,
-    advance,
-    clearError,
-  };
+export function useRescueRequests(filters: DirectSosFilters = {}) {
+  const { state, sort = 'newest', from, to } = filters;
+  const load = useCallback((signal: AbortSignal) =>
+    rescueService.getRescueRequests({ state, sort, from, to }, signal), [state, sort, from, to]);
+  const result = useSosResource(JSON.stringify([state, sort, from, to]), load);
+  return { ...result, requests: result.data };
 }
