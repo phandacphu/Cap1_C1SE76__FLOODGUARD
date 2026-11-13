@@ -1,7 +1,9 @@
 import { apiGet, ApiError } from "../../api/http";
 import { fetchSosSummary } from "./sos/sosApi";
 import type { SosSummary } from "./sos/sosTypes";
-import type { AdminUser, FloodAlert, FloodArea, SafeLocation } from "../../types/admin";
+import type { AdminUser, FloodAlert, FloodArea } from "../../types/admin";
+import { fetchAdminSafeLocations } from "./safe-location/safeLocationApi";
+import type { SafeLocation } from "./safe-location/safeLocationTypes";
 
 /** A section of the dashboard that either loaded from the API or did not. */
 export type Section<T> = { ok: true; data: T } | { ok: false; status: number };
@@ -51,11 +53,7 @@ export async function fetchAdminOverview(token: string): Promise<AdminOverview> 
         (data) => data.floodAreas ?? [],
       ),
     ),
-    settle(
-      apiGet<{ safeLocations: SafeLocation[] }>("/safe-locations", token).then(
-        (data) => data.safeLocations ?? [],
-      ),
-    ),
+    settle(fetchAdminSafeLocations(token)),
     settle(fetchSosSummary(token)),
     settle(
       apiGet<{ users: AdminUser[] }>("/admin/users", token).then((data) => data.users ?? []),

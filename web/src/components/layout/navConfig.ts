@@ -15,7 +15,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert", to: "/admin/flood-warnings" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
-  { label: "Quản lý địa điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
+  { label: "Quản lý điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
   { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
   { label: "Quản lý Rescue Staff", icon: "staff" },
   { label: "Thông báo", icon: "bell" },

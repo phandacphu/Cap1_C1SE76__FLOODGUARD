@@ -1,0 +1,45 @@
+{
+  "note": "HTTP FIXTURES, NOT RENDER",
+  "results": [
+    {
+      "name": "same ID selection preserves detail",
+      "result": "PASS"
+    },
+    {
+      "name": "detail 500 shows retry rather than infinite loading",
+      "result": "PASS"
+    },
+    {
+      "name": "click row and green pin opens same detail by ID",
+      "result": "PASS"
+    },
+    {
+      "name": "GET detail 403 on refresh beats delayed list 200",
+      "result": "PASS"
+    },
+    {
+      "name": "PATCH 401 hides protected list and closes edit dialog",
+      "result": "PASS"
+    },
+    {
+      "name": "DELETE 403 closes confirmation and blocks further write",
+      "result": "PASS"
+    },
+    {
+      "name": "lost POST response requires list comparison and blocks a duplicate",
+      "result": "PASS"
+    },
+    {
+      "name": "PATCH 404 removes old row and pin and closes edit dialog",
+      "result": "PASS"
+    },
+    {
+      "name": "DELETE 404 closes confirmation without success toast",
+      "result": "PASS"
+    },
+    {
+      "name": "successful TEST fixture CRUD and search update table and map",
+      "result": "PASS"
+    }
+  ]
+}
