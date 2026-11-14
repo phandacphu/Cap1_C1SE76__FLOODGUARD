@@ -1,90 +1,60 @@
-# SOS operations map — Rescue Web
+# CCF-105 / CCF-181 — PR #137 review follow-up
 
-Branch: feature/rescue-sos-map-layers. Integrates develop 655829c with reviewed Rescue
-SOS v2 dc740ea, which is not yet on that develop. This dependency is intentional:
-the old priority query is rejected by the deployed SOS API. No Backend, Admin,
-Resident or Mobile files changed.
+Branch: feature/rescue-sos-map-layers. Review baseline: 06550b6.
 
-/rescue/sos defaults to the active group and map + list. All, rescued and
-legacy_other filters share the same dataset between list and map. Only newest
-or oldest is sent. Search is explicitly local to loaded results. Red markers
-mean active (both 'needs rescue' and 'not yet rescued'); green means rescued;
-gray means legacy/unknown, never silently converted to rescued.
+## Final scope
 
-MapTiler uses existing VITE_MAPTILER_KEY. SOS polls reuse the serial 15-second
-resource, stop on hidden tabs and retain stale data with the existing notice.
-The map uses location, never initialLocation for directions. Camera does not
-follow polling; the user can explicitly fit all located SOS. Missing coordinates
-remain visible in the list and have an explicit count. Popups render React text,
-link to detail, show water/situation/latest GPS and completion actor/time.
+- /rescue/sos is SOS-only: no area, alert, historical points/HIST, buffer or radar
+  data imports/requests. Uses the existing SOS v2 serial polling and shared
+  filtered list for map/table. Active/red, rescued/green, legacy_other/gray.
+  Missing GPS stays in table; popup and directions use latest location.
+- Area classification/filtering, active alerts and all historical layers live
+  in /map (existing Admin /admin/map ordinary-area behavior preserved).
+- Visual-map buffers and radar default off. They fetch only when enabled;
+  disabled layers are excluded from manual/automatic refresh. Cache lasts 60s,
+  toggle off/on reuses the exact snapshot/time, concurrent loads deduplicate.
+  Empty successful HIST snapshots replace deleted data. Failed loads retain
+  prior snapshot/time and show a stale-data warning. Hidden tab pauses polling.
+- Area/alert API snapshots carry fetchedAt from successful HTTP reads. Cache hits
+  reuse this time rather than resetting it to render/read time. Failed refresh
+  does not replace cached timestamp. Historical data remains reference only.
+- SOS v2 session/completion logic from dc740ea is unchanged.
 
-Flood-area fills use areaType (yellow flood, red low_lying, gray unclassified).
-Borders use the highest currently effective active alert associated by areaId.
-No safety score or current flooding is inferred from classification or the
-absence of alerts. Failed layers retain old data with explicit warnings.
-Public context reads share existing 60-second service caches, refresh in the
-visible tab and support a forced manual refresh. No Admin overview APIs used.
-Directions are external and are not evaluated as flood-safe routes.
+## Verification (2026-11-14)
 
-Validation:
-- npm run lint: passed.
-- npm run build: passed (bundle-size advisory).
-- node --test web/tests/*.test.cjs web/tests/*.test.mjs: 39 passed, zero skipped with captured public Render fixtures.
+Environment: Linux x64, Node 24.22.1, Vite 8.3.1, TypeScript 6, local fixture tests.
+
+- Lint: passed (lint.txt).
+- Build: passed (build.txt); existing >500 kB bundle advisory.
+- All Web tests: 41 passed, zero failures, 2 optional live-payload fixture tests
+  skipped because captured fixture files are not present (tests.txt).
+- No new authenticated Render workflow was performed.
 - git diff --check: passed.
-- Browser verification NOT RUN: Playwright Chromium executable unavailable;
-  Vite also failed with uv_interface_addresses in this environment.
-- Render/login/real GPS/completion TEST workflow NOT RUN; no live mutations.
 
-Remaining acceptance on a real browser with agreed TEST SOS only:
-1. Active/all/rescued filters: markers and list agree; missing GPS counted.
-2. Popup detail/directions reflect the latest GPS after refresh; panning stays.
-3. Confirm on detail: active marker leaves after refresh; rescued group retains
-   server actor/time. Other rescuer completion behaves the same.
-4. MapTiler with valid restricted key; tile retry on failure.
-5. Area-type fills, active-time alert borders, missing/failed/stale alerts never
-   claim safety; manual context reload and recovery.
-6. Search/date/sort/view switches, empty/error/401, narrow screen and navigation.
+Added executable tests: alert/area cached timestamp, failed refresh time retention,
+opening without buffer/radar, forced refresh with layers off, cache toggle reuse,
+expiry, deduplication and failure preservation. Existing 25 SOS v2 tests still
+cover GPS/directions reconciliation, completed state, expired session and lost
+PATCH response. Historical parser and other Web regressions are included.
 
-Do not merge/deploy before team review and real-browser evidence.
+## Browser / Render acceptance not yet completed
 
-## Visual-map layers integrated into SOS map
+No actual browser Network trace or UI success screenshot is claimed. Local Vite
+started at 127.0.0.1:5187; installed Chromium failed at process_singleton_posix
+socket() with Operation not permitted. Cloud browser returned
+net::ERR_CONNECTION_REFUSED for that localhost address. No login/token was logged.
 
-Independent historical point pins, HIST polygons, buffers and radar toggles.
-Points and HIST polygons default on; large buffer/radar overlays default off so
-SOS remains readable. Historical panes stay below SOS markers. Popup API text is
-assigned through textContent (never interpreted as HTML). GeoJSON validation and
-colors reuse the existing map service/icon. Empty reload snapshots remove deleted
-features; failed layer refresh keeps cached geometry with its source timestamp
-and warning. Shared per-source 60-second caches deduplicate historical reads;
-manual reload bypasses cache, and hidden tabs stop polling.
+Still required with team-agreed TEST SOS/account, all against the new PR head:
 
-Ordinary areas have flood/low_lying/unclassified filters and an optional active-
-alert filter. The expandable area list uses the same filters. These remain
-separate from historical layers. No current-flood or safety classification is
-inferred from any historical layer.
+| Case | Status |
+|---|---|
+| Browser Network: /rescue/sos only SOS + map tiles | NOT RUN; browser blocked |
+| Browser Network: /map no buffers/radar while off; enable/cache/refresh | NOT RUN; browser blocked |
+| Same TEST ID: Resident GPS -> table/marker/detail/directions | NOT RUN; no agreed TEST ID/credentials available |
+| Direct completion -> active row/marker removed; rescued history/actor/time | NOT RUN; same dependency |
+| Expired session and lost PATCH response in browser | NOT RUN; automated regressions passed |
+| MapTiler valid key, popups/panning/filters, responsive layout | NOT RUN; browser blocked |
 
-### Public Render API evidence
-
-2026-11-13T21:46:45.934173+07:00
-
-Read-only checks of https://floodguard-backend-demo.onrender.com/api:
-
-| Endpoint | HTTP | Observed result |
-|---|---|---|
-| /flood-history/points | 200 | layer=points, 27 features |
-| /flood-history/areas | 200 | layer=areas, 4 features |
-| /flood-history/buffers | 200 | layer=buffers, 2 features |
-| /flood-history/radar | 200 | layer=radar, 157 features |
-| /flood-areas | 200 | 13 areas |
-| /flood-alerts/active | 200 | empty successful list |
-| /rescue-requests?state=active&sort=newest | 401 | no authentication supplied |
-
-Counts reflect the observation time and are not hardcoded in UI. Captured public
-history payloads passed parseHistoricalCollection; ordinary areas passed the
-existing service test. No protected SOS payload or token was captured.
-
-Full tests with captured fixtures: 39 passed, zero failures/skips. Run with
-SOS_MAP_LIVE_DIR pointing to points.json/areas.json/buffers.json/radar.json and
-LIVE_FLOOD_AREAS pointing to the captured /flood-areas response. Without fixtures,
-these optional live-parser tests skip. Browser UI, valid MapTiler tiles and
-authenticated Render SOS completion/GPS acceptance remain unverified here.
+Please record sanitized paths/method/status and screenshots on a team browser;
+do not include Authorization, tokens, passwords or real residents' locations.
+No live records were modified. No merge/deploy performed.

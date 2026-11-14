@@ -1,0 +1,51 @@
+✔ pending alert request takes precedence over a zero or previous result (1.233916ms)
+✔ dashboard distinguishes an unavailable SOS count from a successful zero (24.186204ms)
+✔ reads real nested envelope, shares in-flight requests and cache; explicit refresh bypasses cache (92.15147ms)
+✔ empty array is valid; malformed envelope, success=false and invalid JSON fail explicitly (104.076208ms)
+✔ propagates HTTP 401/403/500 and network failures; failed refresh can recover (53.009873ms)
+✔ rejects entire invalid geometry without deleting bad vertices or inventing a polygon (10.444508ms)
+✔ accepts live areaType contract including null and omitted legacy classification (12.358585ms)
+﹣ validates the captured live response when LIVE_FLOOD_AREAS is provided (0.177793ms) # SKIP
+✔ shares alert list and count; rejects invalid warning fields (46.283297ms)
+✔ cached snapshots preserve actual API time and failed refresh does not advance it (13.317529ms)
+✔ opening visual map with buffers/radar off never fetches them; force refresh still skips disabled layers (75.826475ms)
+✔ enable fetches once; cached toggle keeps API timestamp; hidden layer never refreshes (17.512999ms)
+✔ concurrent loads deduplicate and failed load never overwrites successful snapshot (10.453301ms)
+✔ read contract uses state and newest/oldest with one /api and Bearer token (132.893662ms)
+✔ empty list is valid; invalid envelopes and duplicate or wrong-id results fail (199.787233ms)
+✔ legacy nulls and malformed coordinates never invent state, GPS or urgency (15.943676ms)
+✔ reject old queries; convert Vietnam date bounds to explicit UTC milliseconds (15.255988ms)
+✔ completion writes only assisted and trimmed note; server confirmer/time retained (14.637242ms)
+✔ 409 conflict reads true confirmer; never repeats PATCH or reports own success (59.219031ms)
+✔ timeout or 500 reconciles detail; an unknown result is never success (53.024685ms)
+✔ 401/403/404/400 are preserved; missing session never sends a write (79.450423ms)
+✔ poll serializes refreshes, pauses hidden tab and aborts on leaving screen (18.320855ms)
+✔ poll keeps markers on network failure, then replaces list when SOS completed elsewhere (10.103372ms)
+✔ poll discards protected data after forbidden response and stops automatic retries (8.955925ms)
+✔ HTTP 200 with malformed completion body reconciles once using the exact SOS ID (62.087326ms)
+✔ malformed write followed by unknown or invalid detail remains an uncertain result (60.135278ms)
+✔ detail uses embedded history and flags malformed history without a second read (25.849125ms)
+✔ new GET updates GPS/directions data after completion; stale snapshots cannot roll it back (12.400212ms)
+✔ late pre-mutation GET is discarded; a GET started after completion replaces the immediate update (7.453581ms)
+✔ a paused write blocks polling and a late response after leaving detail cannot publish data (5.941784ms)
+✔ 401 login button clears the old session before navigation, including completion errors (18.036464ms)
+✔ PATCH 403/404 retains readable detail after a successful refresh but disables writing (132.954288ms)
+✔ 401 during completion hides protected detail and exposes the relogin feedback (82.528554ms)
+✔ immediate completion data yields to the next GET including directions; double clicks only write once (51.320542ms)
+✔ uncertain completion stays locked until a valid fresh state is read (53.174186ms)
+✔ a rejected stale snapshot cannot mark uncertain data freshly reconciled (7.563293ms)
+✔ detail hook creates one polling resource and reads embedded history without /history (3.03364ms)
+✔ late PATCH result cannot replace newer GPS already received by detail (38.798165ms)
+✔ SOS historical layers preserve separate geometries, holes and GeoJSON coordinate order (2.323228ms)
+✔ SOS history rejects invalid rings and wrong layers; empty successful snapshots remove deleted HIST (0.52054ms)
+﹣ captured public Render historical payloads pass the actual map parser (0.147188ms) # SKIP
+✔ SOS map only uses valid latest location and preserves zero coordinates (1.313614ms)
+✔ area severity uses only matching active and currently effective alerts (0.402256ms)
+ℹ tests 43
+ℹ suites 0
+ℹ pass 41
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 2
+ℹ todo 0
+ℹ duration_ms 1615.039521
