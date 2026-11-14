@@ -26,13 +26,13 @@ export function RescueLayout({
       brandSub="RESCUE STAFF"
       roleLabel="NHÂN VIÊN CỨU HỘ"
       accent="safe"
-      badges={{ "/rescue/sos": waitingCount ?? 0 }}
+      badges={waitingCount === undefined ? undefined : { "/rescue/sos": waitingCount }}
       header={
         <RescueHeader
           loading={loading}
           onRefresh={onRefresh}
           updatedAt={updatedAt}
-          waitingCount={waitingCount ?? 0}
+          waitingCount={waitingCount}
         />
       }
     >

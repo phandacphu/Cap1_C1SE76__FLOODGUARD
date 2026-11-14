@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function loadService(fetch) {
+function loadService(fetch, DateImpl = Date) {
   const exports = {};
   class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/api/floodAreaService.ts'), 'utf8'), {
@@ -14,7 +14,7 @@ function loadService(fetch) {
   }).outputText;
   vm.runInNewContext(source, {
     exports, require: name => name === './authApi' ? { API_URL: 'https://fixture.invalid/api' } : { ApiError },
-    fetch, AbortController, setTimeout, clearTimeout,
+    fetch, Date: DateImpl, AbortController, setTimeout, clearTimeout,
   });
   return exports;
 }
@@ -87,4 +87,29 @@ test('shares alert list and count; rejects invalid warning fields', async () => 
     const { floodAreaService: bad } = loadService(async () => response({ success: true, data: { floodAlerts: [invalid] } }));
     await assert.rejects(bad.getActiveAlerts());
   }
+});
+
+
+test('cached snapshots preserve actual API time and failed refresh does not advance it', async () => {
+  let now = 1000;
+  let fail = false;
+  let calls = 0;
+  class Clock extends Date { static now() { return now; } }
+  const { floodAreaService: s } = loadService(async () => {
+    calls++;
+    if (fail) throw new Error('TEST offline');
+    return response({ success: true, data: { floodAreas: [area], floodAlerts: [] } });
+  }, Clock);
+  const first = await s.getActiveAlertsSnapshot();
+  const areas = await s.getFloodAreasSnapshot();
+  now = 2000;
+  assert.equal((await s.getActiveAlertsSnapshot()).fetchedAt, first.fetchedAt);
+  assert.equal((await s.getFloodAreasSnapshot()).fetchedAt, areas.fetchedAt);
+  assert.equal(calls, 2);
+  fail = true;
+  await assert.rejects(s.getActiveAlertsSnapshot(true));
+  assert.equal((await s.getActiveAlertsSnapshot()).fetchedAt, 1000);
+  fail = false;
+  now = 3000;
+  assert.equal((await s.getActiveAlertsSnapshot(true)).fetchedAt, 3000);
 });
