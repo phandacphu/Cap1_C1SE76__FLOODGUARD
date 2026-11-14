@@ -26,7 +26,7 @@ Environment: Linux x64, Node 24.22.1, Vite 8.3.1, TypeScript 6, local fixture te
 
 - Lint: passed (lint.txt).
 - Build: passed (build.txt); existing >500 kB bundle advisory.
-- All Web tests: 41 passed, zero failures, 2 optional live-payload fixture tests
+- All Web tests: 43 passed, zero failures, 2 optional live-payload fixture tests
   skipped because captured fixture files are not present (tests.txt).
 - No new authenticated Render workflow was performed.
 - git diff --check: passed.
@@ -58,3 +58,25 @@ Still required with team-agreed TEST SOS/account, all against the new PR head:
 Please record sanitized paths/method/status and screenshots on a team browser;
 do not include Authorization, tokens, passwords or real residents' locations.
 No live records were modified. No merge/deploy performed.
+
+
+## Collocated SOS follow-up
+
+The location counter counts requests with valid GPS, not unique points. Requests
+with exactly equal coordinates are now grouped at their real coordinate, with a
+permanent N SOS label and a popup containing a separate ID, detail link, GPS time
+and latest-coordinate directions link for each request. No artificial GPS offset
+is applied. Different coordinates remain separate; the explicit fit-all action
+includes every valid coordinate and never runs automatically during polling.
+
+Added tests: six distinct SOS IDs at one GPS point remain six popup records;
+a GPS change moves the same ID to its new group and updates directions without
+removing another SOS or the missing-GPS table record. Tests: 43 passed, 2 optional
+live-fixture tests skipped. Lint/build passed; stored logs normalized with trailing
+whitespace and trailing blank lines removed. git diff --check passed.
+
+Not verified: actual six SOS from the user's screenshot, live popup clicks,
+Resident GPS update -> direct rescue completion -> rescued-group history. No
+team-agreed TEST ID or authenticated session was available. Prior browser blockers
+remain; no image/video or successful live acceptance is claimed. The code tests
+use explicit TEST fixtures and are not substitutes for that final acceptance.

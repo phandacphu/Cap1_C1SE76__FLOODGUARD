@@ -34,3 +34,23 @@ test('area severity uses only matching active and currently effective alerts', (
   assert.notEqual(SOS_MAP_COLORS.active, SOS_MAP_COLORS.rescued);
   assert.notEqual(SOS_MAP_COLORS.legacy_other, SOS_MAP_COLORS.rescued);
 });
+
+test('six collocated SOS remain six distinct popup records at one exact GPS location', () => {
+  const rows = Array.from({ length: 6 }, (_, i) => ({ id: `TEST-${i}`, state: 'active', location: { latitude: 16, longitude: 108 } }));
+  const groups = exportsMap.groupMapLocations(rows);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].items.length, 6);
+  assert.equal(new Set(groups[0].items.map(item => item.id)).size, 6);
+  assert.equal(groups[0].latitude, 16);
+  assert.equal(groups[0].longitude, 108);
+});
+test('GPS movement regroups the same ID and uses its new directions without changing other SOS', () => {
+  const rows = [{ id: 'TEST-1', location: { latitude: 16, longitude: 108 } }, { id: 'TEST-2', location: { latitude: 16, longitude: 108 } }, { id: 'TEST-NO-GPS', location: null }];
+  assert.equal(exportsMap.groupMapLocations(rows).length, 1);
+  rows[0].location = { latitude: 17, longitude: 109 };
+  const groups = exportsMap.groupMapLocations(rows);
+  assert.equal(groups.length, 2);
+  assert.equal(groups.find(group => group.items[0].id === 'TEST-1').latitude, 17);
+  assert.match(directionsUrl(rows[0]), /destination=17,109$/);
+  assert.equal(rows.length, 3);
+});
