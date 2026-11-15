@@ -35,9 +35,10 @@ async function publicGet(path: string): Promise<Record<string, unknown>> {
 
 // Public data: share and deduplicate concurrent requests, including React StrictMode.
 const CACHE_MS = 60_000;
-let areaCache: { value: FloodArea[]; expires: number } | null = null;
+const fetchedTimes = new WeakMap<object, number>();
+let areaCache: { value: FloodArea[]; expires: number; fetchedAt: number } | null = null;
 let areaPending: Promise<FloodArea[]> | null = null;
-let alertCache: { value: FloodAlert[]; expires: number } | null = null;
+let alertCache: { value: FloodAlert[]; expires: number; fetchedAt: number } | null = null;
 let alertPending: Promise<FloodAlert[]> | null = null;
 
 export const floodAreaService = {
@@ -49,7 +50,9 @@ export const floodAreaService = {
         throw new ApiError('Dữ liệu vùng ngập hoặc tọa độ đa giác không hợp lệ.', 200);
       }
       const value = data.floodAreas;
-      areaCache = { value, expires: Date.now() + CACHE_MS };
+      const fetchedAt = Date.now();
+      fetchedTimes.set(value, fetchedAt);
+      areaCache = { value, expires: fetchedAt + CACHE_MS, fetchedAt };
       return value;
     }).finally(() => { areaPending = null; });
     return areaPending;
@@ -67,10 +70,20 @@ export const floodAreaService = {
         throw new ApiError('Dữ liệu cảnh báo không hợp lệ.', 200);
       }
       const value = data.floodAlerts as FloodAlert[];
-      alertCache = { value, expires: Date.now() + CACHE_MS };
+      const fetchedAt = Date.now();
+      fetchedTimes.set(value, fetchedAt);
+      alertCache = { value, expires: fetchedAt + CACHE_MS, fetchedAt };
       return value;
     }).finally(() => { alertPending = null; });
     return alertPending;
+  },
+  async getActiveAlertsSnapshot(force = false) {
+    const value = await floodAreaService.getActiveAlerts(force);
+    return { value, fetchedAt: fetchedTimes.get(value)! };
+  },
+  async getFloodAreasSnapshot(force = false) {
+    const value = await floodAreaService.getFloodAreas(force);
+    return { value, fetchedAt: fetchedTimes.get(value)! };
   },
   async getActiveAlertCount(force = false): Promise<number> {
     return (await floodAreaService.getActiveAlerts(force)).length;

@@ -1,11 +1,8 @@
 import { AREA_TYPE_COLOR, AREA_TYPE_LABEL } from '../admin/flood-area/floodAreaTypes';
 import { historicalFloodIcon } from './historicalFloodIcon';
 import { formatAreaAlertCount } from './mapAlertStatus';
-import {
-  fetchHistoricalBuffers,
-  fetchHistoricalPoints,
-  fetchHistoricalRadar,
-} from '../admin/flood-area/historicalMapService';
+import { useHistoricalLayers } from './useHistoricalLayers';
+import type { HistoricalLayerKey } from '../admin/flood-area/historicalMapService';
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -45,13 +42,13 @@ export const FloodMapView: React.FC = () => {
   const isRescue = user?.role === 'RESCUE_STAFF';
   const [showHistory, setShowHistory] = useState(true);
   const [historyRetry, setHistoryRetry] = useState(0);
-  const [historyStatus, setHistoryStatus] = useState('');
+  const [showBuffers, setShowBuffers] = useState(false);
+  const [showRadar, setShowRadar] = useState(false);
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const polygonLayerGroupRef = useRef<L.LayerGroup | null>(null);
-  const historyLayerRef = useRef<L.LayerGroup | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   const [floodAreas, setFloodAreas] = useState<FloodArea[]>([]);
@@ -60,6 +57,9 @@ export const FloodMapView: React.FC = () => {
 
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
+  const historyKeys: HistoricalLayerKey[] = isRescue && showHistory
+    ? ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])] : [];
+  const historyLayers = useHistoricalLayers(historyKeys, `${historyRetry}:${reloadTrigger}`);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const isStaleData = lastUpdated !== null && dataError !== null;
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
@@ -80,8 +80,8 @@ export const FloodMapView: React.FC = () => {
   const [alertCountError, setAlertCountError] = useState<string | null>(null);
   useEffect(() => {
     let ignore = false;
-    void floodAreaService.getActiveAlerts(reloadTrigger > 0).then(alerts => {
-      if (!ignore) { setActiveAlerts(alerts); setAlertsUpdatedAt(new Date()); setAlertCountError(null); }
+    void floodAreaService.getActiveAlertsSnapshot(reloadTrigger > 0).then(({ value: alerts, fetchedAt }) => {
+      if (!ignore) { setActiveAlerts(alerts); setAlertsUpdatedAt(new Date(fetchedAt)); setAlertCountError(null); }
     }).catch(() => {
       if (!ignore) setAlertCountError('Không tải được cảnh báo hiệu lực. Trạng thái cảnh báo của từng vùng chưa được xác nhận; thông tin cũ nếu có chỉ để tham khảo.');
     }).finally(() => {
@@ -96,11 +96,11 @@ export const FloodMapView: React.FC = () => {
 
     const loadFloodAreas = async () => {
       try {
-        const data = await floodAreaService.getFloodAreas(reloadTrigger > 0);
+        const { value: data, fetchedAt } = await floodAreaService.getFloodAreasSnapshot(reloadTrigger > 0);
         if (!ignore) {
           setFloodAreas(data);
           setDataError(null);
-          setLastUpdated(new Date());
+          setLastUpdated(new Date(fetchedAt));
         }
       } catch (err: unknown) {
         if (!ignore) {
@@ -196,61 +196,24 @@ export const FloodMapView: React.FC = () => {
 
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !isRescue) return;
-
-    const group = L.layerGroup();
-    let cancelled = false;
-    const layers = [
-      ['Radar', fetchHistoricalRadar],
-      ['Vùng đệm', fetchHistoricalBuffers],
-      ['Điểm ngập', fetchHistoricalPoints],
-    ] as const;
-
-    void Promise.allSettled(layers.map(async ([, load]) => load())).then(results => {
-      if (cancelled) return;
-
-      const failed: string[] = [];
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          failed.push(layers[index][0]);
-          return;
-        }
-
-        L.geoJSON(result.value as unknown as GeoJSON.FeatureCollection, {
-          pane: 'flood-history',
-          interactive: false,
-          style: { color: AREA_TYPE_COLOR.low_lying, fillColor: AREA_TYPE_COLOR.low_lying, weight: 2.5, opacity: 0.95, fillOpacity: 0.4 },
-          pointToLayer: (_feature, position) => L.marker(position, {
-            pane: 'flood-history',
-            interactive: false,
-            icon: historicalFloodIcon,
-          }),
-        }).addTo(group);
-      });
-
-      setHistoryStatus(failed.length ? `Không tải được lớp: ${failed.join(', ')}.` : 'Đã tải dữ liệu lịch sử.');
+    if (!map || !isRescue || !showHistory) return;
+    const group = L.layerGroup().addTo(map);
+    const keys: HistoricalLayerKey[] = ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])];
+    keys.forEach(key => {
+      const data = historyLayers[key]?.snapshot?.data;
+      if (!data) return;
+      L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
+        pane: 'flood-history', interactive: false,
+        style: feature => {
+          const color = key === 'areas' && feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : AREA_TYPE_COLOR.low_lying;
+          return { color, fillColor: color, weight: 2.5, opacity: 0.95, fillOpacity: 0.3 };
+        },
+        pointToLayer: (_feature, position) => L.marker(position, { pane: 'flood-history', interactive: false, icon: historicalFloodIcon }),
+      }).addTo(group);
     });
+    return () => { map.removeLayer(group); };
+  }, [isRescue, showHistory, showBuffers, showRadar, historyLayers, mapTilerKey]);
 
-    // Keep the fetched layers when the user toggles their visibility.
-    map.addLayer(group);
-    historyLayerRef.current = group;
-    return () => {
-      cancelled = true;
-      map.removeLayer(group);
-      historyLayerRef.current = null;
-    };
-  }, [isRescue, historyRetry, mapTilerKey]);
-
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    const group = historyLayerRef.current;
-    if (!map || !group) return;
-
-    if (showHistory) map.addLayer(group);
-    else map.removeLayer(group);
-  }, [showHistory, historyRetry, isRescue, mapTilerKey]);
-
-  // Filter current areaType classification, independently of warning severity.
   const filteredAreas = useMemo(() => {
     const classified = floodAreas.filter(area => statusFilter === 'all' ||
       (statusFilter === 'unknown' ? area.areaType == null : area.areaType === statusFilter));
@@ -407,13 +370,13 @@ export const FloodMapView: React.FC = () => {
           {showHistory && (
             <>
               <p className="text-slate-300">Ghim đỏ: điểm ngập lịch sử. Viền đỏ và nền đỏ nhạt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
-              <p role="status" className="text-slate-400">{historyStatus || 'Đang tải lớp ngập lịch sử…'}</p>
-              {historyStatus.startsWith('Không tải') && (
-                <button type="button" className="underline" onClick={() => {
-                  setHistoryStatus('');
-                  setHistoryRetry(value => value + 1);
-                }}>Tải lại lớp lịch sử</button>
-              )}
+              <label className="mr-4 inline-flex items-center gap-2"><input type="checkbox" checked={showBuffers} onChange={event => setShowBuffers(event.target.checked)} /> Vùng đệm lịch sử</label>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRadar} onChange={event => setShowRadar(event.target.checked)} /> Radar lịch sử</label>
+              {historyKeys.map(key => <p key={key} role="status" className={historyLayers[key]?.error ? 'text-amber-300' : 'text-slate-400'}>
+                {({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error ?? (historyLayers[key]?.snapshot ? `${historyLayers[key]!.snapshot!.data.features.length} đối tượng` : 'Đang tải…')}
+                {historyLayers[key]?.snapshot && ` — API tải lúc ${new Date(historyLayers[key]!.snapshot!.fetchedAt).toLocaleString('vi-VN')}`}
+              </p>)}
+              <button type="button" className="underline" onClick={() => setHistoryRetry(value => value + 1)}>Tải lại các lớp đang bật</button>
             </>
           )}
         </div>
