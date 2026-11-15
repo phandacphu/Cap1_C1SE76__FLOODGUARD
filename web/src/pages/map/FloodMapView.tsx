@@ -43,7 +43,7 @@ export const FloodMapView: React.FC = () => {
   const isRescue = user?.role === 'RESCUE_STAFF';
   const [showHistory, setShowHistory] = useState(true);
   const [historyRetry, setHistoryRetry] = useState(0);
-  const [showBuffers, setShowBuffers] = useState(true);
+  const [showBuffers, setShowBuffers] = useState(false);
   const [showRadar, setShowRadar] = useState(false);
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 

@@ -64,3 +64,10 @@ areas remain on; radar remains off. Buffer requests on opening are therefore
 intentional, for the visibly enabled checkbox. Turning off buffers excludes them
 from subsequent refreshes; no invented client-side circles or altered GPS/vertices.
 This changes the earlier default-off buffer choice; radar is still lazy/off.
+
+
+## PR #138 review supersedes buffer default
+
+Buffers and radar are OFF by default again, matching the agreed lazy-loading
+policy. Earlier default-on presentation notes above are historical. Circle
+geometry and HIST popups remain; enable the buffer checkbox to show circles.

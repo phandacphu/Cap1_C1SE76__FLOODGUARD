@@ -14,9 +14,16 @@ export class RescueGpsStore {
   private publish(patch: Partial<GpsState>) {this.value={...this.value,...patch};this.listeners.forEach(callback=>callback());}
   private success(position: GeolocationPosition, force: boolean) {
     const point={latitude:position.coords.latitude,longitude:position.coords.longitude};
-    if (!validCoordinates(point)) {this.failure();return;}
+    const capturedAt = position.timestamp;
+    if (!validCoordinates(point) || !Number.isFinite(capturedAt) || capturedAt < 0) {this.failure();return;}
+    // Both getCurrentPosition and watchPosition share the same monotonic sample gate.
+    if (this.value.recordedAt !== null && (capturedAt < this.value.recordedAt ||
+        (capturedAt === this.value.recordedAt && !sameOrigin(point,this.value.point)))) {
+      if (force) this.publish({requesting:false});
+      return;
+    }
     const changed = !sameOrigin(point,this.value.point);
-    this.publish({point,recordedAt:Number.isFinite(position.timestamp)?position.timestamp:Date.now(),error:null,requesting:false});
+    this.publish({point,recordedAt:capturedAt,error:null,requesting:false});
     if(changed || force) this.onFix(point);
   }
   private failure() {this.publish({requesting:false,error:this.value.point ? 'Chưa lấy được GPS mới; đang dùng vị trí cuối, có thể đã cũ.' : 'Chưa có GPS hoặc quyền định vị bị từ chối. Bạn vẫn xem được danh sách và bản đồ.'});}

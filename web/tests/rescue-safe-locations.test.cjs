@@ -146,3 +146,63 @@ test('selecting the same marker/card while detail is in flight does not duplicat
   await store.load();store.select('TEST-1');store.select('TEST-1');store.select('TEST-1');assert.equal(calls,1);
   wait.resolve(point());await tick();assert.equal(store.snapshot().detail.id,'TEST-1');
 });
+
+test('selection during a failed list refresh still reads detail by selected ID and keeps list error visible',async()=>{
+  const {store:{CatalogStore}}=modules();const refresh=deferred();let reads=0;const details=[];
+  const store=new CatalogStore({list:async()=>++reads===1?[point('A'),point('B')]:refresh.promise,
+    detail:async id=>{details.push(id);return point(id,null,{description:'Fresh detail from API'});}});
+  await store.load();const pending=store.load();store.select('A');store.select('B');
+  assert.equal(details.length,0);assert.equal(store.snapshot().detailLoading,true);
+  refresh.reject(new Error('TEST list offline'));await pending;await tick();
+  assert.deepEqual(details,['B']);assert.equal(store.snapshot().detail.id,'B');assert.ok(store.snapshot().error);
+  assert.equal(store.snapshot().detail.description,'Fresh detail from API');assert.equal(store.snapshot().loading,false);
+});
+test('queued detail failure exposes retry; retry processes same ID without resending the failed list',async()=>{
+  const {store:{CatalogStore}}=modules();const refresh=deferred();let lists=0,details=0;
+  const store=new CatalogStore({list:async()=>++lists===1?[point()]:refresh.promise,
+    detail:async()=>{if(++details===1)throw new Error('TEST detail offline');return point();}});
+  await store.load();const pending=store.load();store.select('TEST-1');refresh.reject(new Error('TEST list offline'));await pending;await tick();
+  assert.ok(store.snapshot().detailError);assert.equal(store.snapshot().detailLoading,false);assert.equal(store.snapshot().detail,null);
+  await store.loadDetail();assert.equal(store.snapshot().detail.id,'TEST-1');assert.equal(store.snapshot().detailError,null);assert.equal(lists,2);
+});
+test('closing a queued selection or superseding its refresh never issues detail for an obsolete ID',async()=>{
+  const {store:{CatalogStore}}=modules();const refresh=deferred();let reads=0,details=0;
+  const store=new CatalogStore({list:async()=>++reads===1?[point()]:refresh.promise,detail:async()=>{details++;return point();}});
+  await store.load();const pending=store.load();store.select('TEST-1');store.close();refresh.reject(new Error('TEST offline'));await pending;await tick();
+  assert.equal(details,0);assert.equal(store.snapshot().selectedId,null);
+});
+test('manual new GPS before late old watch sample retains point/time and nearest order from the new origin',async()=>{
+  const {gps:{RescueGpsStore},store:{CatalogStore}}=modules();let watchSuccess,manualSuccess;const calls=[];
+  const store=new CatalogStore({list:async origin=>{calls.push(origin);return origin.latitude===17?[point('NEAR',.1),point('FAR',20)]:[point('FAR',.1),point('NEAR',20)];},detail:async()=>point()});
+  const geo={watchPosition:success=>{watchSuccess=success;return 0;},clearWatch:()=>{},getCurrentPosition:success=>{manualSuccess=success;}};
+  const gps=new RescueGpsStore(geo,p=>{void store.load(p);});gps.start();const pending=gps.request();
+  manualSuccess({coords:{latitude:17,longitude:109},timestamp:2000});await pending;await tick();
+  watchSuccess({coords:{latitude:16,longitude:108},timestamp:1000});await tick();
+  assert.equal(gps.snapshot().point.latitude,17);assert.equal(gps.snapshot().recordedAt,2000);assert.equal(calls.length,1);assert.equal(store.snapshot().origin.latitude,17);
+  assert.deepEqual(Array.from(store.snapshot().items,item=>item.id),['NEAR','FAR']);
+  gps.stop();
+});
+test('late manual GPS cannot replace a newer watch sample; invalid timestamps never become a fresh fix',async()=>{
+  const {gps:{RescueGpsStore}}=modules();let watch,manual;const calls=[];
+  const gps=new RescueGpsStore({watchPosition:success=>{watch=success;return 0;},clearWatch:()=>{},getCurrentPosition:success=>{manual=success;}},p=>calls.push(p));
+  gps.start();const pending=gps.request();watch({coords:{latitude:18,longitude:110},timestamp:3000});
+  manual({coords:{latitude:17,longitude:109},timestamp:2000});const focused=await pending;
+  assert.equal(focused.latitude,18);assert.equal(gps.snapshot().recordedAt,3000);assert.equal(calls.length,1);
+  watch({coords:{latitude:15,longitude:107},timestamp:NaN});assert.equal(gps.snapshot().point.latitude,18);assert.equal(gps.snapshot().recordedAt,3000);assert.equal(calls.length,1);
+  watch({coords:{latitude:14,longitude:106},timestamp:3000});assert.equal(gps.snapshot().point.latitude,18);assert.equal(calls.length,1);gps.stop();
+});
+
+test('detail interrupted by refresh resumes after list failure and rejects its old late response',async()=>{
+  const {store:{CatalogStore}}=modules();const refresh=deferred(),old=deferred();let lists=0,details=0;
+  const store=new CatalogStore({list:async()=>++lists===1?[point()]:refresh.promise,detail:async()=>++details===1?old.promise:point('TEST-1',null,{description:'Latest detail'})});
+  await store.load();store.select('TEST-1');const pending=store.load();refresh.reject(new Error('TEST list offline'));await pending;await tick();
+  assert.equal(store.snapshot().detail.description,'Latest detail');old.resolve(point('TEST-1',null,{description:'STALE detail'}));await tick();
+  assert.equal(details,2);assert.equal(store.snapshot().detail.description,'Latest detail');
+});
+
+test('superseded failed refresh cannot drain an old queued detail after newer list removes that ID',async()=>{
+  const {store:{CatalogStore}}=modules();const stale=deferred();let lists=0,details=0;
+  const store=new CatalogStore({list:async()=>{lists++;return lists===1?[point('A')]:lists===2?stale.promise:[point('B',0)];},detail:async id=>{details++;return point(id);}});
+  await store.load();const old=store.load();store.select('A');await store.load({latitude:17,longitude:109});
+  stale.reject(new Error('STALE TEST failure'));await old;await tick();assert.equal(details,0);assert.equal(store.snapshot().items[0].id,'B');assert.equal(store.snapshot().unavailable,true);
+});

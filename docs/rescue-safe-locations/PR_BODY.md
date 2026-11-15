@@ -1,16 +1,18 @@
-Rescue Web: bổ sung Điểm tránh trú theo API catalogue v2 và giữ lại bản đồ HIST đã
-làm trước đó trên cùng nhánh sử dụng.
+Rescue Web: /rescue/safe-locations theo catalogue v2 public, GPS người cứu hộ,
+danh sách/bản đồ/chi tiết theo ID và mở Google Maps. Không CRUD, sức chứa hay ETA.
 
-- /rescue/safe-locations: danh sách, bản đồ, chi tiết theo ID, GPS/last-known,
-  khoảng cách Backend, lọc cục bộ, Maps và xử lý refresh/lỗi/xóa/response muộn.
-- /map: gộp bản HIST b11a6f9 để giữ vùng tròn bật sẵn, điểm đỏ, đa giác Admin và
-  popup metadata; radar vẫn tắt/lazy. Không tự đổi hình học hay GPS.
-- Shared files: App.tsx/navConfig.ts route/menu; RescueHeader.tsx/RescueLayout.tsx
-  nhãn đồng bộ thủ công cho catalogue, mặc định các màn khác giữ nguyên.
-- Không sửa Admin/Mobile/Backend/đăng nhập/luồng SOS. Không CRUD Rescue hoặc ETA giả.
+Sửa review tại 6bd7d80:
+- Queue ID chi tiết khi refresh đang chạy; refresh lỗi vẫn GET đúng ID, có retry.
+- Timestamp gate dùng chung cho watchPosition/getCurrentPosition; mẫu cũ không
+  đổi GPS, giờ ghi nhận hay gọi danh mục theo tọa độ cũ.
+- Bản đồ trực quan: vùng đệm/radar OFF mặc định, chỉ tải khi bật.
 
-Lint/build PASS; bản kết hợp 67 test PASS, 2 optional capture test cũ SKIP.
-Capture API public catalogue và HIST đã được replay bằng parser thật. Chưa có
-nghiệm thu trình duyệt, GPS thiết bị, ảnh/video hoặc Admin CRUD TEST -> Web reload;
-cloud browser không kết nối localhost. Xem docs/rescue-safe-locations/README.md.
-Chờ Phú review phạm vi kết hợp; chưa merge develop/deploy.
+Phạm vi riêng: popup metadata HIST có sẵn trong nhánh kết hợp, không thuộc luồng
+Điểm tránh trú. Giữ ID join/escape và geometry; đánh giá riêng khi review.
+
+Lint/build/diff PASS. 74 test Web PASS, 2 optional captures SKIP; catalogue 24 PASS.
+Race/GPS/xóa/404 dùng API/GPS giả lập. Render list không GPS, list GPS kiểm thử và
+chi tiết cùng ID: HTTP 200, parser PASS, chỉ đọc. Chưa có kiểm thử trình duyệt,
+GPS thiết bị hoặc Admin CRUD TEST live. Không khẳng định ảnh/video hay Network UI
+đã đạt. Log và phân loại ca: docs/rescue-safe-locations/review-138/README.md.
+Chưa merge/deploy; chờ Phú review SHA mới và nghiệm thu trình duyệt.

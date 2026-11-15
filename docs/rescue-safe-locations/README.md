@@ -101,7 +101,7 @@ No push/merge/deploy performed; Phu reviews and decides merge.
 ## Combined working branch: retain previous HIST display
 
 At the user's request, this branch now also includes feature/CCF-105-181-rescue-
-hist-details through b11a6f9. Opening /map retains circular historical buffers ON,
+hist-details through b11a6f9. Opening /map retains circular historical buffers (OFF by default after review #138),
 HIST points and Admin polygons with metadata popups; pins remain above polygons.
 Radar stays off/lazy. This is the existing HIST implementation merged into the
 catalogue branch, so switching to the shelter screen no longer drops pending HIST
@@ -112,3 +112,13 @@ Combined validation: lint/build PASS; 67 tests PASS, 2 older optional capture te
 SKIP with SAFE_CATALOG_LIVE_DIR and HIST_LIVE_DIR captures supplied. See combined
 logs. Browser appearance and physical GPS acceptance remain NOT RUN. No merge
 into develop or deployment was performed.
+
+
+## Current review status (#138)
+
+The latest follow-up supersedes the earlier default-on buffer choice. Buffers and
+radar are now both OFF; turn on the checkbox to see circular references. Popup
+HIST work is retained but reviewed separately from the catalogue. Queued detail
+reads after failed refresh and GPS timestamp ordering are fixed and covered.
+Current validation: 74 tests PASS, 2 optional captures SKIP; lint/build/diff PASS.
+See review-138/README.md for fake-vs-Render results and pending browser cases.
