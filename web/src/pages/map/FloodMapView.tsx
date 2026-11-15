@@ -43,7 +43,7 @@ export const FloodMapView: React.FC = () => {
   const isRescue = user?.role === 'RESCUE_STAFF';
   const [showHistory, setShowHistory] = useState(true);
   const [historyRetry, setHistoryRetry] = useState(0);
-  const [showBuffers, setShowBuffers] = useState(false);
+  const [showBuffers, setShowBuffers] = useState(true);
   const [showRadar, setShowRadar] = useState(false);
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
@@ -386,7 +386,7 @@ export const FloodMapView: React.FC = () => {
           </label>
           {showHistory && (
             <>
-              <p className="text-slate-300">Ghim đỏ: điểm ngập lịch sử. Viền đỏ và nền đỏ nhạt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
+              <p className="text-slate-300">Vùng tròn đỏ: vùng đệm lịch sử. Ghim đỏ: điểm HIST. Đa giác phủ thêm là hình Admin đã lưu; radar chỉ hiện khi bật. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
               <label className="mr-4 inline-flex items-center gap-2"><input type="checkbox" checked={showBuffers} onChange={event => setShowBuffers(event.target.checked)} /> Vùng đệm lịch sử</label>
               <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRadar} onChange={event => setShowRadar(event.target.checked)} /> Radar lịch sử</label>
               {historyKeys.map(key => <p key={key} role="status" className={historyLayers[key]?.error ? 'text-amber-300' : 'text-slate-400'}>

@@ -54,3 +54,13 @@ Original HIST point coordinates and red historicalFloodIcon are unchanged. Drawn
 HIST polygons overlay the base map in pane 410; the original points remain above
 them in pane 430, so overlapping polygons cannot hide pins or consume their clicks.
 Buffers/radar remain in passive pane 390. Metadata popups are retained.
+
+
+## Requested circle + polygon presentation
+
+Historical buffers now default ON at the user's explicit request to retain the
+old circular reference areas while adding Admin-drawn polygons. Points and HIST
+areas remain on; radar remains off. Buffer requests on opening are therefore
+intentional, for the visibly enabled checkbox. Turning off buffers excludes them
+from subsequent refreshes; no invented client-side circles or altered GPS/vertices.
+This changes the earlier default-off buffer choice; radar is still lazy/off.
