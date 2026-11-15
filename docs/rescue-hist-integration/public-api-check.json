@@ -1,0 +1,14 @@
+{
+  "observedAt": "2026-11-15T18:06:59.003689+07:00",
+  "baseUrl": "https://floodguard-backend-demo.onrender.com/api",
+  "points": 27,
+  "areas": 4,
+  "areaIds": [
+    "HIST-01",
+    "HIST-08",
+    "HIST-22",
+    "HIST-23"
+  ],
+  "metadataMatchById": true,
+  "readOnly": true
+}

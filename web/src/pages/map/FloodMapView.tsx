@@ -1,3 +1,4 @@
+import { historicalPointIndex, historicalPopupHtml } from './historicalDetails';
 import { AREA_TYPE_COLOR, AREA_TYPE_LABEL } from '../admin/flood-area/floodAreaTypes';
 import { historicalFloodIcon } from './historicalFloodIcon';
 import { formatAreaAlertCount } from './mapAlertStatus';
@@ -156,6 +157,9 @@ export const FloodMapView: React.FC = () => {
       const pane = map.createPane('flood-history');
       pane.style.zIndex = '390';
       pane.style.pointerEvents = 'none';
+      const interactivePane = map.createPane('hist-interactive');
+      interactivePane.style.zIndex = '410';
+      interactivePane.style.pointerEvents = 'auto';
     }
 
     tileLayerRef.current = tileLayer;
@@ -199,16 +203,25 @@ export const FloodMapView: React.FC = () => {
     if (!map || !isRescue || !showHistory) return;
     const group = L.layerGroup().addTo(map);
     const keys: HistoricalLayerKey[] = ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])];
+    const pointIndex = historicalPointIndex(historyLayers.points?.snapshot?.data);
     keys.forEach(key => {
       const data = historyLayers[key]?.snapshot?.data;
       if (!data) return;
       L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
-        pane: 'flood-history', interactive: false,
+        pane: key === 'points' || key === 'areas' ? 'hist-interactive' : 'flood-history', interactive: key === 'points' || key === 'areas',
         style: feature => {
-          const color = key === 'areas' && feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : AREA_TYPE_COLOR.low_lying;
+          const color = key === 'areas' ? (feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : feature?.properties?.areaType === 'low_lying' ? AREA_TYPE_COLOR.low_lying : '#94a3b8') : AREA_TYPE_COLOR.low_lying;
           return { color, fillColor: color, weight: 2.5, opacity: 0.95, fillOpacity: 0.3 };
         },
-        pointToLayer: (_feature, position) => L.marker(position, { pane: 'flood-history', interactive: false, icon: historicalFloodIcon }),
+        pointToLayer: (_feature, position) => L.marker(position, { pane: 'hist-interactive', interactive: true, icon: historicalFloodIcon }),
+        onEachFeature: (feature, layer) => {
+          if (key !== 'points' && key !== 'areas') return;
+          layer.bindPopup(historicalPopupHtml(
+            feature as import('../admin/flood-area/historicalMapService').HistoricalFeature,
+            pointIndex, Boolean(historyLayers[key]?.error || (key === 'areas' && historyLayers.points?.error)),
+            historyLayers[key]!.snapshot!.fetchedAt,
+          ), { maxWidth: 360, maxHeight: 320 });
+        },
       }).addTo(group);
     });
     return () => { map.removeLayer(group); };
