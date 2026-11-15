@@ -1,3 +1,4 @@
+import { historicalPointIndex, historicalPopupHtml } from './historicalDetails';
 import { AREA_TYPE_COLOR, AREA_TYPE_LABEL } from '../admin/flood-area/floodAreaTypes';
 import { historicalFloodIcon } from './historicalFloodIcon';
 import { formatAreaAlertCount } from './mapAlertStatus';
@@ -42,7 +43,7 @@ export const FloodMapView: React.FC = () => {
   const isRescue = user?.role === 'RESCUE_STAFF';
   const [showHistory, setShowHistory] = useState(true);
   const [historyRetry, setHistoryRetry] = useState(0);
-  const [showBuffers, setShowBuffers] = useState(false);
+  const [showBuffers, setShowBuffers] = useState(true);
   const [showRadar, setShowRadar] = useState(false);
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
@@ -156,6 +157,13 @@ export const FloodMapView: React.FC = () => {
       const pane = map.createPane('flood-history');
       pane.style.zIndex = '390';
       pane.style.pointerEvents = 'none';
+      const interactivePane = map.createPane('hist-interactive');
+      interactivePane.style.zIndex = '410';
+      interactivePane.style.pointerEvents = 'auto';
+      // Keep the original HIST pins above drawn geometry and clickable.
+      const pointPane = map.createPane('hist-points');
+      pointPane.style.zIndex = '430';
+      pointPane.style.pointerEvents = 'auto';
     }
 
     tileLayerRef.current = tileLayer;
@@ -199,16 +207,25 @@ export const FloodMapView: React.FC = () => {
     if (!map || !isRescue || !showHistory) return;
     const group = L.layerGroup().addTo(map);
     const keys: HistoricalLayerKey[] = ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])];
+    const pointIndex = historicalPointIndex(historyLayers.points?.snapshot?.data);
     keys.forEach(key => {
       const data = historyLayers[key]?.snapshot?.data;
       if (!data) return;
       L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
-        pane: 'flood-history', interactive: false,
+        pane: key === 'points' ? 'hist-points' : key === 'areas' ? 'hist-interactive' : 'flood-history', interactive: key === 'points' || key === 'areas',
         style: feature => {
-          const color = key === 'areas' && feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : AREA_TYPE_COLOR.low_lying;
+          const color = key === 'areas' ? (feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : feature?.properties?.areaType === 'low_lying' ? AREA_TYPE_COLOR.low_lying : '#94a3b8') : AREA_TYPE_COLOR.low_lying;
           return { color, fillColor: color, weight: 2.5, opacity: 0.95, fillOpacity: 0.3 };
         },
-        pointToLayer: (_feature, position) => L.marker(position, { pane: 'flood-history', interactive: false, icon: historicalFloodIcon }),
+        pointToLayer: (_feature, position) => L.marker(position, { pane: 'hist-points', interactive: true, icon: historicalFloodIcon }),
+        onEachFeature: (feature, layer) => {
+          if (key !== 'points' && key !== 'areas') return;
+          layer.bindPopup(historicalPopupHtml(
+            feature as import('../admin/flood-area/historicalMapService').HistoricalFeature,
+            pointIndex, Boolean(historyLayers[key]?.error || (key === 'areas' && historyLayers.points?.error)),
+            historyLayers[key]!.snapshot!.fetchedAt,
+          ), { maxWidth: 360, maxHeight: 320 });
+        },
       }).addTo(group);
     });
     return () => { map.removeLayer(group); };
@@ -369,7 +386,7 @@ export const FloodMapView: React.FC = () => {
           </label>
           {showHistory && (
             <>
-              <p className="text-slate-300">Ghim đỏ: điểm ngập lịch sử. Viền đỏ và nền đỏ nhạt: vùng đệm và vùng radar lịch sử. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
+              <p className="text-slate-300">Vùng tròn đỏ: vùng đệm lịch sử. Ghim đỏ: điểm HIST. Đa giác phủ thêm là hình Admin đã lưu; radar chỉ hiện khi bật. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
               <label className="mr-4 inline-flex items-center gap-2"><input type="checkbox" checked={showBuffers} onChange={event => setShowBuffers(event.target.checked)} /> Vùng đệm lịch sử</label>
               <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRadar} onChange={event => setShowRadar(event.target.checked)} /> Radar lịch sử</label>
               {historyKeys.map(key => <p key={key} role="status" className={historyLayers[key]?.error ? 'text-amber-300' : 'text-slate-400'}>

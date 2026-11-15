@@ -8,18 +8,19 @@ function fixture() {
   const calls = [];
   let now = 1000;
   let fail = false;
+  const payloads = {};
   const exports = {};
   class Clock extends Date { static now() { return now; } }
   const loaders = Object.fromEntries(['Points','Areas','Buffers','Radar'].map(key => [`fetchHistorical${key}`, async () => {
     calls.push(key.toLowerCase());
     if (fail) throw new Error('TEST offline');
-    return { type: 'FeatureCollection', features: [] };
+    return payloads[key.toLowerCase()] ?? { type: 'FeatureCollection', features: [] };
   }]));
   const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/pages/map/historicalLayerCache.ts'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  vm.runInNewContext(source, { exports, require: () => loaders, Date: Clock });
-  return { api: exports, calls, time: value => { now = value; }, fail: value => { fail = value; } };
+  vm.runInNewContext(source, { exports, require: name => name.includes('historicalDetails') ? { validateHistoricalMetadata: data => data } : loaders, Date: Clock });
+  return { api: exports, calls, payload: (key, data) => { payloads[key] = data; }, time: value => { now = value; }, fail: value => { fail = value; } };
 }
 test('opening visual map with buffers/radar off never fetches them; force refresh still skips disabled layers', async () => {
   const f = fixture();
@@ -55,4 +56,25 @@ test('concurrent loads deduplicate and failed load never overwrites successful s
   assert.equal(failed[0].snapshot, null);
   assert.ok(failed[0].error);
   assert.equal((await f.api.getHistoricalLayer('buffers')).fetchedAt, 1000);
+});
+
+
+test('forced refresh replaces edited HIST metadata and successful empty deletion is preserved after errors', async () => {
+  const f = fixture();
+  const layer = description => ({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { id:'HIST-TEST', description }, geometry: { type:'Point', coordinates:[108,16] } }] });
+  f.payload('points',layer('Before'));
+  const before = await f.api.getHistoricalLayer('points');
+  f.time(2000); f.payload('points',layer('After'));
+  const after = await f.api.getHistoricalLayer('points',true);
+  assert.equal(before.data.features[0].properties.description,'Before');
+  assert.equal(after.data.features[0].properties.description,'After');
+  assert.equal(after.fetchedAt,2000);
+  f.payload('points',{type:'FeatureCollection',features:[]});
+  const deleted = await f.api.getHistoricalLayer('points',true);
+  assert.equal(deleted.data.features.length,0);
+  f.fail(true); f.time(3000);
+  const failed = await f.api.getEnabledHistoricalLayers(['points'],true);
+  assert.ok(failed[0].error);
+  assert.equal((await f.api.getHistoricalLayer('points')).data.features.length,0);
+  assert.equal((await f.api.getHistoricalLayer('points')).fetchedAt,2000);
 });
