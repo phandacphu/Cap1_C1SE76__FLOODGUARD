@@ -225,12 +225,24 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
   /** Read-only reconciliation; never auto-reissue a POST, PATCH or DELETE. */
   async function compareWrite(attempt: Review) {
     if (authRef.current) return;
+    // A reconciliation read must not overwrite a newer manual list refresh.
+    const epoch = ++listEpoch.current;
+    const stillCurrent = () => {
+      if (authRef.current) return false;
+      if (epoch === listEpoch.current) return true;
+      setReview((current) => current?.status === "checking" ? {
+        ...current,
+        status: "error",
+        notice: "Lượt đối chiếu đã cũ vì có lượt tải danh sách mới hơn. Hãy đọc lại để đối chiếu nếu cần; không gửi lại thao tác ghi.",
+      } : current);
+      return false;
+    };
     const checking = { ...attempt, status: "checking" as const, notice: "Đang đọc lại dữ liệu để đối chiếu…" };
     setReview(checking);
     try {
       if (attempt.kind === "post") {
         const locations = await source.list();
-        if (authRef.current) return;
+        if (!stillCurrent()) return;
         applyList(locations);
         const matchingNew = locations.filter((row) =>
           !attempt.previousIds.includes(row.id) && attempt.fields && sameFields(row, attempt.fields));
@@ -246,11 +258,12 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
         try {
           actual = await source.get(id);
         } catch (error) {
+          if (!stillCurrent()) return;
           if (authFailure(error)) { lockAccess(error); return; }
           if (error instanceof ApiError && error.status === 404) missing = true;
           else throw error;
         }
-        if (authRef.current) return;
+        if (!stillCurrent()) return;
         if (missing) {
           missingIdsRef.current.add(id);
           // The ID is gone, regardless of whether the previous write caused it.
@@ -263,7 +276,7 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
           setDetailState((state) => state.id === id ? emptyDetail : state);
         }
         const locations = await source.list();
-        if (authRef.current) return;
+        if (!stillCurrent()) return;
         applyList(locations);
         const notice = missing
           ? `GET chi tiết ID ${id} trả 404. Địa điểm không còn được cung cấp, nhưng thao tác ghi trước đó chưa có phản hồi xác nhận.`
@@ -273,7 +286,7 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
         setReview({ ...checking, status: "checked", notice });
       }
     } catch (error) {
-      if (authRef.current) return;
+      if (!stillCurrent()) return;
       if (authFailure(error)) { lockAccess(error); return; }
       setReview({ ...checking, status: "error", notice: `Chưa thể cập nhật/đối chiếu: ${describeError(error)}. Không gửi lại thao tác ghi.` });
       setLoad({ kind: "error", locations: loadedRef.current, error });

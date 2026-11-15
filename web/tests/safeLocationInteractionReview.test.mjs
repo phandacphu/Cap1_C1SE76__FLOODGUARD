@@ -288,3 +288,45 @@ test("GET detail 404 removes missing row, resets selection and refreshes list", 
   assert.ok(r.byLabel("Xem TEST ONLY B"));
   assert.match(r.textOf(r.tree), /Địa điểm không còn được cung cấp/);
 });
+
+test("POST lost response: stale reconciliation arriving after newer refresh cannot remove row or map pin", async () => {
+  const { source, state } = fixture();
+  const olderCompare = defer();
+  const newerRefresh = defer();
+  const created = { ...A, ...fields, id: "TEST-C" };
+  let listReads = 0;
+  state.listImpl = () => {
+    listReads += 1;
+    if (listReads <= 2) return [...state.rows]; // initial list, then automatic POST verification
+    if (listReads === 3) return olderCompare.promise; // explicit recheck remains pending
+    if (listReads === 4) return newerRefresh.promise; // manual refresh returns first
+    throw new Error("Unexpected list read");
+  };
+  state.saveImpl = () => Promise.reject(new ApiError("POST response lost", 0));
+
+  const r = renderer(source);
+  await r.tick();
+  await click(r, r.byText("+ Thêm địa điểm"));
+  form(r).props.onSave(fields);
+  await r.tick();
+  assert.match(r.textOf(r.tree), /chưa thấy ID mới khớp đầy đủ/);
+
+  await click(r, r.byText("Đọc lại để đối chiếu"));
+  const refresh = r.nodes(node => node.type === "button" && r.textOf(node).trim().endsWith("Làm mới"))[0];
+  assert.equal(refresh.props.disabled, false, "refresh stays available during reconciliation");
+  await click(r, refresh);
+  assert.equal(listReads, 4);
+
+  newerRefresh.resolve([...state.rows, created]);
+  await r.tick();
+  assert.ok(r.byLabel("Xem TEST ONLY C"), "newer refresh displays newly created row");
+  const map = () => r.nodes(node => Array.isArray(node.props.locations) && typeof node.props.onSelect === "function")[0];
+  assert.ok(map().props.locations.some(row => row.id === "TEST-C"), "newer refresh adds marker data");
+
+  olderCompare.resolve([...state.rows]);
+  await r.tick();
+  assert.ok(r.byLabel("Xem TEST ONLY C"), "older comparison must not remove row");
+  assert.ok(map().props.locations.some(row => row.id === "TEST-C"), "older comparison must not remove marker data");
+  assert.ok(r.byText("Đọc lại để đối chiếu"), "stale reconciliation can be rechecked rather than staying busy");
+  assert.equal(state.calls.filter(call => call[0] === "WRITE").length, 1, "no duplicate POST");
+});
