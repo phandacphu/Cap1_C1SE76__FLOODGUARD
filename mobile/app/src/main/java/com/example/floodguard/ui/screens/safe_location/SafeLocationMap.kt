@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -47,6 +48,7 @@ fun SafeLocationMap(
     locations: List<SafeLocation>,
     isLoadingLocations: Boolean,
     locationError: String?,
+    gps: Location?,
     onGpsChanged: (Location?) -> Unit,
     onViewDetail: (String) -> Unit,
     onMapTouchChanged: (Boolean) -> Unit
@@ -60,14 +62,14 @@ fun SafeLocationMap(
         LocationServices.getFusedLocationProviderClient(context)
     }
 
-    var gps by remember { mutableStateOf<Location?>(null) }
     var gpsMessage by remember {
         mutableStateOf("Đang kiểm tra quyền vị trí…")
     }
     var locating by remember { mutableStateOf(false) }
     var requestNumber by remember { mutableIntStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
-    var fittedShelters by remember { mutableStateOf(false) }
+    var didSetInitialCamera by rememberSaveable { mutableStateOf(false) }
+    var requestedCameraTarget by remember { mutableStateOf<LatLng?>(null) }
 
     fun hasLocationPermission(): Boolean {
         return listOf(
@@ -88,7 +90,6 @@ fun SafeLocationMap(
             requestNumber++
         } else {
             gpsMessage = "Chưa được cấp quyền vị trí. Vẫn có thể xem điểm tránh trú."
-            gps = null
             currentGpsCallback(null)
         }
     }
@@ -112,7 +113,6 @@ fun SafeLocationMap(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME && !hasLocationPermission()) {
                 requestNumber = 0
-                gps = null
                 currentGpsCallback(null)
                 gpsMessage = "Chưa được cấp quyền vị trí. Vẫn có thể xem điểm tránh trú."
             }
@@ -125,12 +125,16 @@ fun SafeLocationMap(
     }
 
     LaunchedEffect(Unit) {
-        requestLocation()
+        if (hasLocationPermission() && gps != null) {
+            gpsMessage = "Theo vị trí lần cuối"
+        } else {
+            currentGpsCallback(null)
+            requestLocation()
+        }
     }
 
     fun showLocationFailure(message: String) {
         if (!hasLocationPermission()) {
-            gps = null
             currentGpsCallback(null)
             gpsMessage = "Chưa có quyền truy cập vị trí."
         } else {
@@ -168,8 +172,10 @@ fun SafeLocationMap(
                     ageNanos in 0L..60_000_000_000L
 
             if (valid && hasLocationPermission()) {
-                gps = result
                 currentGpsCallback(result)
+                requestedCameraTarget = result?.let {
+                    LatLng(it.latitude, it.longitude)
+                }
                 gpsMessage = "Đã lấy vị trí thiết bị."
             } else {
                 showLocationFailure("Chưa lấy được vị trí mới. Bật GPS rồi bấm Vị trí của tôi.")
@@ -179,7 +185,6 @@ fun SafeLocationMap(
         } catch (error: CancellationException) {
             throw error
         } catch (_: SecurityException) {
-            gps = null
             currentGpsCallback(null)
             gpsMessage = "Chưa có quyền truy cập vị trí."
         } catch (_: Exception) {
@@ -240,18 +245,22 @@ fun SafeLocationMap(
         }
     }
 
-    LaunchedEffect(mapLoaded, userPosition, shelterPositions) {
-        if (!mapLoaded) return@LaunchedEffect
+    LaunchedEffect(mapLoaded, requestedCameraTarget) {
+        val target = requestedCameraTarget ?: return@LaunchedEffect
+        if (!mapLoaded || !hasLocationPermission()) return@LaunchedEffect
 
-        if (userPosition != null) {
-            camera.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    userPosition,
-                    14f
-                )
-            )
-        } else if (!fittedShelters && shelterPositions.isNotEmpty()) {
-            fittedShelters = true
+        didSetInitialCamera = true
+        camera.move(CameraUpdateFactory.newLatLngZoom(target, 16f))
+        requestedCameraTarget = null
+    }
+
+    LaunchedEffect(mapLoaded, shelterPositions.isNotEmpty()) {
+        if (!mapLoaded || didSetInitialCamera || shelterPositions.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        didSetInitialCamera = true
+        if (gps == null && requestedCameraTarget == null) {
             showAll()
         }
     }

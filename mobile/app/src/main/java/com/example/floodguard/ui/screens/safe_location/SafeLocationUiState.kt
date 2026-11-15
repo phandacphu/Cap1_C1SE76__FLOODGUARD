@@ -20,5 +20,6 @@ data class SafeLocationUiState(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val gpsAccuracyMeters: Float? = null,
-    val lastUpdated: String? = null
+    val lastUpdated: String? = null,
+    val deviceLocation: android.location.Location? = null
 )

@@ -35,7 +35,15 @@ class SafeLocationViewModel(
         loadLocations()
     }
 
-    fun updateGps(latitude: Double?, longitude: Double?) {
+    fun updateDeviceLocation(location: android.location.Location?) {
+        updateGps(location?.latitude, location?.longitude, location)
+    }
+
+    fun updateGps(
+        latitude: Double?,
+        longitude: Double?,
+        deviceLocation: android.location.Location? = null
+    ) {
         val coordinates = if (
             latitude != null && latitude in -90.0..90.0 &&
             longitude != null && longitude in -180.0..180.0
@@ -45,7 +53,14 @@ class SafeLocationViewModel(
             null
         }
 
-        if (gpsCoordinates == coordinates) return
+        val fix = deviceLocation
+            ?.takeIf { coordinates != null }
+            ?.let { android.location.Location(it) }
+
+        if (gpsCoordinates == coordinates) {
+            _uiState.update { it.copy(deviceLocation = fix) }
+            return
+        }
 
         gpsCoordinates = coordinates
         allLocations = allLocations.map {
@@ -55,7 +70,8 @@ class SafeLocationViewModel(
             it.copy(
                 locations = allLocations,
                 latitude = coordinates?.first,
-                longitude = coordinates?.second
+                longitude = coordinates?.second,
+                deviceLocation = fix,
             )
         }
         loadLocations()
@@ -73,17 +89,26 @@ class SafeLocationViewModel(
             val result = repository.getSafeLocations(
                 latitude = coordinates?.first,
                 longitude = coordinates?.second
-            )
-            ensureActive()
-
-            result.onSuccess { dtos ->
-                allLocations = dtos.mapNotNull { dto ->
+            ).mapCatching { dtos ->
+                val locations = dtos.mapNotNull { dto ->
                     runCatching { dto.toDomain() }.getOrNull()
                 }
+
+                check(dtos.isEmpty() || locations.isNotEmpty()) {
+                    "Danh mục điểm tránh trú chứa dữ liệu không hợp lệ"
+                }
+
+                locations
+            }
+
+            ensureActive()
+
+            result.onSuccess { locations ->
+                allLocations = locations
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        locations = allLocations,
+                        locations = locations,
                         errorMessage = null
                     )
                 }

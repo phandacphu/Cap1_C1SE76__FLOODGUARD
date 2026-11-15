@@ -51,9 +51,7 @@ fun SafeLocationListScreen(
 ) {
     val state = viewModel.uiState.collectAsState().value
 
-    var gpsLocation by remember {
-        mutableStateOf<Location?>(null)
-    }
+    val gpsLocation = state.deviceLocation
 
     var touchingMap by remember {
         mutableStateOf(false)
@@ -122,10 +120,8 @@ fun SafeLocationListScreen(
                     locations = state.locations,
                     isLoadingLocations = state.isLoading,
                     locationError = state.errorMessage,
-                    onGpsChanged = { location ->
-                        gpsLocation = location
-                        viewModel.updateGps(location?.latitude, location?.longitude)
-                    },
+                    gps = gpsLocation,
+                    onGpsChanged = viewModel::updateDeviceLocation,
                     onViewDetail = onViewDetail,
                     onMapTouchChanged = { touchingMap = it }
                 )
