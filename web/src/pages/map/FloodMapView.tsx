@@ -160,6 +160,10 @@ export const FloodMapView: React.FC = () => {
       const interactivePane = map.createPane('hist-interactive');
       interactivePane.style.zIndex = '410';
       interactivePane.style.pointerEvents = 'auto';
+      // Keep the original HIST pins above drawn geometry and clickable.
+      const pointPane = map.createPane('hist-points');
+      pointPane.style.zIndex = '430';
+      pointPane.style.pointerEvents = 'auto';
     }
 
     tileLayerRef.current = tileLayer;
@@ -208,12 +212,12 @@ export const FloodMapView: React.FC = () => {
       const data = historyLayers[key]?.snapshot?.data;
       if (!data) return;
       L.geoJSON(data as unknown as GeoJSON.FeatureCollection, {
-        pane: key === 'points' || key === 'areas' ? 'hist-interactive' : 'flood-history', interactive: key === 'points' || key === 'areas',
+        pane: key === 'points' ? 'hist-points' : key === 'areas' ? 'hist-interactive' : 'flood-history', interactive: key === 'points' || key === 'areas',
         style: feature => {
           const color = key === 'areas' ? (feature?.properties?.areaType === 'flood' ? AREA_TYPE_COLOR.flood : feature?.properties?.areaType === 'low_lying' ? AREA_TYPE_COLOR.low_lying : '#94a3b8') : AREA_TYPE_COLOR.low_lying;
           return { color, fillColor: color, weight: 2.5, opacity: 0.95, fillOpacity: 0.3 };
         },
-        pointToLayer: (_feature, position) => L.marker(position, { pane: 'hist-interactive', interactive: true, icon: historicalFloodIcon }),
+        pointToLayer: (_feature, position) => L.marker(position, { pane: 'hist-points', interactive: true, icon: historicalFloodIcon }),
         onEachFeature: (feature, layer) => {
           if (key !== 'points' && key !== 'areas') return;
           layer.bindPopup(historicalPopupHtml(

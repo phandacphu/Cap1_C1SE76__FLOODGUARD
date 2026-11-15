@@ -46,3 +46,11 @@ and HTML escaping. They are not claimed as UI or cross-platform acceptance.
 Four Web Admin reference screenshots are optional additional comparison evidence;
 implementation and public API verification did not wait for them. Team-agreed
 four-ID cross-platform acceptance still needs each client owner to run it.
+
+
+## Keep historical point appearance
+
+Original HIST point coordinates and red historicalFloodIcon are unchanged. Drawn
+HIST polygons overlay the base map in pane 410; the original points remain above
+them in pane 430, so overlapping polygons cannot hide pins or consume their clicks.
+Buffers/radar remain in passive pane 390. Metadata popups are retained.
