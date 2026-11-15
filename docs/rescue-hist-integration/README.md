@@ -1,6 +1,8 @@
 # Rescue Web HIST metadata integration
 
 Branch: feature/CCF-105-181-rescue-hist-details. Follow-up after PR #137 merged.
+Integrated develop 1b79f08 without conflicts. Web source tree unchanged by that
+merge; its incoming changes are team-owned Mobile work, not part of this diff.
 Scope: Rescue visual map and its reader/cache tests only. No Backend, Admin UI,
 Mobile, SOS flow or public API contract changes.
 
