@@ -96,3 +96,19 @@ containing list.json, gps.json and detail.json from the above three GET requests
 otherwise that optional replay test skips. No mock data is used by production UI.
 
 No push/merge/deploy performed; Phu reviews and decides merge.
+
+
+## Combined working branch: retain previous HIST display
+
+At the user's request, this branch now also includes feature/CCF-105-181-rescue-
+hist-details through b11a6f9. Opening /map retains circular historical buffers ON,
+HIST points and Admin polygons with metadata popups; pins remain above polygons.
+Radar stays off/lazy. This is the existing HIST implementation merged into the
+catalogue branch, so switching to the shelter screen no longer drops pending HIST
+work. No geometry or GPS positions are fabricated or changed. This expands the
+original catalogue-only PR scope and must be called out to the reviewer.
+
+Combined validation: lint/build PASS; 67 tests PASS, 2 older optional capture tests
+SKIP with SAFE_CATALOG_LIVE_DIR and HIST_LIVE_DIR captures supplied. See combined
+logs. Browser appearance and physical GPS acceptance remain NOT RUN. No merge
+into develop or deployment was performed.
