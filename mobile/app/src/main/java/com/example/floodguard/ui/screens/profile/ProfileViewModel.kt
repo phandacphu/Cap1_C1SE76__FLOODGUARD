@@ -1,13 +1,14 @@
-
 package com.example.floodguard.ui.screens.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.floodguard.data.remote.dto.rescue.RescueRequestDto
 import com.example.floodguard.data.repository.RescueRequestRepository
+import com.example.floodguard.data.repository.ResidentSosApiException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ProfileSosUiState(
@@ -17,13 +18,16 @@ data class ProfileSosUiState(
 )
 
 class ProfileViewModel(
-    private val repository: RescueRequestRepository
+    private val loadRequests:
+    suspend () -> Result<List<RescueRequestDto>>
 ) : ViewModel() {
 
-    private val _sosState = MutableStateFlow(ProfileSosUiState())
+    // Giữ tương thích với các nơi gọi/test cũ.
+    constructor(repository: RescueRequestRepository) :
+            this(loadRequests = repository::getRescueRequests)
 
-    val sosState: StateFlow<ProfileSosUiState> =
-        _sosState.asStateFlow()
+    private val _sosState = MutableStateFlow(ProfileSosUiState())
+    val sosState = _sosState.asStateFlow()
 
     init {
         loadSosHistory()
@@ -32,24 +36,48 @@ class ProfileViewModel(
     fun loadSosHistory() {
         if (_sosState.value.isLoading) return
 
-        // Đặt trước launch để chặn cả những lần gọi liên tiếp
-        // khi coroutine chưa bắt đầu chạy.
-        _sosState.value = ProfileSosUiState(isLoading = true)
+        _sosState.update {
+            it.copy(isLoading = true, error = null)
+        }
 
         viewModelScope.launch {
-            val result = repository.getRescueRequests()
-
-            _sosState.value = result.fold(
-                onSuccess = { requests ->
-                    ProfileSosUiState(requests = requests)
-                },
-                onFailure = { error ->
-                    ProfileSosUiState(
-                        error = error.message
-                            ?: "Không thể tải lịch sử SOS."
-                    )
+            try {
+                loadRequests().fold(
+                    onSuccess = { requests ->
+                        _sosState.value = ProfileSosUiState(
+                            requests = requests
+                        )
+                    },
+                    onFailure = ::showError
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                showError(error)
+            } finally {
+                _sosState.update {
+                    it.copy(isLoading = false)
                 }
-            )
+            }
+        }
+    }
+
+    private fun showError(error: Throwable) {
+        val message = error.message
+            ?: "Không thể tải lịch sử SOS."
+
+        val accessDenied = error is ResidentSosApiException &&
+                error.statusCode in setOf(401, 403)
+
+        if (accessDenied) {
+            _sosState.value = ProfileSosUiState(error = message)
+        } else {
+            _sosState.update {
+                it.copy(
+                    isLoading = false,
+                    error = message
+                )
+            }
         }
     }
 }
