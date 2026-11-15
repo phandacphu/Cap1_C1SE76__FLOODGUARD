@@ -330,3 +330,141 @@ test("POST lost response: stale reconciliation arriving after newer refresh cann
   assert.ok(r.byText("Đọc lại để đối chiếu"), "stale reconciliation can be rechecked rather than staying busy");
   assert.equal(state.calls.filter(call => call[0] === "WRITE").length, 1, "no duplicate POST");
 });
+
+function assertAccessRevoked(r, code) {
+  assert.equal(r.byLabel("Xem TEST ONLY A"), undefined, "list rows are hidden after auth failure");
+  assert.equal(r.byLabel("Xem TEST ONLY C"), undefined, "refreshed row is hidden after auth failure");
+  assert.equal(r.panel(), undefined, "selected detail is hidden after auth failure");
+  assert.equal(r.nodes(node => Array.isArray(node.props.locations) && typeof node.props.onSelect === "function").length, 0,
+    "map marker data is no longer rendered");
+  assert.equal(r.byText("+ Thêm địa điểm").props.disabled, true, "write actions stay disabled");
+  assert.equal(form(r), undefined, "editor is not visible");
+  assert.equal(deleteDialog(r), undefined, "delete confirmation is not visible");
+  if (code === 401) {
+    assert.match(r.textOf(r.tree), /Đăng nhập lại/);
+    const loginLink = r.nodes(node => node.props.to === "/login")[0];
+    assert.ok(loginLink, "401 must offer login again");
+    assert.equal(typeof loginLink.props.onClick, "function", "login link calls logout");
+  } else {
+    assert.match(r.textOf(r.tree), /không có quyền/);
+    assert.equal(r.nodes(node => node.props.to === "/login").length, 0);
+  }
+}
+
+// Regression for PR134: a stale auth *failure* must lock the current session,
+// while a stale 200 must still be prevented from overwriting newer list/markers.
+test("POST stale reconciliation GET list 401/403 after refresh 200 locks list, pins, detail and writes", async () => {
+  for (const code of [401, 403]) {
+    const { source, state } = fixture();
+    const olderCompare = defer();
+    const newerRefresh = defer();
+    const created = { ...A, ...fields, id: "TEST-C" };
+    let reads = 0;
+    state.listImpl = () => {
+      reads += 1;
+      if (reads <= 2) return [...state.rows]; // initial and automatic POST reconciliation
+      if (reads === 3) return olderCompare.promise; // explicit reconciliation
+      if (reads === 4) return newerRefresh.promise; // manual refresh
+      throw new Error("Unexpected list read");
+    };
+    state.saveImpl = () => Promise.reject(new ApiError("POST response lost", 0));
+    const r = renderer(source);
+    await r.tick();
+    await click(r, r.byLabel("Xem TEST ONLY A"));
+    assert.match(r.textOf(r.panel()), /detail A/);
+    await click(r, r.byText("+ Thêm địa điểm"));
+    form(r).props.onSave(fields);
+    await r.tick();
+    await click(r, r.byText("Đọc lại để đối chiếu"));
+    const refresh = r.nodes(node => node.type === "button" && r.textOf(node).trim().endsWith("Làm mới"))[0];
+    assert.equal(refresh.props.disabled, false);
+    await click(r, refresh);
+    assert.equal(reads, 4);
+
+    newerRefresh.resolve([...state.rows, created]);
+    await r.tick();
+    assert.ok(r.byLabel("Xem TEST ONLY C"), "newer 200 list contains the new row");
+    assert.ok(r.nodes(node => Array.isArray(node.props.locations) && typeof node.props.onSelect === "function")[0]
+      .props.locations.some(row => row.id === "TEST-C"), "newer list is also used by map pins");
+    assert.match(r.textOf(r.panel()), /detail A/, "selected detail is present before access is revoked");
+
+    olderCompare.reject(new ApiError("Access revoked", code));
+    await r.tick();
+    assertAccessRevoked(r, code);
+    assert.equal(state.calls.filter(call => call[0] === "WRITE").length, 1, "POST is never repeated");
+  }
+});
+
+test("PATCH stale reconciliation GET detail 401/403 after refresh 200 locks list, pins, detail and writes", async () => {
+  for (const code of [401, 403]) {
+    const { source, state } = fixture();
+    const olderDetail = defer();
+    const newerRefresh = defer();
+    let detailReads = 0;
+    let listReads = 0;
+    state.getImpl = () => ++detailReads === 3 ? olderDetail.promise : A;
+    state.listImpl = () => {
+      listReads += 1;
+      if (listReads <= 2) return [...state.rows]; // initial + automatic PATCH reconciliation
+      if (listReads === 3) return newerRefresh.promise;
+      throw new Error("Unexpected list read");
+    };
+    state.saveImpl = () => Promise.reject(new ApiError("PATCH response lost", 0));
+    const r = renderer(source);
+    await r.tick();
+    await click(r, r.byLabel("Xem TEST ONLY A")); // detail GET 1
+    await click(r, r.byLabel("Sửa TEST ONLY A"));
+    form(r).props.onSave(fields);
+    await r.tick(); // automatic PATCH reconciliation GET detail 2, GET list 2
+    await click(r, r.byText("Đọc lại để đối chiếu")); // pending GET detail 3
+    const refresh = r.nodes(node => node.type === "button" && r.textOf(node).trim().endsWith("Làm mới"))[0];
+    await click(r, refresh);
+    newerRefresh.resolve([...state.rows]);
+    await r.tick();
+    assert.ok(r.byLabel("Xem TEST ONLY A"));
+    assert.match(r.textOf(r.panel()), /detail A/);
+    assert.ok(r.nodes(node => Array.isArray(node.props.locations) && typeof node.props.onSelect === "function")[0]);
+
+    olderDetail.reject(new ApiError("Access revoked", code));
+    await r.tick();
+    assertAccessRevoked(r, code);
+    assert.equal(state.calls.filter(call => call[0] === "WRITE").length, 1);
+  }
+});
+
+test("PATCH stale reconciliation GET list 401/403 after refresh 200 locks list, pins, detail and writes", async () => {
+  for (const code of [401, 403]) {
+    const { source, state } = fixture();
+    const olderList = defer();
+    const newerRefresh = defer();
+    let listReads = 0;
+    state.getImpl = () => A;
+    state.listImpl = () => {
+      listReads += 1;
+      if (listReads <= 2) return [...state.rows]; // initial and automatic verification
+      if (listReads === 3) return olderList.promise; // explicit recheck after GET detail succeeds
+      if (listReads === 4) return newerRefresh.promise;
+      throw new Error("Unexpected list read");
+    };
+    state.saveImpl = () => Promise.reject(new ApiError("PATCH response lost", 0));
+    const r = renderer(source);
+    await r.tick();
+    await click(r, r.byLabel("Xem TEST ONLY A"));
+    await click(r, r.byLabel("Sửa TEST ONLY A"));
+    form(r).props.onSave(fields);
+    await r.tick();
+    await click(r, r.byText("Đọc lại để đối chiếu"));
+    const refresh = r.nodes(node => node.type === "button" && r.textOf(node).trim().endsWith("Làm mới"))[0];
+    await click(r, refresh);
+    assert.equal(listReads, 4);
+    newerRefresh.resolve([...state.rows]);
+    await r.tick();
+    assert.ok(r.byLabel("Xem TEST ONLY A"));
+    assert.match(r.textOf(r.panel()), /detail A/);
+
+    olderList.reject(new ApiError("Access revoked", code));
+    await r.tick();
+    assertAccessRevoked(r, code);
+    assert.equal(state.calls.filter(call => call[0] === "WRITE").length, 1);
+  }
+});

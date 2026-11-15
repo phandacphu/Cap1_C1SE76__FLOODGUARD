@@ -258,8 +258,10 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
         try {
           actual = await source.get(id);
         } catch (error) {
-          if (!stillCurrent()) return;
+          // An auth failure belongs to this mounted session even if a later read
+          // already superseded this reconciliation. Never discard 401/403 as stale.
           if (authFailure(error)) { lockAccess(error); return; }
+          if (!stillCurrent()) return;
           if (error instanceof ApiError && error.status === 404) missing = true;
           else throw error;
         }
@@ -286,8 +288,10 @@ export default function SafeLocationManagementScreen({ source }: { source: SafeL
         setReview({ ...checking, status: "checked", notice });
       }
     } catch (error) {
-      if (!stillCurrent()) return;
+      // Authorization failures have priority over listEpoch. A stale successful
+      // response cannot write data, but a 401/403 must still lock this session.
       if (authFailure(error)) { lockAccess(error); return; }
+      if (!stillCurrent()) return;
       setReview({ ...checking, status: "error", notice: `Chưa thể cập nhật/đối chiếu: ${describeError(error)}. Không gửi lại thao tác ghi.` });
       setLoad({ kind: "error", locations: loadedRef.current, error });
     }
