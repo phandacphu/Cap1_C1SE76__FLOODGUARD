@@ -1,8 +1,8 @@
 export const locationTypeLabels = {
-  shelter: "Điểm sơ tán",
+  shelter: "Điểm tránh trú",
   school: "Trường học",
   hospital: "Bệnh viện",
-  community_center: "Nhà văn hóa",
+  community_center: "Nhà sinh hoạt cộng đồng",
   other: "Khác",
 } as const;
 
@@ -41,7 +41,8 @@ export interface SafeLocation {
 export interface SafeLocationSource {
   demo: boolean;
   list: () => Promise<SafeLocation[]>;
-  save: (id: string | null, fields: SafeLocationFields) => Promise<SafeLocation>;
+  get: (id: string) => Promise<SafeLocation>;
+  save: (id: string | null, fields: SafeLocationFields, original?: SafeLocation | null) => Promise<SafeLocation>;
   remove: (id: string) => Promise<void>;
 }
 

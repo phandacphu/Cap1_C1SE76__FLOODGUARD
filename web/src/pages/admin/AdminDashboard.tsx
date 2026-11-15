@@ -33,13 +33,11 @@ export function AdminDashboard() {
     const now = overview.updatedAt;
     const alerts = overview.alerts.ok ? overview.alerts.data : [];
     const areas = overview.areas.ok ? overview.areas.data : [];
-    const safeLocations = overview.safeLocations.ok ? overview.safeLocations.data : [];
+    const safeLocationCount = overview.safeLocations.ok ? overview.safeLocations.data.length : null;
     const sos = overview.sos.ok ? overview.sos.data : null;
     const users = overview.users.ok ? overview.users.data : null;
 
     const alertCounts = countAlertsBySeverity(alerts);
-    const openShelters = safeLocations.filter((s) => s.status === "active");
-    const totalCapacity = openShelters.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
 
     const staff = users ? users.filter((u) => u.role === "rescue") : null;
     const weekAgo = now.getTime() - 7 * DAY_MS;
@@ -53,8 +51,7 @@ export function AdminDashboard() {
       floodAreas: areas.filter((a) => a.areaType === "flood"),
       lowLyingAreas: areas.filter((a) => a.areaType === "low_lying"),
       unclassifiedAreas: areas.filter((a) => a.areaType !== "flood" && a.areaType !== "low_lying"),
-      openShelters,
-      totalCapacity,
+      safeLocationCount,
       sos,
       users,
       activeUsers: users ? users.filter((u) => u.isActive).length : null,
@@ -178,11 +175,11 @@ export function AdminDashboard() {
                 footerValue={`${view.areaNames.size} vùng`}
               />
               <KpiCard
-                label="Điểm an toàn mở cửa"
+                label="Điểm an toàn được cung cấp"
                 icon="shield"
                 tone="safe"
-                value={String(view.openShelters.length).padStart(2, "0")}
-                sub={`Sức chứa ${formatNumber(view.totalCapacity)} người`}
+                value={view.safeLocationCount !== null ? String(view.safeLocationCount).padStart(2, "0") : "—"}
+                sub={view.safeLocationCount !== null ? "Từ danh sách Admin đã tải" : "Chưa thể tải danh sách điểm an toàn"}
               />
               <KpiCard
                 label="Người dùng kích hoạt"
