@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-11-15T18:47:18.015086+07:00",
+  "baseUrl": "https://floodguard-backend-demo.onrender.com/api",
+  "checks": [
+    {
+      "endpoint": "GET /safe-locations",
+      "http": 200,
+      "count": 1,
+      "distanceKmNull": true
+    },
+    {
+      "endpoint": "GET /safe-locations?latitude=16.0544&longitude=108.2022",
+      "http": 200,
+      "count": 1,
+      "firstDistanceKm": 0
+    },
+    {
+      "endpoint": "GET /safe-locations/{id} with the same GPS pair",
+      "http": 200,
+      "id": "ccf66-sample-safe-location-01",
+      "matchesListId": true
+    }
+  ],
+  "notes": [
+    "Read-only public API checks; no JWT or Firebase access.",
+    "Coordinates were a synthetic API query matching the public sample point, not device GPS.",
+    "The server currently returns one record labelled Sample/Simulated in its own data; no fallback fixture is used in UI.",
+    "No Admin records were created, edited or deleted."
+  ]
+}

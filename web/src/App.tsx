@@ -1,3 +1,4 @@
+import { RescueSafeLocations } from './pages/rescue/safe-locations/RescueSafeLocations';
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -65,6 +66,7 @@ export const App: React.FC = () => {
           </Route>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
+            <Route path="/rescue/safe-locations" element={<RescueSafeLocations />} />
             <Route path="/rescue/dashboard" element={<RescueDashboard />} />
             <Route path="/rescue/sos" element={<RescueSosList />} />
             <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
