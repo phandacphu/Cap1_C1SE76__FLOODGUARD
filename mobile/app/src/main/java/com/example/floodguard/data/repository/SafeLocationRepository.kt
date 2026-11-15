@@ -1,113 +1,73 @@
-
 package com.example.floodguard.data.repository
 
 import com.example.floodguard.data.model.SafeLocationDto
-import com.example.floodguard.data.model.SafeLocationsResponse
 import com.example.floodguard.data.remote.api.SafeLocationApi
 import kotlinx.coroutines.CancellationException
-import retrofit2.Response
-import java.io.IOException
+import retrofit2.HttpException
 
 class SafeLocationRepository(
     private val safeLocationApi: SafeLocationApi
 ) {
+    suspend fun getSafeLocations(
+        latitude: Double? = null,
+        longitude: Double? = null
+    ): Result<List<SafeLocationDto>> = safeLocationResult {
+        validateCoordinates(latitude, longitude)
 
-    private val excludedTestLocationIds = setOf(
-        "ccf66-sample-safe-location-01",
-        "lxqyy94dCPrMyP2kKbEs",
-        "LQgJjh7ekqRcTdhKdJGr"
-    )
-    suspend fun getSafeLocations(): Result<List<SafeLocationDto>> {
-        return try {
-            parseResponse(
-                safeLocationApi.getSafeLocations()
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            Result.failure(
-                IOException(
-                    "Không thể kết nối máy chủ. Vui lòng kiểm tra Internet và thử lại.",
-                    e
-                )
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getNearbySafeLocations(
-        latitude: Double,
-        longitude: Double,
-        radiusKm: Double = 10.0,
-        type: String? = null
-    ): Result<List<SafeLocationDto>> {
-        return try {
-            require(latitude.isFinite() && latitude in -90.0..90.0) {
-                "Vĩ độ không hợp lệ"
-            }
-
-            require(longitude.isFinite() && longitude in -180.0..180.0) {
-                "Kinh độ không hợp lệ"
-            }
-
-            require(radiusKm.isFinite() && radiusKm > 0.0 && radiusKm <= 100.0) {
-                "Bán kính phải lớn hơn 0 và không quá 100 km"
-            }
-
-            parseResponse(
-                safeLocationApi.getNearbySafeLocations(
-                    latitude = latitude,
-                    longitude = longitude,
-                    radiusKm = radiusKm,
-                    type = type
-                )
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            Result.failure(
-                IOException(
-                    "Không thể kết nối máy chủ. Vui lòng kiểm tra Internet và thử lại.",
-                    e
-                )
-            )
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    private fun parseResponse(
-        response: Response<SafeLocationsResponse>
-    ): Result<List<SafeLocationDto>> {
-
-        if (!response.isSuccessful) {
-            return Result.failure(
-                Exception(
-                    "Không thể tải điểm tránh trú (HTTP ${response.code()})"
-                )
-            )
-        }
+        val response = safeLocationApi.getSafeLocations(latitude, longitude)
+        if (!response.isSuccessful) throw HttpException(response)
 
         val body = response.body()
-
-        if (body?.success != true) {
-            return Result.failure(
-                Exception(
-                    body?.message ?: "Không thể lấy danh sách điểm tránh trú"
-                )
-            )
+        check(body?.success == true) {
+            body?.message ?: "Chưa thể cập nhật điểm tránh trú"
         }
 
-        val locations = body.data?.safeLocations
-            ?: return Result.failure(
-                Exception("Dữ liệu điểm tránh trú không hợp lệ")
-            )
+        checkNotNull(body.data?.safeLocations) {
+            "Phản hồi thiếu danh sách điểm tránh trú"
+        }
+    }
 
-        return Result.success(
-            locations.filterNot { location ->
-                location.id in excludedTestLocationIds
-            }
-        )
+    suspend fun getSafeLocation(
+        id: String,
+        latitude: Double? = null,
+        longitude: Double? = null
+    ): Result<SafeLocationDto> = safeLocationResult {
+        require(id.isNotBlank()) { "Mã điểm tránh trú không hợp lệ" }
+        validateCoordinates(latitude, longitude)
+
+        val response = safeLocationApi.getSafeLocation(id, latitude, longitude)
+        if (!response.isSuccessful) throw HttpException(response)
+
+        val body = response.body()
+        check(body?.success == true) {
+            body?.message ?: "Chưa thể cập nhật điểm tránh trú"
+        }
+
+        val location = checkNotNull(body.data?.safeLocation) {
+            "Phản hồi thiếu chi tiết điểm tránh trú"
+        }
+        check(location.id == id) { "Phản hồi sai mã điểm tránh trú" }
+        location
+    }
+
+    private fun validateCoordinates(latitude: Double?, longitude: Double?) {
+        if (latitude == null && longitude == null) return
+
+        require(
+            latitude != null && latitude in -90.0..90.0 &&
+                    longitude != null && longitude in -180.0..180.0
+        ) {
+            "Cần cung cấp cả vĩ độ và kinh độ hợp lệ"
+        }
+    }
+
+    private suspend fun <T> safeLocationResult(
+        request: suspend () -> T
+    ): Result<T> = try {
+        Result.success(request())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 }
