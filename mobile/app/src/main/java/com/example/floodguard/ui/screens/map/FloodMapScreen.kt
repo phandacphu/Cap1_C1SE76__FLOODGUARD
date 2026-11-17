@@ -361,15 +361,10 @@ fun FloodMapScreen(
                 onRetryRadar = onRetryHistoryRadar
             )
 
-            val selectedSafeLocation =
-                state.safeLocations.firstOrNull { location ->
-                    state.isShelterLayerEnabled &&
-                            location.id == state.selectedSafeLocationId &&
-                            location.status.equals(
-                                "active",
-                                ignoreCase = true
-                            )
-                }
+            val selectedSafeLocation = state.safeLocations.firstOrNull { location ->
+                state.isShelterLayerEnabled &&
+                        location.id == state.selectedSafeLocationId
+            }
 
             selectedSafeLocation?.let { location ->
                 Column(
@@ -1400,7 +1395,7 @@ private fun FloodGoogleMap(
 
                 val shelterPointIcon = remember {
                     BitmapDescriptorFactory.defaultMarker(
-                        BitmapDescriptorFactory.HUE_AZURE
+                        BitmapDescriptorFactory.HUE_GREEN
                     )
                 }
 
@@ -1409,13 +1404,7 @@ private fun FloodGoogleMap(
                 // Không dùng để quyết định sơ tán.
                 state.safeLocations
                     .filter { safeLocation ->
-                        safeLocation.status.equals(
-                            "active",
-                            ignoreCase = true
-                        ) &&
-                                safeLocation.location.latitude.isFinite() &&
-                                safeLocation.location.longitude.isFinite() &&
-                                safeLocation.location.latitude in -90.0..90.0 &&
+                        safeLocation.location.latitude in -90.0..90.0 &&
                                 safeLocation.location.longitude in -180.0..180.0
                     }
                     .forEach { safeLocation ->
@@ -2190,9 +2179,7 @@ private fun CitizenMapDataPanel(
 
         CitizenSourceStatus(
             title = "Điểm tránh trú",
-            count = state.safeLocations.count {
-                it.status.equals("active", ignoreCase = true)
-            },
+            count = state.safeLocations.size,
             loading = state.isLoadingSafeLocations,
             error = state.safeLocationsError,
             loadedAt = state.safeLocationsLoadedAt,

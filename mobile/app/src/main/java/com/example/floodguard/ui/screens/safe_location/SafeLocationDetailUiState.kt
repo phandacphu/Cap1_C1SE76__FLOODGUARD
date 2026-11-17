@@ -11,6 +11,8 @@ data class SafeLocationDetailUiState(
     // Thông báo lỗi khi không tìm thấy địa điểm
     val errorMessage: String? = null,
 
+    val isUnavailable: Boolean = false,
+
     // CCF-70 hiện sử dụng dữ liệu minh họa
     val isMockData: Boolean = true
 )

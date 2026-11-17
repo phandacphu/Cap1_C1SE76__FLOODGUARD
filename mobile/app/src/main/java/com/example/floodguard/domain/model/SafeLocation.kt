@@ -33,6 +33,9 @@ data class SafeLocation(
 
     // Khoảng cách và thời gian di chuyển (dữ liệu hiển thị tạm)
     val distanceMeters: Int? = null,
+
+    val type: String = "other",
+    val distanceKm: Double? = null,
     val travelMinutes: Int? = null,
 
     // Sức chứa

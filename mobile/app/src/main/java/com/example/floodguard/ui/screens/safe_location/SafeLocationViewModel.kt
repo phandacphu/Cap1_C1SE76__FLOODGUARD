@@ -12,12 +12,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 
 class SafeLocationViewModel(
     private val repository: SafeLocationRepository
 ) : ViewModel() {
 
     private var allLocations: List<SafeLocation> = emptyList()
+
+    private var gpsCoordinates: Pair<Double, Double>? = null
+    private var loadJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         SafeLocationUiState(isLoading = true)
@@ -30,58 +35,102 @@ class SafeLocationViewModel(
         loadLocations()
     }
 
+    fun updateDeviceLocation(location: android.location.Location?) {
+        updateGps(location?.latitude, location?.longitude, location)
+    }
+
+    fun updateGps(
+        latitude: Double?,
+        longitude: Double?,
+        deviceLocation: android.location.Location? = null
+    ) {
+        val coordinates = if (
+            latitude != null && latitude in -90.0..90.0 &&
+            longitude != null && longitude in -180.0..180.0
+        ) {
+            latitude to longitude
+        } else {
+            null
+        }
+
+        val fix = deviceLocation
+            ?.takeIf { coordinates != null }
+            ?.let { android.location.Location(it) }
+
+        if (gpsCoordinates == coordinates) {
+            _uiState.update { it.copy(deviceLocation = fix) }
+            return
+        }
+
+        gpsCoordinates = coordinates
+        allLocations = allLocations.map {
+            it.copy(distanceKm = null, distanceMeters = null)
+        }
+        _uiState.update {
+            it.copy(
+                locations = allLocations,
+                latitude = coordinates?.first,
+                longitude = coordinates?.second,
+                deviceLocation = fix,
+            )
+        }
+        loadLocations()
+    }
+
     fun loadLocations() {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null
-                )
+        loadJob?.cancel()
+        val coordinates = gpsCoordinates
+
+        _uiState.update {
+            it.copy(isLoading = true, errorMessage = null)
+        }
+
+        loadJob = viewModelScope.launch {
+            val result = repository.getSafeLocations(
+                latitude = coordinates?.first,
+                longitude = coordinates?.second
+            ).mapCatching { dtos ->
+                val locations = dtos.mapNotNull { dto ->
+                    runCatching { dto.toDomain() }.getOrNull()
+                }
+
+                check(dtos.isEmpty() || locations.isNotEmpty()) {
+                    "Danh mục điểm tránh trú chứa dữ liệu không hợp lệ"
+                }
+
+                locations
             }
 
-            repository.getSafeLocations()
-                .onSuccess { dtos ->
-                    val locations = dtos.mapNotNull { dto ->
-                        try {
-                            val location = dto.toDomain()
+            ensureActive()
 
-                            if (
-                                location.latitude.isFinite() &&
-                                location.longitude.isFinite() &&
-                                location.latitude in -90.0..90.0 &&
-                                location.longitude in -180.0..180.0
-                            ) {
-                                location
-                            } else {
-                                null
-                            }
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
-
-                    allLocations = locations
-
-                    _uiState.update { state ->
-                        state.copy(
-                            isLoading = false,
-                            locations = locations,
-                            errorMessage = null
-                        )
-                    }
+            result.onSuccess { locations ->
+                allLocations = locations
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        locations = locations,
+                        errorMessage = null
+                    )
                 }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            locations = emptyList(),
-                            errorMessage =
-                                error.message
-                                    ?: "Không thể tải danh sách điểm tránh trú"
-                        )
-                    }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "Chưa thể cập nhật"
+                    )
                 }
+            }
         }
+    }
+
+    fun removeUnavailableLocation(locationId: String) {
+        allLocations = allLocations.filterNot { it.id == locationId }
+        _uiState.update { state ->
+            state.copy(
+                locations = state.locations.filterNot { it.id == locationId }
+            )
+        }
+        loadLocations()
     }
 
     fun refresh() {

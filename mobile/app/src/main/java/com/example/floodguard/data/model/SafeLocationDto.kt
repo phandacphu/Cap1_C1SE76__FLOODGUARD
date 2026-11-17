@@ -1,4 +1,3 @@
-
 package com.example.floodguard.data.model
 
 data class SafeLocationsResponse(
@@ -8,7 +7,17 @@ data class SafeLocationsResponse(
 )
 
 data class SafeLocationsData(
-    val safeLocations: List<SafeLocationDto> = emptyList()
+    val safeLocations: List<SafeLocationDto>? = null
+)
+
+data class SafeLocationDetailResponse(
+    val success: Boolean,
+    val message: String? = null,
+    val data: SafeLocationDetailData? = null
+)
+
+data class SafeLocationDetailData(
+    val safeLocation: SafeLocationDto? = null
 )
 
 data class SafeLocationDto(

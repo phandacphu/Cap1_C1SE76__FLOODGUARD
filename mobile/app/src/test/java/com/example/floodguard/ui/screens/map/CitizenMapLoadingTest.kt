@@ -428,8 +428,10 @@ private class FakeCitizenMapApis {
     }
 
     val safeApi = object : SafeLocationApi {
-        override suspend fun getSafeLocations():
-                Response<SafeLocationsResponse> {
+        override suspend fun getSafeLocations(
+            latitude: Double?,
+            longitude: Double?
+        ): Response<SafeLocationsResponse> {
             shelterCalls++
             checkOnline()
 
@@ -442,6 +444,13 @@ private class FakeCitizenMapApis {
                 SafeLocationsResponse::class.java
             )
         }
+
+        override suspend fun getSafeLocation(
+            id: String,
+            latitude: Double?,
+            longitude: Double?
+        ): Response<SafeLocationDetailResponse> =
+            error("Map unit test không dùng API chi tiết điểm tránh trú")
 
         override suspend fun getNearbySafeLocations(
             latitude: Double,

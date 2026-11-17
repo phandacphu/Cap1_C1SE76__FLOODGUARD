@@ -26,6 +26,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import com.example.floodguard.core.network.ApiClient
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.local.SessionUser
@@ -836,12 +839,25 @@ fun AppNavGraph(
                     )
                 },
 
-                onDirections = {
-                    Toast.makeText(
-                        context,
-                        "Chỉ đường sẽ được tích hợp sau",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onDirections = { location ->
+                    val directionsUri = Uri.parse("https://www.google.com/maps/dir/")
+                        .buildUpon()
+                        .appendQueryParameter("api", "1")
+                        .appendQueryParameter(
+                            "destination",
+                            "${location.latitude},${location.longitude}"
+                        )
+                        .build()
+
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, directionsUri))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(
+                            context,
+                            "Không tìm thấy ứng dụng để mở chỉ đường.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 },
 
                 onBottomNavigate = { route ->
@@ -897,8 +913,43 @@ fun AppNavGraph(
                 )
             }
 
-            androidx.compose.runtime.LaunchedEffect(locationId) {
-                detailViewModel.loadLocation(locationId)
+            val listState = safeLocationViewModel.uiState.collectAsState().value
+
+            androidx.lifecycle.compose.LifecycleResumeEffect(
+                locationId,
+                listState.latitude,
+                listState.longitude
+            ) {
+                val hasLocationPermission = listOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ).any { permission ->
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        permission
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+
+                if (!hasLocationPermission) {
+                    safeLocationViewModel.updateGps(null, null)
+                }
+
+                detailViewModel.loadLocation(
+                    locationId = locationId,
+                    latitude = listState.latitude.takeIf { hasLocationPermission },
+                    longitude = listState.longitude.takeIf { hasLocationPermission },
+                    cachedLocation = listState.locations.firstOrNull { it.id == locationId }
+                )
+
+                onPauseOrDispose { }
+            }
+
+            val detailState = detailViewModel.uiState.collectAsState().value
+
+            LaunchedEffect(locationId, detailState.isUnavailable) {
+                if (detailState.isUnavailable) {
+                    safeLocationViewModel.removeUnavailableLocation(locationId)
+                }
             }
 
 
@@ -923,12 +974,25 @@ fun AppNavGraph(
                     }
                 },
 
-                onDirections = {
-                    Toast.makeText(
-                        context,
-                        "Chưa có tuyến đường được xác minh",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onDirections = { location ->
+                    val directionsUri = Uri.parse("https://www.google.com/maps/dir/")
+                        .buildUpon()
+                        .appendQueryParameter("api", "1")
+                        .appendQueryParameter(
+                            "destination",
+                            "${location.latitude},${location.longitude}"
+                        )
+                        .build()
+
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, directionsUri))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(
+                            context,
+                            "Không tìm thấy ứng dụng để mở chỉ đường.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 },
 
                 onContactClick = {

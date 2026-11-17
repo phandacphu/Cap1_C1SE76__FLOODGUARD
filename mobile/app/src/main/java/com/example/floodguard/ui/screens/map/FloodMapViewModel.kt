@@ -185,13 +185,7 @@ class FloodMapViewModel(
                         safeLocations = locations,
                         selectedSafeLocationId =
                             state.selectedSafeLocationId?.takeIf { id ->
-                                locations.any {
-                                    it.id == id &&
-                                            it.status.equals(
-                                                "active",
-                                                ignoreCase = true
-                                            )
-                                }
+                                locations.any { it.id == id }
                             },
                         safeLocationsLoadedAt = System.currentTimeMillis(),
                         isLoadingSafeLocations = false,
@@ -277,13 +271,7 @@ class FloodMapViewModel(
 
         val selectedId = locationId?.takeIf { id ->
             currentState.isShelterLayerEnabled &&
-                    currentState.safeLocations.any { location ->
-                        location.id == id &&
-                                location.status.equals(
-                                    "active",
-                                    ignoreCase = true
-                                )
-                    }
+                    currentState.safeLocations.any { it.id == id }
         }
 
         _uiState.value = currentState.copy(
