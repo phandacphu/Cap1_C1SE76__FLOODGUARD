@@ -618,6 +618,7 @@ class FloodMapViewModel(
         loadFloodAlerts()
         loadSafeLocations()
         loadHistoryPoints()
+        loadHistoryBuffers()
         loadHistoryAreas()
         loadHistoryRadar()
     }

@@ -268,7 +268,8 @@ class CitizenMapLoadingTest {
             assertEquals(1, before.historyRadarMapPolygons.first().holes.size)
             assertNotNull(before.historyRadarLoadedAt)
             assertNull(before.historyRadarError)
-            assertEquals(0, apis.bufferCalls)
+            assertEquals(1, apis.bufferCalls)
+            assertEquals(1, before.historyBufferMapPolygons.size)
 
             val calls = apis.counts()
 
@@ -309,7 +310,7 @@ class CitizenMapLoadingTest {
             assertEquals(2, failed.historyRadarFeatureCount)
             assertNull(failed.floodAreasError)
             assertNull(failed.historyPointsError)
-            assertEquals(0, apis.bufferCalls)
+            assertEquals(2, apis.bufferCalls)
 
             apis.radarOffline = false
             apis.radarJson =
@@ -349,7 +350,7 @@ class CitizenMapLoadingTest {
                 runCurrent()
 
                 assertEquals(listOf(1, 1, 1, 1, 1), apis.counts())
-                assertEquals(0, apis.bufferCalls)
+                assertEquals(1, apis.bufferCalls)
             } finally {
                 gate.complete(Unit)
             }
@@ -558,7 +559,11 @@ private class FakeCitizenMapApis {
         }
         override suspend fun getBuffers(): Response<FloodHistoryResponse> {
             bufferCalls++
-            error("Buffer không được tự tải cùng lớp vùng trũng")
+            checkOnline()
+            return citizenFixtureResponse(
+                """{"success":true,"data":{"layer":"buffers","geojson":{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[108.20,16.05],[108.21,16.05],[108.21,16.06],[108.20,16.05]]]}}]}}}""",
+                FloodHistoryResponse::class.java
+            )
         }
 
         override suspend fun getRadar(): Response<FloodHistoryResponse> {

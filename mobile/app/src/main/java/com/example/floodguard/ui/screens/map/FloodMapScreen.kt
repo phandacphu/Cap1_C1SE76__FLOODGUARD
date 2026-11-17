@@ -1417,6 +1417,22 @@ private fun FloodGoogleMap(
                     )
                 }
 
+                if (state.isFloodLayerEnabled && state.isHistoryPointsLayerEnabled) {
+                    state.historyBufferMapPolygons.forEachIndexed { index, polygon ->
+                        key("history-buffer", index) {
+                            Polygon(
+                                points = polygon.outer,
+                                holes = polygon.holes,
+                                fillColor = Color(0x33E53935),
+                                strokeColor = Color(0xFFE53935),
+                                strokeWidth = 2f,
+                                zIndex = 1f,
+                                clickable = false
+                            )
+                        }
+                    }
+                }
+
                 state.historyPoints.forEachIndexed { index, point ->
                     key("history-point", point.id, index) {
                         Marker(
@@ -2394,14 +2410,29 @@ private fun CitizenMapSelectionDialog(
                 state.isHistoryPointsLayerEnabled
     }
 
-    if (area == null && point == null) return
+    if (point != null) {
+        val historicalArea = point.id?.let { id ->
+            state.historyAreas.firstOrNull { it.id == id }
+        }
+
+        HistoricalPointDetailsSheet(
+            point = point,
+            area = historicalArea,
+            canShowOnMap = canShowOnMap,
+            onDismiss = onDismiss,
+            onShowPoint = { onShowPoint(point) }
+        )
+        return
+    }
+
+    if (area == null) return
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MapCard,
         title = {
             Text(
-                text = area?.name ?: point?.name ?: "Thông tin bản đồ",
+                text = area.name?.takeIf { it.isNotBlank() } ?: "Thông tin vùng",
                 color = MapText
             )
         },
@@ -2412,7 +2443,7 @@ private fun CitizenMapSelectionDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (area != null) {
+
                     CitizenInfoLine("Loại dữ liệu", area.areaType.label)
                     CitizenInfoLine("ID", area.id)
                     CitizenInfoLine("Tên", area.name)
@@ -2454,65 +2485,82 @@ private fun CitizenMapSelectionDialog(
                             )
                         }
                     }
-                }
 
-                if (point != null) {
-                    CitizenInfoLine("Loại dữ liệu", "Ngập lịch sử")
-                    CitizenInfoLine("ID", point.id)
-                    CitizenInfoLine("Tên", point.name)
-                    CitizenInfoLine("Nguồn", point.sourceUrl)
-                    CitizenInfoLine(
-                        "Nguồn tham chiếu vị trí",
-                        point.locationRefUrl
-                    )
-                    CitizenInfoLine("Giai đoạn dữ liệu", point.dataPeriod)
 
-                    CitizenInfoLine(
-                        "Thông tin tọa độ",
-                        when (point.coordinateStatus) {
-                            "landmark_reference" ->
-                                "Tọa độ tham chiếu theo địa danh"
-
-                            "historical_reference_estimated" ->
-                                "Tọa độ lịch sử ước lượng"
-
-                            else -> point.coordinateStatus
-                        }
-                    )
-
-                    CitizenInfoLine(
-                        "Tọa độ",
-                        "${point.latitude}, ${point.longitude}"
-                    )
-
-                    Text(
-                        text = "Dữ liệu lịch sử phục vụ tham khảo, " +
-                                "không xác nhận khu vực đang ngập hoặc an toàn.",
-                        color = MapSecondary,
-                        fontSize = 12.sp
-                    )
-
-                    state.historyPointsError?.let {
-                        Text(
-                            text = "Thông tin điểm đang lấy từ lần tải trước.",
-                            color = MapOrange,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
             }
         },
         confirmButton = {
             TextButton(
                 enabled = canShowOnMap,
-                onClick = {
-                    if (area != null) {
-                        onShowArea(area)
-                    } else if (point != null) {
-                        onShowPoint(point)
-                    }
-                }
+                onClick = { onShowArea(area) }
             ) {
+                Text("Xem trên bản đồ", color = MapText)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Đóng", color = MapText)
+            }
+        }
+    )
+}
+
+@Composable
+private fun HistoricalPointDetailsSheet(
+    point: HistoricalFloodPoint,
+    area: HistoricalDrawnArea?,
+    canShowOnMap: Boolean,
+    onDismiss: () -> Unit,
+    onShowPoint: () -> Unit
+) {
+    val name = area?.name ?: point.name ?: "Điểm ngập lịch sử"
+    val coordinateLabel = when (point.coordinateStatus) {
+        "landmark_reference" -> "Tọa độ tham chiếu theo địa danh"
+        "historical_reference_estimated" -> "Tọa độ lịch sử ước lượng"
+        else -> point.coordinateStatus
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MapCard,
+        title = {
+            Text(text = name, color = MapText)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                CitizenInfoLine("Loại dữ liệu", "Ngập lịch sử")
+                CitizenInfoLine("ID", point.id)
+                CitizenInfoLine("Tên", name)
+                area?.let {
+                    CitizenInfoLine("Loại vùng", it.areaType.label)
+                }
+                CitizenInfoLine(
+                    "Nguồn",
+                    area?.source?.takeIf { it.isNotBlank() } ?: point.sourceUrl
+                )
+                area?.description?.takeIf { it.isNotBlank() }?.let {
+                    CitizenInfoLine("Mô tả", it)
+                }
+                CitizenInfoLine("Nguồn tham chiếu vị trí", point.locationRefUrl)
+                CitizenInfoLine("Giai đoạn dữ liệu", point.dataPeriod)
+                CitizenInfoLine("Thông tin tọa độ", coordinateLabel)
+                CitizenInfoLine("Tọa độ", "${point.latitude}, ${point.longitude}")
+
+                Text(
+                    text = "Dữ liệu lịch sử phục vụ tham khảo, " +
+                            "không xác nhận khu vực đang ngập hoặc an toàn.",
+                    color = MapSecondary,
+                    fontSize = 12.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = canShowOnMap, onClick = onShowPoint) {
                 Text("Xem trên bản đồ", color = MapText)
             }
         },
