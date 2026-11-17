@@ -1270,8 +1270,9 @@ fun AppNavGraph(
                 ) {
                     ResidentSosSubmissionViewModel(
                         loadActive = {
-                            residentRepository.getActive()
-                                .onFailure(residentSosTracking::onApiError)
+                            residentSosTracking.loadActiveRequests {
+                                residentRepository.getActive()
+                            }
                         },
                         createRemote = { request ->
                             residentRepository.create(request)

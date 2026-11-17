@@ -9,6 +9,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -280,5 +281,184 @@ class ResidentSosReviewRegressionTest {
             advanceTimeBy(60_000L)
             runCurrent()
             assertEquals(1, patches)
+        }
+    @Test
+    fun activeList403_repeatedFailures_wait30Seconds_andStopGpsUntilVerified() =
+        runTest(dispatcher) {
+            var patches = 0
+            var listCalls = 0
+            var allowList = false
+
+            val uploader = ResidentSosLocationUploader(
+                scope = backgroundScope,
+                loadDetail = { Result.success(activeA()) },
+                captureLocation = {
+                    SosGpsSample(
+                        16.0,
+                        108.0,
+                        100_000L + testScheduler.currentTime
+                    )
+                },
+                uploadLocation = { _, _ ->
+                    patches++
+                    Result.success(activeA())
+                },
+                nowMillis = {
+                    100_000L + testScheduler.currentTime
+                }
+            )
+
+            val tracking = ResidentSosTracking(
+                uploader,
+                MutableStateFlow<String?>(null),
+                Channel<Unit>(Channel.CONFLATED)
+            )
+
+            uploader.start("A")
+            runCurrent()
+            assertEquals(1, patches)
+
+            val discoveryJob = backgroundScope.launch {
+                while (true) {
+                    val result = tracking.loadActiveRequests {
+                        listCalls++
+
+                        if (allowList) {
+                            Result.success(listOf(activeA()))
+                        } else {
+                            Result.failure(accessError(403))
+                        }
+                    }
+
+                    result.onSuccess { requests ->
+                        val active = requests.single()
+                        uploader.start(requireNotNull(active.id))
+                        uploader.acceptServerRequest(active)
+                    }
+
+                    tracking.awaitNextCheck()
+                }
+            }
+
+            runCurrent()
+
+            assertEquals(1, listCalls)
+            assertFalse(uploader.state.value.isRunning)
+            assertFalse(uploader.state.value.accessDenied)
+
+            // Nhiều tín hiệu refresh không được vượt thời gian chờ.
+            repeat(20) {
+                tracking.refresh()
+            }
+            runCurrent()
+            assertEquals(1, listCalls)
+
+            advanceTimeBy(29_999L)
+            runCurrent()
+
+            assertEquals(1, listCalls)
+            assertEquals(1, patches)
+
+            advanceTimeBy(1L)
+            runCurrent()
+            assertEquals(2, listCalls)
+
+            // Tổng cộng sáu lần bị 403, mỗi lần cách nhau 30 giây.
+            repeat(4) {
+                repeat(20) {
+                    tracking.refresh()
+                }
+
+                val before = listCalls
+                runCurrent()
+                assertEquals(before, listCalls)
+
+                advanceTimeBy(30_000L)
+                runCurrent()
+                assertEquals(before + 1, listCalls)
+            }
+
+            assertEquals(6, listCalls)
+            assertEquals(1, patches)
+            assertFalse(uploader.state.value.isRunning)
+
+            // Chỉ tiếp tục GPS sau khi đọc lại danh sách thành công.
+            allowList = true
+            advanceTimeBy(30_000L)
+            runCurrent()
+
+            assertEquals(7, listCalls)
+            assertTrue(uploader.state.value.isRunning)
+            assertEquals("A", uploader.state.value.sosId)
+            assertEquals(2, patches)
+
+            discoveryJob.cancel()
+            uploader.stop()
+        }
+
+    @Test
+    fun queuedCompletion_old401_doesNotSendAnotherGet() =
+        assertQueuedCompletionAccessError(401)
+
+    @Test
+    fun queuedCompletion_old403_doesNotSendAnotherGet() =
+        assertQueuedCompletionAccessError(403)
+
+    @Test
+    fun queuedCompletion_old404_doesNotSendAnotherGet() =
+        assertQueuedCompletionAccessError(404)
+
+    private fun assertQueuedCompletionAccessError(code: Int) =
+        runTest(dispatcher) {
+            var detailCalls = 0
+            var historyCalls = 0
+
+            val pending =
+                CompletableDeferred<Result<RescueRequestDto>>()
+
+            val detail = ResidentSosDetailViewModel(
+                sosId = "A",
+                loadDetail = {
+                    detailCalls++
+
+                    if (detailCalls == 1) {
+                        pending.await()
+                    } else {
+                        Result.success(
+                            activeA().copy(state = "rescued")
+                        )
+                    }
+                },
+                loadHistory = {
+                    historyCalls++
+                    Result.success(emptyList())
+                }
+            )
+
+            runCurrent()
+            assertTrue(detail.uiState.value.isLoading)
+            assertEquals(1, detailCalls)
+
+            // Nhận thông báo hoàn tất khi request cũ vẫn đang chờ.
+            detail.refreshAfterCompletion()
+            runCurrent()
+            assertEquals(1, detailCalls)
+
+            pending.complete(Result.failure(accessError(code)))
+            runCurrent()
+
+            assertEquals(1, detailCalls)
+            assertEquals(0, historyCalls)
+            assertFalse(detail.uiState.value.isLoading)
+            assertNull(detail.uiState.value.request)
+            assertNull(detail.uiState.value.loadedAtMillis)
+            assertNotNull(detail.uiState.value.error)
+            assertTrue(detail.historyState.value.events.isEmpty())
+
+            advanceTimeBy(60_000L)
+            runCurrent()
+
+            assertEquals(1, detailCalls)
+            assertEquals(0, historyCalls)
         }
 }

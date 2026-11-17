@@ -171,6 +171,7 @@ class ResidentSosDetailViewModel(
             ?: "Không thể tải chi tiết SOS. Vui lòng thử lại."
 
         if (mustClearDetails(error)) {
+            completionRefreshPending = false
             historyJob?.cancel()
             _historyState.value = ResidentSosEventHistoryState(
                 isEnabled = loadHistory != null
