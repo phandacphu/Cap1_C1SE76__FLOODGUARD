@@ -28,7 +28,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import com.example.floodguard.core.network.ApiClient
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.local.SessionUser
