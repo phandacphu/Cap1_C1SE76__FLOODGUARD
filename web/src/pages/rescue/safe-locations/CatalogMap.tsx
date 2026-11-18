@@ -1,5 +1,6 @@
+import { safeLocationIcon, selectedSafeLocationIcon, rescueGpsIcon } from './mapIcons';
 import { useEffect, useState } from 'react';
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { Marker, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import { latLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../../map/floodMap.css';
@@ -35,18 +36,17 @@ export function CatalogMap({items,user,selectedId,onSelect,command}:{items:SafeL
           url={`https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`}
           attribution='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
           eventHandlers={{tileerror:()=>setTileError(true)}}/>}
-        {items.map(item=><CircleMarker key={item.id} center={[item.location.latitude,item.location.longitude]}
-          radius={selectedId===item.id?12:8} pathOptions={{color:selectedId===item.id?'#ffffff':'#14532d',weight:selectedId===item.id?4:2,fillColor:'#22c55e',fillOpacity:1}}
+        {items.map(item=><Marker key={item.id} position={[item.location.latitude,item.location.longitude]}
+          icon={selectedId===item.id?selectedSafeLocationIcon:safeLocationIcon}
           eventHandlers={{click:()=>onSelect(item.id)}}>
           <Tooltip>{item.name}</Tooltip><Popup><strong>{item.name}</strong><p>{TYPE_LABEL[item.type]}</p><p>{item.address}</p>
-            <button type="button" className="underline" onClick={()=>onSelect(item.id)}>Xem chi tiết</button>{' · '}
             <a href={mapsUrl(item.location)} target="_blank" rel="noopener noreferrer">Mở Google Maps</a>
           </Popup>
-        </CircleMarker>)}
-        {user&&<CircleMarker center={[user.latitude,user.longitude]} radius={8} pathOptions={{color:'#ffffff',weight:3,fillColor:'#3b82f6',fillOpacity:1}}><Tooltip>Vị trí người cứu hộ — GPS trình duyệt</Tooltip></CircleMarker>}
+        </Marker>)}
+        {user&&<Marker position={[user.latitude,user.longitude]} icon={rescueGpsIcon}><Tooltip>Vị trí người cứu hộ — GPS trình duyệt</Tooltip></Marker>}
         <Camera command={command} items={items} user={user}/>
       </MapContainer>
     </div>
-    <p className="text-xs text-muted">🟢 Điểm tránh trú · 🔵 GPS người cứu hộ. Tâm bản đồ ban đầu là Đà Nẵng, không phải vị trí của bạn. Camera chỉ di chuyển khi bạn thao tác.</p>
+    <p className="text-xs text-muted">Ghim định vị xanh lá: điểm tránh trú · Biểu tượng GPS xanh dương: người cứu hộ. Tâm bản đồ ban đầu là Đà Nẵng, không phải vị trí của bạn. Camera chỉ di chuyển khi bạn thao tác.</p>
   </div>;
 }
