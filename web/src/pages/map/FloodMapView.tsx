@@ -41,10 +41,8 @@ export const FloodMapView: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isRescue = user?.role === 'RESCUE_STAFF';
-  const [showHistory, setShowHistory] = useState(true);
-  const [historyRetry, setHistoryRetry] = useState(0);
-  const [showBuffers, setShowBuffers] = useState(false);
-  const [showRadar, setShowRadar] = useState(false);
+  const [showRegions, setShowRegions] = useState(false);
+  const showHistory = isRescue && showRegions;
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -59,8 +57,8 @@ export const FloodMapView: React.FC = () => {
   const [selectedArea, setSelectedArea] = useState<FloodArea | null>(null);
   const [reloadTrigger, setReloadTrigger] = useState<number>(0);
   const historyKeys: HistoricalLayerKey[] = isRescue && showHistory
-    ? ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])] : [];
-  const historyLayers = useHistoricalLayers(historyKeys, `${historyRetry}:${reloadTrigger}`);
+    ? ['points', 'areas', 'buffers', 'radar'] : [];
+  const historyLayers = useHistoricalLayers(historyKeys, String(reloadTrigger));
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const isStaleData = lastUpdated !== null && dataError !== null;
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
@@ -206,7 +204,7 @@ export const FloodMapView: React.FC = () => {
     const map = mapInstanceRef.current;
     if (!map || !isRescue || !showHistory) return;
     const group = L.layerGroup().addTo(map);
-    const keys: HistoricalLayerKey[] = ['points', 'areas', ...(showBuffers ? ['buffers' as const] : []), ...(showRadar ? ['radar' as const] : [])];
+    const keys: HistoricalLayerKey[] = ['points', 'areas', 'buffers', 'radar'];
     const pointIndex = historicalPointIndex(historyLayers.points?.snapshot?.data);
     keys.forEach(key => {
       const data = historyLayers[key]?.snapshot?.data;
@@ -230,7 +228,7 @@ export const FloodMapView: React.FC = () => {
       }).addTo(group);
     });
     return () => { map.removeLayer(group); };
-  }, [isRescue, showHistory, showBuffers, showRadar, historyLayers, mapTilerKey]);
+  }, [isRescue, showHistory, historyLayers, mapTilerKey]);
 
   const filteredAreas = useMemo(() => {
     const classified = floodAreas.filter(area => statusFilter === 'all' ||
@@ -243,6 +241,7 @@ export const FloodMapView: React.FC = () => {
     if (!mapInstanceRef.current || !polygonLayerGroupRef.current) return;
 
     polygonLayerGroupRef.current.clearLayers();
+    if (isRescue && !showRegions) { mapInstanceRef.current.closePopup(); return; }
     const bounds: L.LatLngExpression[] = [];
 
     filteredAreas.forEach((area) => {
@@ -302,7 +301,7 @@ export const FloodMapView: React.FC = () => {
       const first = filteredAreas[0];
       if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
-  }, [filteredAreas, alertsByArea, alertCountError, alertsLoading, isRescue, showHistory]);
+  }, [filteredAreas, alertsByArea, alertCountError, alertsLoading, isRescue, showHistory, showRegions]);
 
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -372,33 +371,27 @@ export const FloodMapView: React.FC = () => {
         </div>
       </div>
 
-      {alertsLoading && <p role="status" className="text-xs text-slate-400">Đang tải cảnh báo</p>}
-      {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Xem mức độ cảnh báo trong popup của vùng.</p>}
-      {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
-      <label className="flex items-center gap-2 text-xs text-cyan-200">
-        <input type="checkbox" checked={onlyWithAlerts} disabled={alertsLoading} onChange={event => setOnlyWithAlerts(event.target.checked)} />
-        {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
-      </label>
-      {isRescue && (
-        <div className="space-y-1 rounded-lg border border-slate-700 p-3 text-xs">
-          <label className="flex items-center gap-2 font-semibold text-rose-300">
-            <input type="checkbox" checked={showHistory} onChange={event => setShowHistory(event.target.checked)} />
-            Hiện bản đồ ngập lịch sử
-          </label>
-          {showHistory && (
-            <>
-              <p className="text-slate-300">Vùng tròn đỏ: vùng đệm lịch sử. Ghim đỏ: điểm HIST. Đa giác phủ thêm là hình Admin đã lưu; radar chỉ hiện khi bật. Dữ liệu tham khảo, không xác nhận ngập hiện tại.</p>
-              <label className="mr-4 inline-flex items-center gap-2"><input type="checkbox" checked={showBuffers} onChange={event => setShowBuffers(event.target.checked)} /> Vùng đệm lịch sử</label>
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showRadar} onChange={event => setShowRadar(event.target.checked)} /> Radar lịch sử</label>
-              {historyKeys.map(key => <p key={key} role="status" className={historyLayers[key]?.error ? 'text-amber-300' : 'text-slate-400'}>
-                {({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error ?? (historyLayers[key]?.snapshot ? `${historyLayers[key]!.snapshot!.data.features.length} đối tượng` : 'Đang tải…')}
-                {historyLayers[key]?.snapshot && ` — API tải lúc ${new Date(historyLayers[key]!.snapshot!.fetchedAt).toLocaleString('vi-VN')}`}
-              </p>)}
-              <button type="button" className="underline" onClick={() => setHistoryRetry(value => value + 1)}>Tải lại các lớp đang bật</button>
-            </>
-          )}
+      {isRescue ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" aria-pressed={showRegions}
+            onClick={() => { setShowRegions(value => !value); setStatusFilter('all'); setOnlyWithAlerts(false); }}
+            className={`rounded-lg border px-4 py-2 text-sm font-semibold ${showRegions ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300' : 'border-slate-600 text-slate-200'}`}>
+            Vùng ngập
+          </button>
+          {showRegions && <span className="text-xs text-slate-400">Đang hiện vùng ngập, vùng trũng và các lớp lịch sử tham khảo; lịch sử không xác nhận ngập hiện tại.</span>}
+          {showRegions && historyKeys.some(key => !historyLayers[key]?.snapshot && !historyLayers[key]?.error) && <span role="status" className="text-xs text-slate-400">Đang tải lớp lịch sử…</span>}
+          {showRegions && historyKeys.filter(key => historyLayers[key]?.error).map(key => <p key={key} role="status" className="text-xs text-amber-300">{({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error}</p>)}
+          {alertCountError && <p role="status" className="text-xs text-amber-300">{alertCountError}</p>}
         </div>
-      )}
+      ) : <>
+        {alertsLoading && <p role="status" className="text-xs text-slate-400">Đang tải cảnh báo</p>}
+        {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Xem mức độ cảnh báo trong popup của vùng.</p>}
+        {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
+        <label className="flex items-center gap-2 text-xs text-cyan-200">
+          <input type="checkbox" checked={onlyWithAlerts} disabled={alertsLoading} onChange={event => setOnlyWithAlerts(event.target.checked)} />
+          {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
+        </label>
+      </>}
       {lastUpdated && <p className="text-xs text-slate-400">Dữ liệu tải lúc: {lastUpdated.toLocaleString('vi-VN')}</p>}
       {/* Thông báo lỗi API và cảnh báo dữ liệu cũ (A.3) */}
       {dataError && (
