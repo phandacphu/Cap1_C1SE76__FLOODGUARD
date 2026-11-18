@@ -1,3 +1,4 @@
+import { validateHistoricalMetadata } from './historicalDetails';
 import { fetchHistoricalPoints, fetchHistoricalAreas, fetchHistoricalBuffers, fetchHistoricalRadar,
   type HistoricalLayerKey, type HistoricalFeatureCollection } from '../admin/flood-area/historicalMapService';
 
@@ -12,6 +13,7 @@ export function getHistoricalLayer(key: HistoricalLayerKey, force = false): Prom
   const old = cache.get(key);
   if (!force && old && Date.now() - old.fetchedAt < 60_000) return Promise.resolve(old);
   const request = sources[key]().then(data => {
+    validateHistoricalMetadata(data, key);
     const value = { data, fetchedAt: Date.now() };
     cache.set(key, value);
     return value;

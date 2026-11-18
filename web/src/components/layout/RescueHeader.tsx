@@ -9,10 +9,11 @@ interface RescueHeaderProps {
   updatedAt: Date | null;
   /** Requests waiting for a rescuer (shown on the bell). */
   waitingCount?: number;
+  syncHint?: string;
 }
 
 /** Rescue Staff top bar: online status, clock, sync info, refresh, bell, user. */
-export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount }: RescueHeaderProps) {
+export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount, syncHint = 'tự đồng bộ 15s' }: RescueHeaderProps) {
   const now = useClock();
   const { user } = useAuth();
 
@@ -30,7 +31,7 @@ export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount }: Re
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         {updatedAt && (
           <span className="hidden font-mono text-[11px] text-muted xl:block">
-            Cập nhật {formatClock(updatedAt)} · tự đồng bộ 15s
+            Cập nhật {formatClock(updatedAt)} · {syncHint}
           </span>
         )}
         <button

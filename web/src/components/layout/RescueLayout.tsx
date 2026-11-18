@@ -9,6 +9,7 @@ interface RescueLayoutProps {
   updatedAt: Date | null;
   /** Requests waiting for a rescuer; leave out when the page does not know it. */
   waitingCount?: number;
+  syncHint?: string;
   children: ReactNode;
 }
 
@@ -18,6 +19,7 @@ export function RescueLayout({
   onRefresh,
   updatedAt,
   waitingCount,
+  syncHint,
   children,
 }: RescueLayoutProps) {
   return (
@@ -33,6 +35,7 @@ export function RescueLayout({
           onRefresh={onRefresh}
           updatedAt={updatedAt}
           waitingCount={waitingCount}
+          syncHint={syncHint}
         />
       }
     >
