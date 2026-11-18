@@ -30,6 +30,7 @@ import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewMod
 import com.example.floodguard.ui.theme.FloodGuardTheme
 import com.google.gson.Gson
 import retrofit2.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 
 class CitizenMapFixtureActivity : ComponentActivity() {
 
@@ -205,12 +206,35 @@ private class CitizenMapFixtureApi :
             FloodAlertsResponse::class.java
         )
 
-    override suspend fun getSafeLocations():
-            Response<SafeLocationsResponse> =
+    override suspend fun getSafeLocations(
+        latitude: Double?,
+        longitude: Double?
+    ): Response<SafeLocationsResponse> =
         fixtureResponse(
             FIXTURE_SHELTERS_JSON,
             SafeLocationsResponse::class.java
         )
+
+    override suspend fun getSafeLocation(
+        id: String,
+        latitude: Double?,
+        longitude: Double?
+    ): Response<SafeLocationDetailResponse> {
+        val location = getSafeLocations(latitude, longitude)
+            .body()?.data?.safeLocations?.firstOrNull { it.id == id }
+            ?: return Response.error(
+                404,
+                """{"success":false,"message":"Địa điểm không còn được cung cấp"}"""
+                    .toResponseBody()
+            )
+
+        return Response.success(
+            SafeLocationDetailResponse(
+                success = true,
+                data = SafeLocationDetailData(safeLocation = location)
+            )
+        )
+    }
 
     override suspend fun getNearbySafeLocations(
         latitude: Double,

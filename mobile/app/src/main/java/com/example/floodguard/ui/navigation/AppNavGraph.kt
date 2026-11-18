@@ -28,10 +28,18 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import com.example.floodguard.core.network.ApiClient
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.local.SessionUser
 import com.example.floodguard.data.remote.api.RescueRequestApi
+import com.example.floodguard.data.remote.api.ResidentSosApi
+import com.example.floodguard.data.repository.ResidentSosRepository
+import com.example.floodguard.ui.screens.sos.ResidentSosDetailViewModel
+import com.example.floodguard.ui.screens.sos.ResidentSosSubmissionViewModel
+import com.example.floodguard.ui.screens.sos.rememberResidentSosTracking
+import com.example.floodguard.ui.screens.sos.ResidentSosUploadPanel
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
@@ -59,14 +67,18 @@ import com.example.floodguard.ui.screens.safe_location.SafeLocationViewModel
 import com.example.floodguard.ui.screens.sos.SendSosScreen
 import com.example.floodguard.ui.screens.sos.SendSosViewModel
 import com.example.floodguard.ui.screens.sos.SosStatusScreen
-import com.example.floodguard.ui.screens.sos.SosStatusViewModel
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.example.floodguard.ui.screens.rescue.RescueEntryScreen
 import com.example.floodguard.ui.screens.rescue.RescueOverviewScreen
@@ -92,6 +104,7 @@ fun AppNavGraph(
     val sessionManager = remember(context) {
         SessionManager(context.applicationContext)
     }
+    val residentSosTracking = rememberResidentSosTracking(sessionManager)
     val scope = rememberCoroutineScope()
     val navigationSession by produceState<NavigationSession?>(
         initialValue = null,
@@ -460,30 +473,78 @@ fun AppNavGraph(
             )
 
             // Retrofit có Bearer Token
-            val rescueRepository = remember(sessionManager) {
-
-                val retrofit =
-                    ApiClient.createAuthenticatedRetrofit(
-                        sessionManager
-                    )
-
-                val rescueApi = retrofit.create(
-                    RescueRequestApi::class.java
+            val residentRepository = remember(sessionManager) {
+                val retrofit = ApiClient.createResidentSosRetrofit(
+                    sessionManager
                 )
 
-                RescueRequestRepository(
-                    api = rescueApi
+                ResidentSosRepository(
+                    api = retrofit.create(ResidentSosApi::class.java)
                 )
             }
 
-            // ViewModel quản lý API SOS
             val profileViewModel: ProfileViewModel = viewModel {
                 ProfileViewModel(
-                    repository = rescueRepository
+                    loadRequests = {
+                        residentRepository.getRequests()
+                            .onSuccess { requests ->
+                                requests.forEach(residentSosTracking::observe)
+                            }
+                            .onFailure(residentSosTracking::onApiError)
+                    }
                 )
             }
 
             val sosState by profileViewModel.sosState.collectAsState()
+
+            val profileUploadState by
+            residentSosTracking.uploader.state.collectAsState()
+
+            val visibleSosState = if (profileUploadState.accessDenied) {
+                com.example.floodguard.ui.screens.profile.ProfileSosUiState(
+                    error = profileUploadState.message
+                        ?: "Không còn quyền truy cập dữ liệu SOS."
+                )
+            } else {
+                val updated = profileUploadState.lastServerRequest
+
+                sosState.copy(
+                    requests = sosState.requests.map { request ->
+                        if (
+                            updated != null &&
+                            request.id == updated.id &&
+                            !(
+                                    request.state == "rescued" &&
+                                            updated.state == "active"
+                                    )
+                        ) {
+                            updated
+                        } else {
+                            request
+                        }
+                    }
+                )
+            }
+
+            val profileLifecycleOwner =
+                androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+            androidx.compose.runtime.DisposableEffect(
+                profileLifecycleOwner,
+                profileViewModel
+            ) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        profileViewModel.loadSosHistory()
+                    }
+                }
+
+                profileLifecycleOwner.lifecycle.addObserver(observer)
+
+                onDispose {
+                    profileLifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
 
             ProfileScreen(
                 fullName = user.fullName
@@ -498,7 +559,7 @@ fun AppNavGraph(
                     ?.takeIf { it.isNotBlank() }
                     ?: "Chưa cập nhật",
 
-                sosState = sosState,
+                sosState = visibleSosState,
 
                 onSosStatusClick = { sosId ->
                     navController.navigate(
@@ -889,12 +950,25 @@ fun AppNavGraph(
                     )
                 },
 
-                onDirections = {
-                    Toast.makeText(
-                        context,
-                        "Chỉ đường sẽ được tích hợp sau",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onDirections = { location ->
+                    val directionsUri = Uri.parse("https://www.google.com/maps/dir/")
+                        .buildUpon()
+                        .appendQueryParameter("api", "1")
+                        .appendQueryParameter(
+                            "destination",
+                            "${location.latitude},${location.longitude}"
+                        )
+                        .build()
+
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, directionsUri))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(
+                            context,
+                            "Không tìm thấy ứng dụng để mở chỉ đường.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 },
 
                 onBottomNavigate = { route ->
@@ -950,8 +1024,43 @@ fun AppNavGraph(
                 )
             }
 
-            androidx.compose.runtime.LaunchedEffect(locationId) {
-                detailViewModel.loadLocation(locationId)
+            val listState = safeLocationViewModel.uiState.collectAsState().value
+
+            androidx.lifecycle.compose.LifecycleResumeEffect(
+                locationId,
+                listState.latitude,
+                listState.longitude
+            ) {
+                val hasLocationPermission = listOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ).any { permission ->
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        permission
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+
+                if (!hasLocationPermission) {
+                    safeLocationViewModel.updateGps(null, null)
+                }
+
+                detailViewModel.loadLocation(
+                    locationId = locationId,
+                    latitude = listState.latitude.takeIf { hasLocationPermission },
+                    longitude = listState.longitude.takeIf { hasLocationPermission },
+                    cachedLocation = listState.locations.firstOrNull { it.id == locationId }
+                )
+
+                onPauseOrDispose { }
+            }
+
+            val detailState = detailViewModel.uiState.collectAsState().value
+
+            LaunchedEffect(locationId, detailState.isUnavailable) {
+                if (detailState.isUnavailable) {
+                    safeLocationViewModel.removeUnavailableLocation(locationId)
+                }
             }
 
 
@@ -976,12 +1085,25 @@ fun AppNavGraph(
                     }
                 },
 
-                onDirections = {
-                    Toast.makeText(
-                        context,
-                        "Chưa có tuyến đường được xác minh",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                onDirections = { location ->
+                    val directionsUri = Uri.parse("https://www.google.com/maps/dir/")
+                        .buildUpon()
+                        .appendQueryParameter("api", "1")
+                        .appendQueryParameter(
+                            "destination",
+                            "${location.latitude},${location.longitude}"
+                        )
+                        .build()
+
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, directionsUri))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(
+                            context,
+                            "Không tìm thấy ứng dụng để mở chỉ đường.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 },
 
                 onContactClick = {
@@ -1115,31 +1237,118 @@ fun AppNavGraph(
                 }
             )
         }
-
+        // CHI TIẾT VÀ LỊCH SỬ SOS
+        // CHI TIẾT VÀ LỊCH SỬ SOS
         composable(
             route = "${AppRoutes.SOS_STATUS}/{sosId}"
         ) { entry ->
-            val sosId = entry.arguments?.getString("sosId").orEmpty()
+            val sosId = entry.arguments
+                ?.getString("sosId")
+                .orEmpty()
 
             val repository = remember(sessionManager) {
-                val retrofit = ApiClient.createAuthenticatedRetrofit(sessionManager)
+                val retrofit = ApiClient.createResidentSosRetrofit(
+                    sessionManager
+                )
 
-                RescueRequestRepository(
-                    api = retrofit.create(RescueRequestApi::class.java)
+                ResidentSosRepository(
+                    api = retrofit.create(ResidentSosApi::class.java)
                 )
             }
 
-            val statusViewModel: SosStatusViewModel = viewModel {
-                SosStatusViewModel(
-                    repository = repository,
-                    sosId = sosId
+            val statusViewModel: ResidentSosDetailViewModel = viewModel(
+                viewModelStoreOwner = entry
+            ) {
+                ResidentSosDetailViewModel(
+                    sosId = sosId,
+                    loadDetail = { id ->
+                        repository.getDetail(id)
+                            .onSuccess(residentSosTracking::observe)
+                            .onFailure(residentSosTracking::onApiError)
+                    },
+                    loadHistory = { id ->
+                        repository.getHistory(id)
+                            .onFailure(residentSosTracking::onApiError)
+                    }
                 )
             }
 
             val statusState by statusViewModel.uiState.collectAsState()
+            val historyState by statusViewModel.historyState.collectAsState()
+            val uploadState by
+            residentSosTracking.uploader.state.collectAsState()
+
+            val acknowledgedRequest = uploadState.lastServerRequest
+                ?.takeIf { it.id == sosId }
+
+            val displayStatusState = when {
+                uploadState.accessDenied -> statusState.copy(
+                    request = null,
+                    loadedAtMillis = null,
+                    error = uploadState.message
+                        ?: "Không còn quyền truy cập SOS."
+                )
+
+                statusState.request != null &&
+                        acknowledgedRequest != null &&
+                        !(
+                                statusState.request?.state == "rescued" &&
+                                        acknowledgedRequest.state == "active"
+                                ) -> statusState.copy(
+                    request = acknowledgedRequest
+                )
+
+                else -> statusState
+            }
+
+            LaunchedEffect(
+                uploadState.sosId,
+                uploadState.lastServerRequest?.state
+            ) {
+                if (
+                    uploadState.sosId == sosId &&
+                    uploadState.lastServerRequest?.state == "rescued" &&
+                    statusState.request?.state != "rescued"
+                ) {
+                    statusViewModel.refreshAfterCompletion()
+                }
+            }
+
+            val lifecycleOwner =
+                androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+            androidx.compose.runtime.DisposableEffect(
+                lifecycleOwner,
+                statusViewModel
+            ) {
+                val observer =
+                    androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (
+                            event ==
+                            androidx.lifecycle.Lifecycle.Event.ON_RESUME
+                        ) {
+                            statusViewModel.refresh()
+                        }
+                    }
+
+                lifecycleOwner.lifecycle.addObserver(observer)
+
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
 
             SosStatusScreen(
-                state = statusState,
+                state = displayStatusState,
+                historyState = historyState,
+                gpsContent = {
+                    if (displayStatusState.request?.state == "active") {
+                        ResidentSosUploadPanel(
+                            sosId = sosId,
+                            tracking = residentSosTracking
+                        )
+                    }
+                },
                 onRefresh = statusViewModel::refresh,
                 onBack = {
                     if (!navController.popBackStack()) {
@@ -1155,43 +1364,168 @@ fun AppNavGraph(
         }
 
 
-        // SEND SOS — CCF-83
-        composable(route = AppRoutes.SEND_SOS) {
+        // GỬI SOS
+        composable(route = AppRoutes.SEND_SOS) { entry ->
+            val residentRepository = remember(sessionManager) {
+                val retrofit = ApiClient.createResidentSosRetrofit(
+                    sessionManager
+                )
 
-            val rescueRepository = remember(sessionManager) {
-                val retrofit =
-                    ApiClient.createAuthenticatedRetrofit(
-                        sessionManager
-                    )
-
-                RescueRequestRepository(
-                    api = retrofit.create(
-                        RescueRequestApi::class.java
-                    )
+                ResidentSosRepository(
+                    api = retrofit.create(ResidentSosApi::class.java)
                 )
             }
 
-            val sendSosViewModel: SendSosViewModel = viewModel {
-                SendSosViewModel(
-                    repository = rescueRepository
-                )
-            }
-
-            SendSosScreen(
-                viewModel = sendSosViewModel,
-                onBack = {
-                    val returned = navController.popBackStack()
-
-                    if (!returned) {
-                        navController.navigate(AppRoutes.HOME) {
-                            popUpTo(AppRoutes.SEND_SOS) {
-                                inclusive = true
+            val submissionViewModel: ResidentSosSubmissionViewModel =
+                viewModel(
+                    viewModelStoreOwner = entry
+                ) {
+                    ResidentSosSubmissionViewModel(
+                        loadActive = {
+                            residentSosTracking.loadActiveRequests {
+                                residentRepository.getActive()
                             }
-                            launchSingleTop = true
+                        },
+                        createRemote = { request ->
+                            residentRepository.create(request)
+                                .onFailure(residentSosTracking::onApiError)
+                        }
+                    )
+                }
+
+            val sendSosViewModel: SendSosViewModel = viewModel(
+                viewModelStoreOwner = entry
+            ) {
+                SendSosViewModel(
+                    submitValidatedSos = { request, isLocationFresh ->
+                        submissionViewModel.submit(
+                            request = request,
+                            isLocationFresh = isLocationFresh
+                        )
+                    }
+                )
+            }
+
+            val submissionState by
+            submissionViewModel.state.collectAsState()
+
+            LaunchedEffect(submissionState.openSosId) {
+                val id = submissionState.openSosId
+                    ?: return@LaunchedEffect
+
+                residentSosTracking.refresh()
+
+                navController.navigate(
+                    "${AppRoutes.SOS_STATUS}/${android.net.Uri.encode(id)}"
+                ) {
+                    popUpTo(entry.destination.id) {
+                        inclusive = true
+                    }
+                    launchSingleTop = true
+                }
+            }
+
+            val submissionLifecycleOwner =
+                androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+            androidx.compose.runtime.DisposableEffect(
+                submissionLifecycleOwner,
+                submissionViewModel
+            ) {
+                val observer =
+                    androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (
+                            event ==
+                            androidx.lifecycle.Lifecycle.Event.ON_RESUME
+                        ) {
+                            submissionViewModel.checkActive()
+                        }
+                    }
+
+                submissionLifecycleOwner.lifecycle.addObserver(observer)
+
+                onDispose {
+                    submissionLifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
+            val backFromSend: () -> Unit = {
+                if (!navController.popBackStack()) {
+                    navController.navigate(AppRoutes.HOME) {
+                        launchSingleTop = true
+                    }
+                }
+            }
+
+            if (submissionState.formAllowed) {
+                SendSosScreen(
+                    viewModel = sendSosViewModel,
+                    onBack = backFromSend
+                )
+            } else {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Color(0xFF071521)
+                        )
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(20.dp),
+                    verticalArrangement =
+                        androidx.compose.foundation.layout.Arrangement
+                            .spacedBy(16.dp)
+                ) {
+                    androidx.compose.material3.TextButton(
+                        onClick = backFromSend
+                    ) {
+                        androidx.compose.material3.Text(
+                            "‹ Quay lại",
+                            color = androidx.compose.ui.graphics.Color(
+                                0xFF20D7FF
+                            )
+                        )
+                    }
+
+                    if (
+                        submissionState.isChecking ||
+                        submissionState.openSosId != null
+                    ) {
+                        CircularProgressIndicator()
+
+                        androidx.compose.material3.Text(
+                            text = if (
+                                submissionState.openSosId != null
+                            ) {
+                                "Đang mở yêu cầu SOS…"
+                            } else {
+                                "Đang kiểm tra SOS đang hoạt động…"
+                            },
+                            color = androidx.compose.ui.graphics.Color.White
+                        )
+                    }
+
+                    submissionState.error?.let { message ->
+                        androidx.compose.material3.Text(
+                            message,
+                            color = androidx.compose.ui.graphics.Color(
+                                0xFFFFB4AB
+                            )
+                        )
+
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = submissionViewModel::checkActive
+                        ) {
+                            androidx.compose.material3.Text(
+                                "Thử lại",
+                                color = androidx.compose.ui.graphics.Color(
+                                    0xFF20D7FF
+                                )
+                            )
                         }
                     }
                 }
-            )
+            }
         }
     }
 }

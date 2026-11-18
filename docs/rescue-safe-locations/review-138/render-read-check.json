@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-11-15T19:30:08.879948+07:00",
+  "baseUrl": "https://floodguard-backend-demo.onrender.com/api",
+  "list": {
+    "http": 200,
+    "count": 1
+  },
+  "listWithSyntheticGps": {
+    "http": 200,
+    "count": 1
+  },
+  "detail": {
+    "http": 200,
+    "id": "ccf66-sample-safe-location-01"
+  },
+  "readOnly": true,
+  "realDeviceGps": false,
+  "adminWritesPerformed": false
+}

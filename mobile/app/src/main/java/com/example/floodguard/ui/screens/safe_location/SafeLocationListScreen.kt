@@ -51,9 +51,7 @@ fun SafeLocationListScreen(
 ) {
     val state = viewModel.uiState.collectAsState().value
 
-    var gpsLocation by remember {
-        mutableStateOf<Location?>(null)
-    }
+    val gpsLocation = state.deviceLocation
 
     var touchingMap by remember {
         mutableStateOf(false)
@@ -122,7 +120,8 @@ fun SafeLocationListScreen(
                     locations = state.locations,
                     isLoadingLocations = state.isLoading,
                     locationError = state.errorMessage,
-                    onGpsChanged = { gpsLocation = it },
+                    gps = gpsLocation,
+                    onGpsChanged = viewModel::updateDeviceLocation,
                     onViewDetail = onViewDetail,
                     onMapTouchChanged = { touchingMap = it }
                 )
@@ -156,7 +155,7 @@ fun SafeLocationListScreen(
             }
 
             when {
-                state.isLoading -> {
+                state.isLoading && state.locations.isEmpty() -> {
                     item {
                         Box(
                             modifier = Modifier
@@ -212,7 +211,7 @@ fun SafeLocationListScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "Không có điểm tránh trú phù hợp.",
+                                text = "Chưa có điểm tránh trú",
                                 color = MutedText
                             )
 
@@ -230,19 +229,18 @@ fun SafeLocationListScreen(
                 }
 
 
-                else -> {
-                    items(
-                        items = state.locations,
-                        key = { it.id }
-                    ) { location ->
+                else -> Unit
+            }
 
-                        SafeLocationCard(
-                            location = location,
-                            onViewDetail = onViewDetail,
-                            onDirections = onDirections
-                        )
-                    }
-                }
+            items(
+                items = state.locations,
+                key = { it.id }
+            ) { location ->
+                SafeLocationCard(
+                    location = location,
+                    onViewDetail = onViewDetail,
+                    onDirections = onDirections
+                )
             }
 
             item {

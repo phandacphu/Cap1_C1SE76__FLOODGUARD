@@ -25,7 +25,10 @@ private val StatusMuted = Color(0xFF91A9B9)
 fun SosStatusScreen(
     state: SosStatusUiState,
     onRefresh: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    historyState: ResidentSosEventHistoryState =
+        ResidentSosEventHistoryState(),
+    gpsContent: @Composable () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -101,31 +104,108 @@ fun SosStatusScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         SosStatusField("Mã yêu cầu", request.id)
+
                         SosStatusField(
                             "Tình trạng",
-                            "Chưa xác định"
+                            residentSosStateLabel(request.state)
+                        )
+
+                        when (request.state) {
+                            "active" -> Text(
+                                text = "Yêu cầu đang chờ cứu hộ. " +
+                                        "Thông báo này không xác nhận đội cứu hộ đã đến.",
+                                color = StatusMuted,
+                                fontSize = 12.sp
+                            )
+
+                            "rescued" -> Text(
+                                text = "Yêu cầu đã được đánh dấu đã cứu và giữ trong lịch sử.",
+                                color = StatusMuted,
+                                fontSize = 12.sp
+                            )
+
+                            else -> Text(
+                                text = "Chưa có trạng thái thuộc luồng SOS hiện tại. " +
+                                        "Không tự xác nhận yêu cầu đã được cứu.",
+                                color = StatusMuted,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        SosStatusField(
+                            "Tình huống",
+                            request.situations
+                                ?.takeIf { it.isNotEmpty() }
+                                ?.joinToString(", ") {
+                                    residentSosSituationLabel(it)
+                                }
+                        )
+
+                        SosStatusField(
+                            "Số người cần hỗ trợ",
+                            request.numberOfPeople
+                                ?.takeIf { it > 0 }
+                                ?.toString()
+                        )
+
+                        SosStatusField(
+                            "Mức nước",
+                            residentSosWaterLabel(request.waterLevel)
+                        )
+
+                        SosStatusField("Ghi chú", request.note)
+
+                        SosStatusField(
+                            "Thời gian gửi",
+                            residentSosTime(request.createdAt)
+                        )
+
+                        if (request.state == "rescued") {
+                            SosStatusField(
+                                "Thời gian hoàn tất",
+                                residentSosTime(request.completedAt)
+                            )
+                        }
+
+                        SosStatusField(
+                            "Vị trí ban đầu",
+                            residentSosPosition(request.initialLocation)
+                        )
+
+                        SosStatusField(
+                            "Vị trí cuối Backend đã lưu",
+                            residentSosPosition(request.location)
+                        )
+
+                        SosStatusField(
+                            "Thời điểm lấy mẫu GPS đã được Backend chấp nhận",
+                            residentSosTime(request.locationCapturedAt)
+                        )
+
+                        SosStatusField(
+                            "Thời điểm Backend nhận vị trí",
+                            residentSosTime(request.locationReceivedAt)
+                        )
+
+                        SosStatusField(
+                            "Thời gian cập nhật yêu cầu",
+                            residentSosTime(request.updatedAt)
                         )
 
                         Text(
-                            text = "Chưa có dữ liệu xác nhận tình trạng cứu hộ. " +
-                                    "Vui lòng làm mới để kiểm tra lại.",
+                            text = "Thời gian hiển thị theo giờ Việt Nam (GMT+7). " +
+                                    "Vị trí trên là dữ liệu Backend đã lưu.",
                             color = StatusMuted,
                             fontSize = 12.sp
-                        )
-                        SosStatusField(
-                            "Số người cần hỗ trợ",
-                            request.numberOfPeople?.toString()
-                        )
-                        SosStatusField("Ghi chú", request.note)
-                        SosStatusField("Thời gian tạo từ hệ thống", request.createdAt)
-                        SosStatusField(
-                            "Thời gian cập nhật từ hệ thống",
-                            request.updatedAt
                         )
                     }
                 }
             }
 
+            if (state.request != null) {
+                gpsContent()
+                ResidentSosEventHistory(historyState)
+            }
             state.loadedAtMillis?.let { timestamp ->
                 val formatted = SimpleDateFormat(
                     "dd/MM/yyyy HH:mm:ss",

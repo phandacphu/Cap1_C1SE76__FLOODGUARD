@@ -146,9 +146,36 @@ async function auditChange(actorId, id, action, changedFields) {
   });
 }
 
+// Description/source-only updates must not require an invented historical polygon.
+// All other edits keep the strict full geometry/areaType validation.
+function normalizeHistoricalMetadataPatch(patch) {
+  const result = {};
+  if (Object.hasOwn(patch, "description")) {
+    if (patch.description !== null && typeof patch.description !== "string") {
+      const error = new Error("Historical description must be a string or null");
+      error.statusCode = 400;
+      error.code = "INVALID_HISTORICAL_FLOOD_AREA";
+      throw error;
+    }
+    result.description = typeof patch.description === "string" ? patch.description.trim() || null : null;
+  }
+  if (Object.hasOwn(patch, "source")) {
+    if (typeof patch.source !== "string" || !patch.source.trim()) {
+      const error = new Error("Historical source must be a non-empty string");
+      error.statusCode = 400;
+      error.code = "INVALID_HISTORICAL_FLOOD_AREA";
+      throw error;
+    }
+    result.source = patch.source.trim();
+  }
+  return result;
+}
+
 async function updateHistoricalArea(actorId, id, patch) {
   const adminId = normalizeDocumentId(actorId);
   ensureAllowedBody(patch);
+  const metadataOnly = Object.keys(patch).every((field) => field === "description" || field === "source");
+  const metadata = metadataOnly ? normalizeHistoricalMetadataPatch(patch) : null;
   const point = await getOriginalPoint(id);
   const actorRef = db.collection("users").doc(adminId);
   const overrideRef = db.collection(COLLECTION).doc(id);
@@ -158,13 +185,14 @@ async function updateHistoricalArea(actorId, id, patch) {
     const override = (await transaction.get(overrideRef)).data();
     if (override?.deletedAt) throw notFound();
     const current = toArea(point, override);
-    const updated = normalizeHistoricalArea({ ...current, ...patch });
+    const updated = metadataOnly ? metadata : normalizeHistoricalArea({ ...current, ...patch });
     const changedFields = Object.keys(updated).filter(
       (field) => !isDeepStrictEqual(updated[field], current[field]),
     );
     if (changedFields.length === 0) return { area: current, changedFields };
 
-    const next = { ...updated, updatedAt: Timestamp.now() };
+    // Preserve existing overrides and geometry when only metadata is edited.
+    const next = { ...(metadataOnly ? override : {}), ...updated, updatedAt: Timestamp.now() };
     transaction.set(overrideRef, next);
     return { area: toArea(point, next), changedFields };
   });

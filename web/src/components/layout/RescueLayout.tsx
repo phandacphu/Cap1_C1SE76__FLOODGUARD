@@ -9,6 +9,7 @@ interface RescueLayoutProps {
   updatedAt: Date | null;
   /** Requests waiting for a rescuer; leave out when the page does not know it. */
   waitingCount?: number;
+  syncHint?: string;
   children: ReactNode;
 }
 
@@ -18,6 +19,7 @@ export function RescueLayout({
   onRefresh,
   updatedAt,
   waitingCount,
+  syncHint,
   children,
 }: RescueLayoutProps) {
   return (
@@ -26,13 +28,14 @@ export function RescueLayout({
       brandSub="RESCUE STAFF"
       roleLabel="NHÂN VIÊN CỨU HỘ"
       accent="safe"
-      badges={{ "/rescue/sos": waitingCount ?? 0 }}
+      badges={waitingCount === undefined ? undefined : { "/rescue/sos": waitingCount }}
       header={
         <RescueHeader
           loading={loading}
           onRefresh={onRefresh}
           updatedAt={updatedAt}
-          waitingCount={waitingCount ?? 0}
+          waitingCount={waitingCount}
+          syncHint={syncHint}
         />
       }
     >

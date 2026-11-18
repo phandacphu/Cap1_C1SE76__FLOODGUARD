@@ -68,6 +68,7 @@ if (emulatorApp) {
       await Promise.all([
         ...[...records.keys()].map((path) => db.doc(path).delete()),
         db.collection("historical_flood_area_overrides").doc("HIST-02").delete(),
+        db.collection("historical_flood_area_overrides").doc("HIST-03").delete(),
       ]);
     } finally {
       await db.terminate();
@@ -135,6 +136,38 @@ test(`Historical polygon edit and soft delete via HTTP (${databaseMode})`, async
     assert.equal(original.geometry, null);
     assert.equal(original.areaType, null);
     assert.equal(original.source, null);
+
+    // HIST-03 has no polygon. A metadata-only update must work without drawing one.
+    const metaPath = `${catalog}/HIST-03`;
+    const metaBefore = (await api(metaPath, admin)).body.data.floodArea;
+    assert.equal(metaBefore.geometry, null);
+    assert.equal(metaBefore.areaType, null);
+    assert.equal((await api(metaPath, { ...admin, method: "PATCH", body: { description: 77 } })).status, 400);
+    assert.equal((await api(metaPath, { ...admin, method: "PATCH", body: { source: "   " } })).status, 400);
+    assert.equal((await api(metaPath, { ...admin, method: "PATCH", body: { geometry: null } })).status, 400);
+    assert.equal((await api(metaPath, { actor: "inactive", method: "PATCH", body: { description: "test" } })).status, 403);
+    const changed = await api(metaPath, { ...admin, method: "PATCH", body: {
+      description: "Đợt mưa lớn ghi nhận ngập tại khu vực hồ Thạc Gián.",
+      source: "https://example.org/reference",
+    } });
+    assert.equal(changed.status, 200);
+    assert.equal(changed.body.data.floodArea.geometry, null);
+    assert.equal(changed.body.data.floodArea.areaType, null);
+    assert.equal(changed.body.data.floodArea.name, metaBefore.name);
+    assert.deepEqual(changed.body.data.floodArea.referencePoint, metaBefore.referencePoint);
+    assert.equal(changed.body.data.floodArea.source, "https://example.org/reference");
+    const metaSaved = (await api(metaPath, admin)).body.data.floodArea;
+    assert.equal(metaSaved.description, "Đợt mưa lớn ghi nhận ngập tại khu vực hồ Thạc Gián.");
+    assert.equal(metaSaved.geometry, null);
+    const publicFeatures = (await api("/flood-history/points")).body.data.geojson.features;
+    const publicMeta = publicFeatures.find((feature) => feature.properties.id === "HIST-03");
+    assert.equal(publicMeta.properties.description, metaSaved.description);
+    assert.equal(publicMeta.properties.source, metaSaved.source);
+    const auditSize = auditEvents.length;
+    assert.equal((await api(metaPath, { ...admin, method: "PATCH", body: {
+      description: metaSaved.description, source: metaSaved.source,
+    } })).status, 200);
+    assert.equal(auditEvents.length, auditSize, "No-op metadata update must not audit again");
 
     assert.equal((await api(path, { ...admin, method: "PATCH", body: { name: edit.name } })).status, 400);
     assert.equal((await api(path, { ...admin, method: "PATCH", body: { ...edit, id: "HIST-03" } })).status, 400);

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -21,6 +23,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.floodguard.domain.model.SafeLocation
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -43,6 +48,7 @@ fun SafeLocationMap(
     locations: List<SafeLocation>,
     isLoadingLocations: Boolean,
     locationError: String?,
+    gps: Location?,
     onGpsChanged: (Location?) -> Unit,
     onViewDetail: (String) -> Unit,
     onMapTouchChanged: (Boolean) -> Unit
@@ -56,14 +62,14 @@ fun SafeLocationMap(
         LocationServices.getFusedLocationProviderClient(context)
     }
 
-    var gps by remember { mutableStateOf<Location?>(null) }
     var gpsMessage by remember {
         mutableStateOf("Đang kiểm tra quyền vị trí…")
     }
     var locating by remember { mutableStateOf(false) }
     var requestNumber by remember { mutableIntStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
-    var fittedShelters by remember { mutableStateOf(false) }
+    var didSetInitialCamera by rememberSaveable { mutableStateOf(false) }
+    var requestedCameraTarget by remember { mutableStateOf<LatLng?>(null) }
 
     fun hasLocationPermission(): Boolean {
         return listOf(
@@ -101,16 +107,45 @@ fun SafeLocationMap(
         }
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !hasLocationPermission()) {
+                requestNumber = 0
+                currentGpsCallback(null)
+                gpsMessage = "Chưa được cấp quyền vị trí. Vẫn có thể xem điểm tránh trú."
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(Unit) {
-        requestLocation()
+        if (hasLocationPermission() && gps != null) {
+            gpsMessage = "Theo vị trí lần cuối"
+        } else {
+            currentGpsCallback(null)
+            requestLocation()
+        }
+    }
+
+    fun showLocationFailure(message: String) {
+        if (!hasLocationPermission()) {
+            currentGpsCallback(null)
+            gpsMessage = "Chưa có quyền truy cập vị trí."
+        } else {
+            gpsMessage = if (gps != null) "Theo vị trí lần cuối" else message
+        }
     }
 
     LaunchedEffect(requestNumber) {
         if (requestNumber == 0) return@LaunchedEffect
 
         locating = true
-        gps = null
-        currentGpsCallback(null)
         gpsMessage = "Đang lấy vị trí GPS…"
 
         val cancellation = CancellationTokenSource()
@@ -136,22 +171,24 @@ fun SafeLocationMap(
                     ageNanos != null &&
                     ageNanos in 0L..60_000_000_000L
 
-            if (valid) {
-                gps = result
+            if (valid && hasLocationPermission()) {
                 currentGpsCallback(result)
+                requestedCameraTarget = result?.let {
+                    LatLng(it.latitude, it.longitude)
+                }
                 gpsMessage = "Đã lấy vị trí thiết bị."
             } else {
-                gpsMessage =
-                    "Chưa lấy được vị trí mới. Bật GPS rồi bấm Vị trí của tôi."
+                showLocationFailure("Chưa lấy được vị trí mới. Bật GPS rồi bấm Vị trí của tôi.")
             }
         } catch (_: TimeoutCancellationException) {
-            gpsMessage = "Lấy GPS quá thời gian. Vui lòng thử lại."
+            showLocationFailure("Lấy GPS quá thời gian. Vui lòng thử lại.")
         } catch (error: CancellationException) {
             throw error
         } catch (_: SecurityException) {
+            currentGpsCallback(null)
             gpsMessage = "Chưa có quyền truy cập vị trí."
         } catch (_: Exception) {
-            gpsMessage = "Không thể lấy vị trí. Kiểm tra GPS và thử lại."
+            showLocationFailure("Không thể lấy vị trí. Kiểm tra GPS và thử lại.")
         } finally {
             cancellation.cancel()
             locating = false
@@ -182,7 +219,7 @@ fun SafeLocationMap(
     }
 
     fun showAll() {
-        val positions = shelterPositions + listOfNotNull(userPosition)
+        val positions = shelterPositions
         if (positions.isEmpty()) return
 
         scope.launch {
@@ -208,18 +245,22 @@ fun SafeLocationMap(
         }
     }
 
-    LaunchedEffect(mapLoaded, userPosition, shelterPositions) {
-        if (!mapLoaded) return@LaunchedEffect
+    LaunchedEffect(mapLoaded, requestedCameraTarget) {
+        val target = requestedCameraTarget ?: return@LaunchedEffect
+        if (!mapLoaded || !hasLocationPermission()) return@LaunchedEffect
 
-        if (userPosition != null) {
-            camera.animate(
-                CameraUpdateFactory.newLatLngZoom(
-                    userPosition,
-                    14f
-                )
-            )
-        } else if (!fittedShelters && shelterPositions.isNotEmpty()) {
-            fittedShelters = true
+        didSetInitialCamera = true
+        camera.move(CameraUpdateFactory.newLatLngZoom(target, 16f))
+        requestedCameraTarget = null
+    }
+
+    LaunchedEffect(mapLoaded, shelterPositions.isNotEmpty()) {
+        if (!mapLoaded || didSetInitialCamera || shelterPositions.isEmpty()) {
+            return@LaunchedEffect
+        }
+
+        didSetInitialCamera = true
+        if (gps == null && requestedCameraTarget == null) {
             showAll()
         }
     }
@@ -279,9 +320,12 @@ fun SafeLocationMap(
                             )
                         ),
                         title = location.name,
-                        snippet = "Bấm để xem chi tiết",
-                        onInfoWindowClick = {
+                        icon = BitmapDescriptorFactory.defaultMarker(
+                            BitmapDescriptorFactory.HUE_GREEN
+                        ),
+                        onClick = {
                             onViewDetail(location.id)
+                            true
                         }
                     )
                 }
@@ -304,8 +348,7 @@ fun SafeLocationMap(
 
             OutlinedButton(
                 onClick = { showAll() },
-                enabled = mapLoaded &&
-                        (shelterPositions.isNotEmpty() || userPosition != null),
+                enabled = mapLoaded && shelterPositions.isNotEmpty(),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
@@ -327,7 +370,7 @@ fun SafeLocationMap(
                 validLocations.isEmpty() ->
                     "Chưa có điểm tránh trú từ API để hiển thị trên bản đồ."
                 else ->
-                    "${validLocations.size} điểm tránh trú • Ghim xanh là vị trí của bạn."
+                    "${validLocations.size} điểm tránh trú • Ghim xanh lá là điểm tránh trú, ghim xanh dương là vị trí của bạn."
             },
             color = Color(0xFF9CAFC0)
         )

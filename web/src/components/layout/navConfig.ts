@@ -15,7 +15,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert", to: "/admin/flood-warnings" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
-  { label: "Quản lý địa điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
+  { label: "Quản lý điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
   { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
   { label: "Quản lý Rescue Staff", icon: "staff" },
   { label: "Thông báo", icon: "bell" },
@@ -31,6 +31,6 @@ export const RESCUE_NAV: NavItem[] = [
   { label: "Bản đồ trực quan", icon: "map", to: "/map" },
   { label: "Yêu cầu SOS", icon: "sos", to: "/rescue/sos" },
   { label: "Cảnh báo lũ", icon: "alert" },
-  { label: "Địa điểm an toàn", icon: "shield" },
+  { label: "Điểm tránh trú an toàn", icon: "shield", to: "/rescue/safe-locations" },
   { label: "Lịch sử cứu hộ", icon: "history" },
 ];
