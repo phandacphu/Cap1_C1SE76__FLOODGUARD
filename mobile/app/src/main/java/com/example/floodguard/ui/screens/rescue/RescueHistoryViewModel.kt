@@ -27,11 +27,25 @@ internal interface RescueHistoryApi {
 
 internal data class RescueHistoryMapPolygon(
     val outer: List<LatLng>,
-    val holes: List<List<LatLng>>
+    val holes: List<List<LatLng>>,
+    val id: String? = null,
+    val name: String? = null,
+    val description: String? = null,
+    val areaType: String? = null,
+    val source: String? = null
+)
+
+internal data class RescueHistoryMapPoint(
+    val position: LatLng,
+    val id: String?,
+    val name: String?,
+    val description: String?,
+    val areaType: String? = null,
+    val source: String? = null
 )
 
 internal data class RescueHistoryLayerState(
-    val points: List<LatLng> = emptyList(),
+    val points: List<RescueHistoryMapPoint> = emptyList(),
     val polygons: List<RescueHistoryMapPolygon> = emptyList(),
     val loading: Boolean = true,
     val error: Boolean = false
@@ -70,13 +84,27 @@ internal class RescueHistoryViewModel : ViewModel() {
                         // Prepare SDK coordinates once, off the UI thread. Store only
                         // the prepared data; recomposition and tab restoration reuse it.
                         RescueHistoryLayerState(
-                            points = geometry.points.map { LatLng(it.latitude, it.longitude) },
+                            points = geometry.points.map { point ->
+                                RescueHistoryMapPoint(
+                                    position = LatLng(point.position.latitude, point.position.longitude),
+                                    id = point.id,
+                                    name = point.name,
+                                    description = point.description,
+                                    areaType = point.areaType,
+                                    source = point.source
+                                )
+                            },
                             polygons = geometry.polygons.map { polygon ->
                                 RescueHistoryMapPolygon(
                                     outer = polygon.outer.map { LatLng(it.latitude, it.longitude) },
                                     holes = polygon.holes.map { ring ->
                                         ring.map { LatLng(it.latitude, it.longitude) }
-                                    }
+                                    },
+                                    id = polygon.id,
+                                    name = polygon.name,
+                                    description = polygon.description,
+                                    areaType = polygon.areaType,
+                                    source = polygon.source
                                 )
                             },
                             loading = false

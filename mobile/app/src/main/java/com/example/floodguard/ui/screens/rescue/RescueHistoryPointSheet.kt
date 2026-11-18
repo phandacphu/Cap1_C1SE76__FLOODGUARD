@@ -25,13 +25,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
-import com.google.android.gms.maps.model.LatLng
+
 import java.util.Locale
+
+internal fun rescueHistoryDescriptionText(description: String?): String =
+    description?.trim()?.takeIf { it.isNotEmpty() }
+        ?: "Chưa có mô tả"
+
+internal fun rescueHistoryAreaTypeLabel(type: String?): String = when (type?.trim()?.lowercase(Locale.ROOT)) {
+    "flood" -> "Vùng ngập"
+    "low_lying" -> "Vùng trũng"
+    else -> "Chưa phân loại"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RescueHistoryPointSheet(
-    point: LatLng,
+    point: RescueHistoryMapPoint,
     onFocus: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -60,11 +70,75 @@ internal fun RescueHistoryPointSheet(
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1B3040))) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Ngập lịch sử", fontFamily = font, fontWeight = FontWeight.Bold, color = text)
+                    Text(point.name ?: "Ngập lịch sử", fontFamily = font, fontWeight = FontWeight.Bold, color = text)
+                    point.id?.let { id ->
+                        Text("Mã điểm: $id", fontFamily = font, color = muted)
+                    }
                     Text("Loại dữ liệu: Điểm ngập lịch sử", fontFamily = font, color = muted)
-                    Text(String.format(Locale.ROOT, "Vĩ độ: %.6f\nKinh độ: %.6f", point.latitude, point.longitude),
+                    Text("Loại vùng: ${rescueHistoryAreaTypeLabel(point.areaType)}", fontFamily = font, color = muted)
+                    point.source?.let { source ->
+                        Text("Nguồn: $source", fontFamily = font, color = muted)
+                    }
+                    Text(String.format(Locale.ROOT, "Vĩ độ: %.6f\nKinh độ: %.6f", point.position.latitude, point.position.longitude),
                         fontFamily = font, color = muted)
-                    Text("Thông tin chi tiết chưa được bổ sung.", fontFamily = font, color = muted)
+                    Text(rescueHistoryDescriptionText(point.description), fontFamily = font, color = muted)
+                    Button(onClick = onFocus, colors = ButtonDefaults.buttonColors(
+                        containerColor = cyan, contentColor = Color(0xFF051424))) {
+                        Text("Xem trên bản đồ", fontFamily = font)
+                    }
+                }
+            }
+            Text("Dữ liệu tham khảo lịch sử, không phản ánh tình trạng ngập hiện tại.",
+                fontFamily = font, color = muted, fontSize = 13.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RescueHistoryPolygonSheet(
+    polygon: RescueHistoryMapPolygon,
+    onFocus: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val font = FontFamily(Font(R.font.rescue_be_vietnam_regular))
+    val cyan = Color(0xFF8AEBFF)
+    val text = Color(0xFFD4E4FA)
+    val muted = Color(0xFFBBC9CD)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF122131),
+        contentColor = text
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text("Thông tin vùng ngập lịch sử", modifier = Modifier.weight(1f),
+                    fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                TextButton(onClick = onDismiss) {
+                    Text("Đóng", fontFamily = font, color = cyan)
+                }
+            }
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1B3040))) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(polygon.name ?: "Đa giác lịch sử", fontFamily = font,
+                        fontWeight = FontWeight.Bold, color = text)
+                    polygon.id?.let { id ->
+                        Text("Mã điểm: $id", fontFamily = font, color = muted)
+                    }
+                    Text("Loại dữ liệu: Đa giác lịch sử", fontFamily = font, color = muted)
+                    Text("Loại vùng: ${rescueHistoryAreaTypeLabel(polygon.areaType)}",
+                        fontFamily = font, color = muted)
+                    polygon.source?.let { source ->
+                        Text("Nguồn: $source", fontFamily = font, color = muted)
+                    }
+                    Text("Mô tả: ${rescueHistoryDescriptionText(polygon.description)}",
+                        fontFamily = font, color = muted)
                     Button(onClick = onFocus, colors = ButtonDefaults.buttonColors(
                         containerColor = cyan, contentColor = Color(0xFF051424))) {
                         Text("Xem trên bản đồ", fontFamily = font)

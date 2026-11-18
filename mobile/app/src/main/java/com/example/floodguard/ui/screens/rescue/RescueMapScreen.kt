@@ -113,8 +113,10 @@ internal fun RescueMapScreen(
     var showAreas by rememberSaveable { mutableStateOf(false) }
     var selectedAreaId by rememberSaveable { mutableStateOf<String?>(null) }
     var focusAreaId by remember { mutableStateOf<String?>(null) }
-    var selectedHistoryPoint by remember { mutableStateOf<LatLng?>(null) }
+    var selectedHistoryPoint by remember { mutableStateOf<RescueHistoryMapPoint?>(null) }
     var focusHistoryPoint by remember { mutableStateOf<LatLng?>(null) }
+    var selectedHistoryPolygon by remember { mutableStateOf<RescueHistoryMapPolygon?>(null) }
+    var focusHistoryPolygon by remember { mutableStateOf<List<LatLng>?>(null) }
     var focusMessage by remember { mutableStateOf<String?>(null) }
     var showFloodLayers by rememberSaveable { mutableStateOf(false) }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
@@ -191,6 +193,23 @@ internal fun RescueMapScreen(
             focusMessage = "Chưa di chuyển được đến điểm. Vui lòng thử lại."
         } finally {
             focusHistoryPoint = null
+        }
+    }
+
+    LaunchedEffect(focusHistoryPolygon, mapLoaded, mapSize) {
+        val ring = focusHistoryPolygon ?: return@LaunchedEffect
+        if (!mapLoaded || mapSize.width <= 0 || mapSize.height <= 0) return@LaunchedEffect
+        try {
+            val bounds = LatLngBounds.builder().apply { ring.forEach { include(it) } }.build()
+            val padding = minOf(48, minOf(mapSize.width, mapSize.height) / 6)
+            camera.animate(CameraUpdateFactory.newLatLngBounds(bounds, mapSize.width, mapSize.height, padding))
+            focusMessage = null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            focusMessage = "Chưa di chuyển được đến đa giác lịch sử. Vui lòng thử lại."
+        } finally {
+            focusHistoryPolygon = null
         }
     }
 
@@ -339,15 +358,22 @@ internal fun RescueMapScreen(
                             // Reference only, never a current flood alert.
                             historyLayers["areas"]?.polygons.orEmpty()
                                 .forEachIndexed { index, polygon ->
-                                    key("historical-admin-area", index) {
+                                    key("historical-admin-area", polygon.id ?: index, index) {
                                         Polygon(
                                             points = polygon.outer,
                                             holes = polygon.holes,
                                             visible = showFloodLayers,
+                                            clickable = showFloodLayers,
                                             fillColor = Color(0xFFC62828).copy(alpha = 0.22f),
                                             strokeColor = Color(0xFFC62828),
                                             strokeWidth = 4f,
-                                            zIndex = 4f
+                                            zIndex = 4f,
+                                            onClick = {
+                                                showAreas = false
+                                                selectedAreaId = null
+                                                selectedHistoryPoint = null
+                                                selectedHistoryPolygon = polygon
+                                            }
                                         )
                                     }
                                 }
@@ -367,16 +393,17 @@ internal fun RescueMapScreen(
                                 }
                             }
                             historyPoints.forEachIndexed { index, point ->
-                                key("history-point", index) {
+                                key("history-point", point.id ?: index) {
                                     Marker(
-                                        state = rememberUpdatedMarkerState(position = point),
+                                        state = rememberUpdatedMarkerState(position = point.position),
                                         visible = showFloodLayers,
-                                        title = "Vùng ngập lịch sử",
+                                        title = point.name ?: "Vùng ngập lịch sử",
                                         snippet = "Dữ liệu tham khảo lịch sử, không phải cảnh báo hiện tại",
                                         icon = historyMarkerIcon,
                                         onClick = {
                                             showAreas = false
                                             selectedAreaId = null
+                                            selectedHistoryPolygon = null
                                             selectedHistoryPoint = point
                                             true
                                         }
@@ -397,6 +424,7 @@ internal fun RescueMapScreen(
                                         zIndex = if (area.areaType == RescueAreaType.FLOOD) 10f else 5f,
                                         onClick = {
                                             selectedHistoryPoint = null
+                                            selectedHistoryPolygon = null
                                             selectedAreaId = area.id
                                             showAreas = true
                                         }
@@ -439,6 +467,7 @@ internal fun RescueMapScreen(
                                         showAreas = false
                                         selectedAreaId = null
                                         selectedHistoryPoint = null
+                                        selectedHistoryPolygon = null
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
@@ -527,9 +556,20 @@ internal fun RescueMapScreen(
             point = point,
             onFocus = {
                 selectedHistoryPoint = null
-                focusHistoryPoint = point
+                focusHistoryPoint = point.position
             },
             onDismiss = { selectedHistoryPoint = null }
+        )
+    }
+
+    selectedHistoryPolygon?.let { polygon ->
+        RescueHistoryPolygonSheet(
+            polygon = polygon,
+            onFocus = {
+                selectedHistoryPolygon = null
+                focusHistoryPolygon = polygon.outer
+            },
+            onDismiss = { selectedHistoryPolygon = null }
         )
     }
 
