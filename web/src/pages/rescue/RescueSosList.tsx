@@ -42,19 +42,22 @@ export function RescueSosList() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4 text-sm">
-          <label>Tìm trong tập đã tải<input value={search} onChange={event => setSearch(event.target.value)}
-            className="ml-2 rounded border border-border bg-bg p-2" placeholder="Mã SOS, ghi chú…" /></label>
-          <label>Thứ tự<select value={sort} onChange={event => setSort(event.target.value as SosSort)}
-            className="ml-2 rounded border border-border bg-bg p-2">
-            <option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option>
-          </select></label>
-          <label>Từ ngày (giờ Việt Nam)<input type="date" value={from} onChange={event => setFrom(event.target.value)}
-            className="ml-2 rounded border border-border bg-bg p-2" /></label>
-          <label>Đến ngày (giờ Việt Nam)<input type="date" value={to} onChange={event => setTo(event.target.value)}
-            className="ml-2 rounded border border-border bg-bg p-2" /></label>
-          <button type="button" disabled={result.loading} onClick={result.refresh} className="rounded border border-border px-3 py-2">Làm mới</button>
-        </div>
+        <section className="space-y-3 rounded-xl border border-border bg-card p-4 text-sm" aria-label="Lọc yêu cầu SOS">
+          <div className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-12">
+            <label className="xl:col-span-4">Tìm kiếm<input type="search" value={search} onChange={event => setSearch(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-bg p-2.5" placeholder="Mã SOS, ghi chú…" /></label>
+            <label className="xl:col-span-2">Thứ tự<select value={sort} onChange={event => setSort(event.target.value as SosSort)}
+              className="mt-1 w-full rounded-lg border border-border bg-bg p-2.5">
+              <option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option>
+            </select></label>
+            <label className="xl:col-span-2">Gửi từ ngày<input type="date" value={from} onChange={event => setFrom(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-bg p-2.5" /></label>
+            <label className="xl:col-span-2">Đến ngày<input type="date" value={to} onChange={event => setTo(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-bg p-2.5" /></label>
+            <button type="button" disabled={result.loading} onClick={result.refresh} className="rounded-lg border border-border px-3 py-2.5 disabled:opacity-50 xl:col-span-2">Làm mới</button>
+          </div>
+          <p className="text-xs text-muted">Tìm kiếm trong tập đã tải. Khoảng ngày lọc theo thời điểm gửi SOS, giờ Việt Nam.</p>
+        </section>
         <div className="flex gap-2" aria-label="Chế độ hiển thị">
           {(['both', 'list', 'map'] as const).map(mode => <button type="button" key={mode} aria-pressed={view === mode}
             className={`rounded border border-border px-4 py-2 ${view === mode ? 'bg-safe/20' : ''}`}

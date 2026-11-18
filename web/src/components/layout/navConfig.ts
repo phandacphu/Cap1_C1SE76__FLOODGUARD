@@ -32,5 +32,5 @@ export const RESCUE_NAV: NavItem[] = [
   { label: "Yêu cầu SOS", icon: "sos", to: "/rescue/sos" },
   { label: "Cảnh báo lũ", icon: "alert" },
   { label: "Điểm tránh trú an toàn", icon: "shield", to: "/rescue/safe-locations" },
-  { label: "Lịch sử cứu hộ", icon: "history" },
+  { label: "Lịch sử cứu hộ", icon: "history", to: "/rescue/history" },
 ];

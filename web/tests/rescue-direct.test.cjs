@@ -457,7 +457,7 @@ function detailHarness(confirm) {
           return [state[index], next => { state[index] = typeof next === 'function' ? next(state[index]) : next; }];
         },
       };
-      if (name.includes('react-router')) return { Link: 'a', useParams: () => ({ id: 'TEST-SOS' }) };
+      if (name.includes('react-router')) return { Link: 'a', useParams: () => ({ id: 'TEST-SOS' }), useSearchParams: () => [{ get: () => null }] };
       if (name.includes('AuthContext')) return { useAuth: () => ({ user: { role: 'RESCUE_STAFF' } }) };
       if (name.endsWith('rescueService')) return { ...api, confirmRescued: confirm };
       if (name.endsWith('useRescueDetail')) return { useRescueDetail: () => result };

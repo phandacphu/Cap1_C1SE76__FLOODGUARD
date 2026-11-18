@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { useAuth } from '../../context/AuthContext';
 import { confirmRescued, RescueApiError } from '../../api/rescueService';
@@ -17,6 +17,8 @@ export function RescueSosDetail() {
 }
 
 function SosDetail({ id }: { id: string | undefined }) {
+  const [query] = useSearchParams();
+  const fromHistory = query.get('from') === 'history';
   const result = useRescueDetail(id);
   const { user } = useAuth();
   const [note, setNote] = useState('');
@@ -76,7 +78,7 @@ function SosDetail({ id }: { id: string | undefined }) {
   return (
     <RescueLayout loading={result.loading} onRefresh={result.refresh} updatedAt={result.updatedAt}>
       <div className="mx-auto max-w-7xl space-y-5">
-        <Link to="/rescue/sos" className="text-water underline">← Yêu cầu SOS</Link>
+        <Link to={fromHistory ? "/rescue/history" : "/rescue/sos"} className="text-water underline">← {fromHistory ? "Lịch sử cứu hộ" : "Yêu cầu SOS"}</Link>
         <DirectSosFeedback {...result} stale={Boolean(item)} retry={result.refresh} />
         <DirectSosFeedback error={result.status === 401 ? null : actionError} status={actionStatus} stale={false} loading={busy} retry={result.refresh} />
         {message && <p role="status" className="rounded border border-water p-3">{message}</p>}
