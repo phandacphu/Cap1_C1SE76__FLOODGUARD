@@ -319,7 +319,7 @@ export const FloodMapView: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
-              Bản Đồ Vùng Ngập (MapTiler)
+              Bản Đồ Vùng Ngập
             </h1>
             {isStaleData && (
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 border border-amber-600 text-amber-300">
