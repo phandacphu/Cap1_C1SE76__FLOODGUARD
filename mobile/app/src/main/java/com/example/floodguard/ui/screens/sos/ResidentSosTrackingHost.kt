@@ -40,6 +40,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 
 private data class ResidentTrackingSession(
     val token: String? = null,
@@ -52,6 +53,12 @@ class ResidentSosTracking internal constructor(
     val discoveryError: StateFlow<String?>,
     private val wake: Channel<Unit>
 ) {
+    private var activeListForbidden = false
+
+    internal fun resetDiscoveryAccess() {
+        activeListForbidden = false
+    }
+
     fun refresh() {
         wake.trySend(Unit)
     }
@@ -61,21 +68,68 @@ class ResidentSosTracking internal constructor(
         refresh()
     }
 
+    // Dùng cho lỗi khi đọc một SOS riêng lẻ.
     fun onApiError(error: Throwable) {
         if (error !is ResidentSosApiException) return
 
         when (error.statusCode) {
             401 -> {
-                // Phiên không hợp lệ: dừng toàn bộ và xóa dữ liệu.
                 uploader.rejectAccess(error.message)
                 refresh()
             }
 
             403 -> {
-                // Có thể chỉ bị từ chối một SOS khác.
-                // Màn chi tiết tự xóa dữ liệu SOS đó.
-                // Yêu cầu bộ theo dõi kiểm tra lại SOS hoạt động của mình.
+                // B bị từ chối không có nghĩa A cũng bị từ chối.
                 refresh()
+            }
+        }
+    }
+
+    // Dùng riêng cho GET danh sách SOS hoạt động.
+    private fun onActiveListError(error: Throwable) {
+        if (error !is ResidentSosApiException) return
+
+        when (error.statusCode) {
+            401 -> uploader.rejectAccess(error.message)
+
+            403 -> {
+                activeListForbidden = true
+                uploader.stop()
+            }
+        }
+    }
+
+    internal suspend fun loadActiveRequests(
+        loader: suspend () -> Result<List<RescueRequestDto>>
+    ): Result<List<RescueRequestDto>> {
+        val result = try {
+            loader()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+
+        result.fold(
+            onSuccess = {
+                activeListForbidden = false
+            },
+            onFailure = ::onActiveListError
+        )
+
+        return result
+    }
+
+    internal suspend fun awaitNextCheck() {
+        if (activeListForbidden) {
+            delay(30_000L)
+
+            while (wake.tryReceive().isSuccess) {
+                // Bỏ các tín hiệu refresh đã xếp hàng.
+            }
+        } else {
+            withTimeoutOrNull(30_000L) {
+                wake.receive()
             }
         }
     }
@@ -151,6 +205,7 @@ fun rememberResidentSosTracking(
     }
 
     LaunchedEffect(session, lifecycleOwner, repository) {
+        tracking.resetDiscoveryAccess()
         uploader.stop(clearData = true)
         discoveryError.value = null
 
@@ -170,9 +225,14 @@ fun rememberResidentSosTracking(
                     while (currentCoroutineContext().isActive) {
                         if (uploader.state.value.accessDenied) break
 
+                        var activeListLoaded = false
+
                         try {
-                            val activeRequests = repository.getActive()
-                                .getOrThrow()
+                            val activeRequests = tracking.loadActiveRequests {
+                                repository.getActive()
+                            }.getOrThrow()
+
+                            activeListLoaded = true
 
                             currentCoroutineContext().ensureActive()
                             if (uploader.state.value.accessDenied) break
@@ -223,7 +283,9 @@ fun rememberResidentSosTracking(
                             discoveryError.value = error.message
                                 ?: "Chưa kiểm tra được SOS đang hoạt động."
 
-                            tracking.onApiError(error)
+                            if (activeListLoaded) {
+                                tracking.onApiError(error)
+                            }
 
                             if (uploader.state.value.accessDenied) break
 
