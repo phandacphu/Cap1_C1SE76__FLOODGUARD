@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "note": "Các địa danh/tọa độ có tính tham khảo; số đo được nêu theo phạm vi ghi trong mô tả; cần duyệt nội dung trước khi ghi dữ liệu chung.",
+  "items": [
+    {
+      "id": "HIST-01",
+      "name": "Đà Sơn – khu dân cư",
+      "description": "Tối 12/09/2026, khu dân cư Đà Sơn 8 bị ngập sau mưa lớn.",
+      "source": "https://thanhnien.vn/da-nang-mua-lon-nguoi-dan-ron-lu-me-suot-lai-trang-dem-chay-lut-185260912213944721.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-02",
+      "name": "Khu công nghiệp Hòa Khánh",
+      "description": "Chiều 25/10/2022, nhiều tuyến đường nội bộ KCN Hòa Khánh bị ngập do mưa lớn.",
+      "source": "https://thanhnien.vn/da-nang-mua-lon-keo-dai-khu-cong-nghiep-hoa-khanh-ngap-nang-1851514246.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-03",
+      "name": "Hồ Thạc Gián – Vĩnh Trung",
+      "description": "Ngày 05/11/2024, khu vực hồ Thạc Gián ghi nhận ngập 33 cm.",
+      "source": "https://cms.baochinhphu.vn/da-nang-mua-lon-gay-ngap-hoc-sinh-nghi-hoc-de-bao-dam-an-toan-102241105075907397.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-04",
+      "name": "Khu vực Bệnh viện Đà Nẵng",
+      "description": "Sáng 18/09/2024, đường Quang Trung gần Bệnh viện Đà Nẵng bị ngập do mưa lớn.",
+      "source": "https://huongtra.danang.gov.vn/chi-tiet-tin/group/144/nid/4388/theo-doi-toan-canh-diem-ngap-tai-da-nang-tranh-dua-xe-vao-vung-nuoc-dang-len",
+      "alternativeSources": [
+        "https://tuoitre.vn/nld/da-nang-duong-ngap-sau-mua-lon-phu-huynh-bi-bom-dua-con-den-truong-196240918082915955.htm"
+      ]
+    },
+    {
+      "id": "HIST-05",
+      "name": "Đường Núi Thành – gần số 149",
+      "description": "Ngày 05/07/2025, nút giao Núi Thành – Tiểu La ghi nhận ngập 51 cm (không phải số đo tại số 149).",
+      "source": "https://baodanang.vn/co-noi-mua-den-106mm-gio-da-nang-con-mua-rao-va-dong-vao-ngay-6-7-3265099.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-06",
+      "name": "Đường Nguyễn Nhàn – kênh Phong Bắc",
+      "description": "Trong đợt mưa 13–15/10/2023, tuyến Nguyễn Nhàn – kênh Phong Bắc bị ngập kéo dài.",
+      "source": "https://tuoitre.vn/mua-ngot-nuoc-bat-dau-rut-tai-diem-nong-ngap-da-nang-20231015081034794.htm",
+      "alternativeSources": [
+        "https://gopy.danang.gov.vn/gop-y/share/64911"
+      ]
+    },
+    {
+      "id": "HIST-07",
+      "name": "Đường Hà Huy Tập – gần số 154",
+      "description": "Một số đoạn đường Hà Huy Tập từng xảy ra ngập khi mưa lớn.",
+      "source": "https://baodanang.vn/tung-buoc-giai-quyet-ngap-nuoc-cuc-bo-va-ngap-ung-do-thi-3306268.html",
+      "alternativeSources": [
+        "https://thanhnien.vn/ngap-do-vuong-cong-trinh-chong-ngap-ra-soat-xu-ly-tinh-trang-ngap-ung-1851399014.htm"
+      ]
+    },
+    {
+      "id": "HIST-08",
+      "name": "Đường Mẹ Suốt – Hòa Khánh Nam",
+      "description": "Ngày 14/10/2022, khu dân cư Mẹ Suốt có nơi ngập tới 2,5 m; đợt 13–17/10/2023 có nơi ngập 1–2 m.",
+      "source": "https://vnexpress.net/vi-sao-da-nang-ton-tai-khu-pho-ngap-den-2-m-4666798.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-09",
+      "name": "Yên Thế – Bắc Sơn",
+      "description": "Giai đoạn 2022–2023, khu Yên Thế – Bắc Sơn được ghi nhận ngập nặng.",
+      "source": "https://baochinhphu.vn/da-nang-uu-tien-nguon-luc-giai-quyet-dut-diem-cac-khu-vuc-ngap-nang-102231213141944328.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-10",
+      "name": "Kênh Phần Lăng",
+      "description": "Khu dân cư ven kênh Phần Lăng từng được ghi nhận ngập khi mưa lớn.",
+      "source": "https://thanhnien.vn/ngap-do-vuong-cong-trinh-chong-ngap-ra-soat-xu-ly-tinh-trang-ngap-ung-1851399014.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-11",
+      "name": "Kiệt 96 Điện Biên Phủ",
+      "description": "Trong các đợt mưa 2022–2023, kiệt 96 Điện Biên Phủ thuộc nhóm điểm ngập nặng.",
+      "source": "https://baochinhphu.vn/da-nang-uu-tien-nguon-luc-giai-quyet-dut-diem-cac-khu-vuc-ngap-nang-102231213141944328.htm",
+      "alternativeSources": [
+        "https://thanhnien.vn/ngap-do-vuong-cong-trinh-chong-ngap-ra-soat-xu-ly-tinh-trang-ngap-ung-1851399014.htm"
+      ]
+    },
+    {
+      "id": "HIST-12",
+      "name": "Đường Hải Hồ",
+      "description": "Đường Hải Hồ thuộc danh sách khu vực có nguy cơ ngập cục bộ khi mưa lớn.",
+      "source": "https://baodanang.vn/tung-buoc-giai-quyet-ngap-nuoc-cuc-bo-va-ngap-ung-do-thi-3306268.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-13",
+      "name": "Kiệt 640 Trưng Nữ Vương",
+      "description": "Ngày 25/09/2023, kiệt 640 Trưng Nữ Vương ghi nhận ngập khoảng 20 cm.",
+      "source": "https://baodanang.vn/ap-thap-nhiet-doi-con-gay-mua-to-den-rat-to-3158547.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-14",
+      "name": "Đường Lê Tấn Trung",
+      "description": "Trong đợt mưa 23–25/09/2019, đường Lê Tấn Trung có nơi ngập trên 20 cm.",
+      "source": "https://baodanang.vn/duong-le-tan-trung-bi-ngap-3281266.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-15",
+      "name": "Cầu Đa Cô",
+      "description": "Giai đoạn 2022–2023, khu vực cầu Đa Cô được ghi nhận ngập nặng.",
+      "source": "https://baochinhphu.vn/da-nang-uu-tien-nguon-luc-giai-quyet-dut-diem-cac-khu-vuc-ngap-nang-102231213141944328.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-16",
+      "name": "Kiệt 8 Trần Xuân Lê",
+      "description": "Chiều 05/07/2025, hệ thống giám sát ghi nhận kiệt 8 Trần Xuân Lê ngập sâu 73 cm.",
+      "source": "https://baodanang.vn/co-noi-mua-den-106mm-gio-da-nang-con-mua-rao-va-dong-vao-ngay-6-7-3265099.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-17",
+      "name": "Cách Mạng Tháng Tám – Cống Quỳnh",
+      "description": "Trong đợt mưa tháng 10/2023, khu Cống Quỳnh – Nguyễn Nhàn bị ngập kéo dài.",
+      "source": "https://tuoitre.vn/phunuonline/da-nang-cong-trinh-thoat-nuoc-i-ach-ngap-ngay-cang-nang-1101508697.htm",
+      "alternativeSources": [
+        "https://tuoitre.vn/mua-ngot-nuoc-bat-dau-rut-tai-diem-nong-ngap-da-nang-20231015081034794.htm"
+      ]
+    },
+    {
+      "id": "HIST-18",
+      "name": "Lạc Long Quân – Hòa Khánh Bắc",
+      "description": "Tuyến Lạc Long Quân có tình trạng ngập úng và được đưa vào dự án cải tạo thoát nước.",
+      "source": "https://cttdt.danangportal.gov.vn/vi/w/du-an-dau-tu-nang-cap-muong-thoat-nuoc-tuyen-duong-lac-long-quan-i",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-19",
+      "name": "Nguyễn Văn Linh – Hàm Nghi",
+      "description": "Sáng 17/05/2024, tuyến Nguyễn Văn Linh – Hàm Nghi ngập do mưa lớn.",
+      "source": "https://vnexpress.net/giao-thong-o-trung-tam-da-nang-hon-loan-sau-mua-lon-4747220.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-20",
+      "name": "Hoàng Hoa Thám – Hùng Vương",
+      "description": "Ngày 09/12/2018, đoạn Hùng Vương giao Hoàng Hoa Thám bị ngập.",
+      "source": "https://vnexpress.net/duong-pho-da-nang-bien-thanh-song-sau-mua-lon-3851488.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-21",
+      "name": "Quan Nam 3 – Hòa Liên",
+      "description": "Sáng 10/10/2022, thôn Quan Nam 3 ngập cục bộ, nước tràn vào một số nhà dân.",
+      "source": "https://tuoitre.vn/29-truong-o-da-nang-cho-hoc-sinh-nghi-hoc-vi-mua-gio-20221010115831483.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-22",
+      "name": "Đường Phạm Như Xương",
+      "description": "Đêm 14/10/2022, các kiệt K107–K119 đường Phạm Như Xương ngập nặng.",
+      "source": "https://vtv.vn/xa-hoi/cap-nhat-mua-bao-lich-su-tai-da-nang-da-co-thiet-hai-ve-nguoi-20221015091914307.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-23",
+      "name": "Hoàng Văn Thái – Hòa Khánh Nam",
+      "description": "Ngày 14/10/2022, khu dân cư đường Hoàng Văn Thái – Mẹ Suốt ngập nặng.",
+      "source": "https://www.vietnamplus.vn/thanh-pho-da-nang-tim-giai-phap-thoat-nuoc-cho-vung-ron-lu-post908901.vnp",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-24",
+      "name": "Đường số 4 – KCN Hòa Khánh",
+      "description": "Chiều 25/10/2022, đường số 4 KCN Hòa Khánh ngập sâu, cản trở giao thông.",
+      "source": "https://thanhnien.vn/da-nang-mua-lon-keo-dai-khu-cong-nghiep-hoa-khanh-ngap-nang-1851514246.htm",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-25",
+      "name": "Âu Cơ – Hòa Khánh Bắc",
+      "description": "Ngày 25/10/2022, đường Âu Cơ ở khu KCN Hòa Khánh bị ngập do mưa lớn.",
+      "source": "https://www.sggp.org.vn/da-nang-mua-lon-mot-vai-noi-ngap-lut-cuc-bo-post656305.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-26",
+      "name": "Huỳnh Ngọc Huệ – Trần Xuân Lê",
+      "description": "Một số đoạn đường Huỳnh Ngọc Huệ – Trần Xuân Lê từng bị ngập khi mưa lớn.",
+      "source": "https://baodanang.vn/tung-buoc-giai-quyet-ngap-nuoc-cuc-bo-va-ngap-ung-do-thi-3306268.html",
+      "alternativeSources": []
+    },
+    {
+      "id": "HIST-27",
+      "name": "Lê Duẩn – Hoàng Hoa Thám",
+      "description": "Tối 14/10/2022, nút Lê Duẩn – Hoàng Hoa Thám ngập khoảng 1 m, nhiều ô tô phải dừng lại.",
+      "source": "https://vnexpress.net/da-nang-ngap-mot-met-nhieu-nguoi-dan-keu-cuu-4523626.html",
+      "alternativeSources": []
+    }
+  ]
+}
