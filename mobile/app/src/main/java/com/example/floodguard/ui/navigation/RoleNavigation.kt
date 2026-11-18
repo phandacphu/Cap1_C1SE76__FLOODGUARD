@@ -15,4 +15,7 @@ internal fun homeRouteForRole(role: String?): String =
 
 internal fun isRescueRoute(route: String?): Boolean =
     route == AppRoutes.RESCUE_HOME || route == AppRoutes.RESCUE_MAP ||
-        route == AppRoutes.RESCUE_SOS || route?.startsWith("${AppRoutes.RESCUE_SOS_DETAIL}/") == true
+        route == AppRoutes.RESCUE_SOS ||
+        route?.startsWith("${AppRoutes.RESCUE_SOS_DETAIL}/") == true ||
+        route == AppRoutes.RESCUE_SAFE_LOCATIONS ||
+        route?.startsWith("${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/") == true

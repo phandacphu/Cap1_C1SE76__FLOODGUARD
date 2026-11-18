@@ -9,6 +9,7 @@ import com.example.floodguard.data.remote.api.FloodAreaApi
 import com.example.floodguard.data.remote.api.FloodHistoryApi
 import com.example.floodguard.data.remote.api.FloodForecastApi
 import com.example.floodguard.data.remote.api.SafeLocationApi
+import com.example.floodguard.data.remote.api.RescueSafeLocationApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -55,6 +56,9 @@ object ApiClient {
 
     val safeLocationApi: SafeLocationApi =
         publicRetrofit.create(SafeLocationApi::class.java)
+
+    val rescueSafeLocationApi: RescueSafeLocationApi =
+        publicRetrofit.create(RescueSafeLocationApi::class.java)
 
     val floodForecastApi: FloodForecastApi =
         publicRetrofit.create(FloodForecastApi::class.java)
