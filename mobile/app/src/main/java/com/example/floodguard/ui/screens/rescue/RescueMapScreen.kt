@@ -81,7 +81,7 @@ private val MapFont = FontFamily(
 internal fun RescueMapScreen(
     onBack: () -> Unit,
     location: RescueMapLocationController,
-    onSosTab: (() -> Unit)? = null
+    onSosTab: (() -> Unit)? = null, onSafeLocationsTab: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -517,7 +517,8 @@ internal fun RescueMapScreen(
             RescueBottomBar(
                 selectedTab = RescueMainTab.MAP,
                 onSos = onSosTab,
-                onOverview = onBack
+                onOverview = onBack,
+                onSafeLocations = onSafeLocationsTab
             )
         }
     }

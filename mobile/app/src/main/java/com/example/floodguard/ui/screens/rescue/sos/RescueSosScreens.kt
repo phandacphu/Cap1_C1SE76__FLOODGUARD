@@ -66,13 +66,13 @@ internal fun RescueSosRefresh(store: RescueSosStore, filter: SosFilter = SosFilt
 internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
     rescueLocation: RescueMapLocationController?, distanceRepository: RescueRouteDistanceRepository?,
     onFilterChange: (SosFilter) -> Unit, onOpen: (String) -> Unit,
-    onOverview: () -> Unit, onMap: () -> Unit) {
+    onOverview: () -> Unit, onMap: () -> Unit, onSafeLocations: (() -> Unit)? = null) {
     val state by store.state.collectAsStateWithLifecycle()
     val resource = state.list(filter)
     val ordering = rememberRescueSosRoadOrdering(resource.data.orEmpty(), filter,
         rescueLocation, distanceRepository)
     RescueSosRefresh(store, filter)
-    SosFrame("Yêu cầu SOS", onOverview, onMap) {
+    SosFrame("Yêu cầu SOS", onOverview, onMap, onSafeLocations) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SosFilter.entries.forEach { value ->
                 FilterChip(selected = filter == value, onClick = { onFilterChange(value) },
@@ -132,7 +132,7 @@ internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
 @Composable
 internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
     rescueLocation: RescueMapLocationController?, distanceRepository: RescueRouteDistanceRepository,
-    onBack: () -> Unit, onOverview: () -> Unit, onMap: () -> Unit) {
+    onBack: () -> Unit, onOverview: () -> Unit, onMap: () -> Unit, onSafeLocations: (() -> Unit)? = null) {
     val state by store.state.collectAsStateWithLifecycle()
     var confirm by rememberSaveable(id) { mutableStateOf(false) }
     val resource = if (state.detailId == id) state.detail else SosResource<RescueSos>()
@@ -141,7 +141,7 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
     LaunchedEffect(state.accessError, item?.state) {
         if (state.accessError != null || item?.state != "active") confirm = false
     }
-    SosFrame("Chi tiết SOS", onOverview, onMap) {
+    SosFrame("Chi tiết SOS", onOverview, onMap, onSafeLocations) {
         Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -299,7 +299,7 @@ private fun SosLocationPreview(point: SosPoint, rescued: Boolean) {
 }
 
 @Composable
-private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit,
+private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit, onSafeLocations: (() -> Unit)?,
     content: @Composable ColumnScope.() -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(primary = SosAccent, onPrimary = SosBg,
         surface = SosPanel, onSurface = SosText, background = SosBg, onBackground = SosText)) {
@@ -308,7 +308,7 @@ private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit,
             Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SosLabel(title, bold = true, accent = true); content()
             }
-            RescueBottomBar(selectedTab = RescueMainTab.SOS, onOverview = onOverview, onMap = onMap)
+            RescueBottomBar(selectedTab = RescueMainTab.SOS, onOverview = onOverview, onMap = onMap, onSafeLocations = onSafeLocations)
         }
     }
     }

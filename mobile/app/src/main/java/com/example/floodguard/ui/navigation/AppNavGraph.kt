@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -70,6 +72,10 @@ import com.example.floodguard.ui.screens.rescue.RescueEntryScreen
 import com.example.floodguard.ui.screens.rescue.RescueOverviewScreen
 import com.example.floodguard.ui.screens.rescue.RescueOverviewDestination
 import com.example.floodguard.ui.screens.rescue.RescueMapScreen
+import com.example.floodguard.ui.screens.rescue.RescueSafeLocationsScreen
+import com.example.floodguard.ui.screens.rescue.RescueSafeLocationDetailScreen
+import com.example.floodguard.ui.screens.rescue.RescueSafeLocationViewModel
+import com.example.floodguard.data.repository.RescueSafeLocationRepository
 import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -201,6 +207,53 @@ fun AppNavGraph(
             RescueRouteDistanceRepository(api)
         }
     } else null
+    // Catalogue v2 is separate from Resident Safe Locations v1.
+    // Create it only on Rescue catalogue routes and isolate it by account.
+    val isRescueCatalogRoute =
+        currentRoute == AppRoutes.RESCUE_SAFE_LOCATIONS ||
+            currentRoute.startsWith(
+                "${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/"
+            )
+
+    val rescueCatalogViewModel: RescueSafeLocationViewModel? =
+        if (
+            session.isLoggedIn &&
+            session.role == "rescue" &&
+            isRescueCatalogRoute
+        ) {
+            // A separate store prevents Rescue catalogue state from
+            // surviving logout or leaking into a later session.
+            // It remains stable when navigating list -> detail.
+            val catalogStore = remember(session.accountKey) {
+                ViewModelStore()
+            }
+
+            DisposableEffect(catalogStore) {
+                onDispose {
+                    catalogStore.clear()
+                }
+            }
+
+            val catalogOwner = remember(catalogStore) {
+                object : ViewModelStoreOwner {
+                    override val viewModelStore: ViewModelStore =
+                        catalogStore
+                }
+            }
+
+            viewModel(
+                viewModelStoreOwner = catalogOwner,
+                key = "rescue-safe-catalog-v2:${session.accountKey}"
+            ) {
+                RescueSafeLocationViewModel(
+                    RescueSafeLocationRepository(
+                        ApiClient.rescueSafeLocationApi
+                    )
+                )
+            }
+        } else {
+            null
+        }
     var rescueFilter by rememberSaveable(session.accountKey) { mutableStateOf(SosFilter.ACTIVE) }
     fun openRescueTab(route: String) {
         navController.navigate(route) {
@@ -256,13 +309,14 @@ fun AppNavGraph(
                     }
                 },
                 availableDestinations = setOf(RescueOverviewDestination.MAP,
-                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED),
+                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED, RescueOverviewDestination.SAFE_LOCATIONS),
                 onOpenDestination = { destination ->
                     when (destination) {
                         RescueOverviewDestination.MAP -> openRescueTab(AppRoutes.RESCUE_MAP)
                         RescueOverviewDestination.SOS_NEW -> { rescueFilter = SosFilter.ACTIVE; openRescueTab(AppRoutes.RESCUE_SOS) }
                         RescueOverviewDestination.SOS_RESCUED -> { rescueFilter = SosFilter.RESCUED; openRescueTab(AppRoutes.RESCUE_SOS) }
                         RescueOverviewDestination.SOS_LIST -> openRescueTab(AppRoutes.RESCUE_SOS)
+                        RescueOverviewDestination.SAFE_LOCATIONS -> openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
                         else -> Unit
                     }
                 },
@@ -285,6 +339,7 @@ fun AppNavGraph(
                 RescueMapScreen(
                     location = location,
                     onSosTab = { openRescueTab(AppRoutes.RESCUE_SOS) },
+                    onSafeLocationsTab = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) },
                     onBack = {
                         val returnedHome = navController.popBackStack(
                             route = AppRoutes.RESCUE_HOME,
@@ -308,7 +363,8 @@ fun AppNavGraph(
                     rescueLocation = rescueLocation, distanceRepository = rescueDistanceRepository,
                     onFilterChange = { rescueFilter = it }, onOpen = ::openRescueSos,
                     onOverview = { openRescueTab(AppRoutes.RESCUE_HOME) },
-                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) })
+                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) },
+                    onSafeLocations = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) })
             }
         }
         composable(route = "${AppRoutes.RESCUE_SOS_DETAIL}/{requestId}") { entry ->
@@ -319,10 +375,66 @@ fun AppNavGraph(
                     rescueLocation = rescueLocation, distanceRepository = distanceRepository,
                     onBack = { openRescueTab(AppRoutes.RESCUE_SOS) },
                     onOverview = { openRescueTab(AppRoutes.RESCUE_HOME) },
-                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) })
+                    onMap = { openRescueTab(AppRoutes.RESCUE_MAP) },
+                    onSafeLocations = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) })
             }
         }
 
+        composable(route = AppRoutes.RESCUE_SAFE_LOCATIONS) {
+            rescueCatalogViewModel?.let { catalog ->
+                RescueSafeLocationsScreen(
+                    viewModel = catalog,
+                    rescueLocation = rescueLocation,
+                    onOverview = {
+                        openRescueTab(AppRoutes.RESCUE_HOME)
+                    },
+                    onFloodMap = {
+                        openRescueTab(AppRoutes.RESCUE_MAP)
+                    },
+                    onSos = {
+                        openRescueTab(AppRoutes.RESCUE_SOS)
+                    },
+                    onOpenDetail = { id ->
+                        navController.navigate(
+                            "${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/${Uri.encode(id)}"
+                        ) {
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+        }
+
+        composable(
+            route = "${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/{locationId}"
+        ) { entry ->
+            val id = entry.arguments?.getString("locationId")
+
+            if (!id.isNullOrBlank()) {
+                rescueCatalogViewModel?.let { catalog ->
+                    RescueSafeLocationDetailScreen(
+                        id = id,
+                        ownerKey = entry.id,
+                        viewModel = catalog,
+                        rescueLocation = rescueLocation,
+                        onBack = {
+                            if (!navController.popBackStack()) {
+                                openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                            }
+                        },
+                        onOverview = {
+                            openRescueTab(AppRoutes.RESCUE_HOME)
+                        },
+                        onFloodMap = {
+                            openRescueTab(AppRoutes.RESCUE_MAP)
+                        },
+                        onSos = {
+                            openRescueTab(AppRoutes.RESCUE_SOS)
+                        }
+                    )
+                }
+            }
+        }
         composable(route = AppRoutes.ACCESS_DENIED) {
             RescueEntryScreen(
                 accessDenied = true,

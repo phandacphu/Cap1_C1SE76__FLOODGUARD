@@ -230,8 +230,8 @@ fun RescueOverviewScreen(
                         onSos = if (canOpen(RescueOverviewDestination.SOS_LIST)) {
                             { openDestination(RescueOverviewDestination.SOS_LIST) }
                         } else null,
-                        onTasks = if (canOpen(RescueOverviewDestination.MY_TASKS)) {
-                            { openDestination(RescueOverviewDestination.MY_TASKS) }
+                        onSafeLocations = if (canOpen(RescueOverviewDestination.SAFE_LOCATIONS)) {
+                            { openDestination(RescueOverviewDestination.SAFE_LOCATIONS) }
                         } else null
                     )
                 }

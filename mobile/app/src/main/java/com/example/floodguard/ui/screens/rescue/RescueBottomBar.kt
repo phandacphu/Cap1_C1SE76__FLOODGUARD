@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Sos
 import androidx.compose.material3.Icon
@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
 
-enum class RescueMainTab { OVERVIEW, MAP, SOS, TASKS }
+enum class RescueMainTab { OVERVIEW, MAP, SOS, SAFE_LOCATIONS }
 
 /** Shared navigation for Rescue screens. Null callbacks mark unavailable modules. */
 @Composable
@@ -30,7 +30,7 @@ fun RescueBottomBar(
     onOverview: () -> Unit,
     onMap: (() -> Unit)? = null,
     onSos: (() -> Unit)? = null,
-    onTasks: (() -> Unit)? = null,
+    onSafeLocations: (() -> Unit)? = null,
     isBusy: Boolean = false
 ) {
     val cyan = Color(0xFF8AEBFF)
@@ -40,7 +40,7 @@ fun RescueBottomBar(
         Triple(RescueMainTab.OVERVIEW, "Tổng quan", Icons.Outlined.Dashboard),
         Triple(RescueMainTab.MAP, "Bản đồ", Icons.Outlined.Map),
         Triple(RescueMainTab.SOS, "SOS", Icons.Outlined.Sos),
-        Triple(RescueMainTab.TASKS, "Nhiệm vụ", Icons.Outlined.History)
+        Triple(RescueMainTab.SAFE_LOCATIONS, "Điểm tránh trú", Icons.Outlined.LocationOn)
     )
 
     NavigationBar(
@@ -53,7 +53,7 @@ fun RescueBottomBar(
                 RescueMainTab.OVERVIEW -> onOverview
                 RescueMainTab.MAP -> onMap
                 RescueMainTab.SOS -> onSos
-                RescueMainTab.TASKS -> onTasks
+                RescueMainTab.SAFE_LOCATIONS -> onSafeLocations
             }
             val selected = tab == selectedTab
             val available = selected || action != null
