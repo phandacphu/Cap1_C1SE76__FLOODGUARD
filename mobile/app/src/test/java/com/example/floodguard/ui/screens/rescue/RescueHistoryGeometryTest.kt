@@ -12,7 +12,7 @@ class RescueHistoryGeometryTest {
         val result = parseRescueHistoryLayer(json("""
           {"type":"FeatureCollection","features":[{"geometry":{"type":"Point","coordinates":[108.2,16.1]}}]}
         """), "points")
-        assertEquals(RescueFloodVertex(16.1, 108.2), result.points.single())
+        assertEquals(RescueFloodVertex(16.1, 108.2), result.points.single().position)
     }
 
     @Test fun readsMultipolygonAndHoles() {
