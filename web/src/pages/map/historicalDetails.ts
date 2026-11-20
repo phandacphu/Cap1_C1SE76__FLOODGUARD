@@ -1,6 +1,8 @@
 import type { HistoricalFeature, HistoricalFeatureCollection, HistoricalLayerKey } from '../admin/flood-area/historicalMapService';
 
 const text = (value: unknown, fallback: string) => typeof value === 'string' && value.trim() ? value : fallback;
+// Format separate flood events on new lines in the popup; never change stored metadata.
+const descriptionForDisplay = (value: unknown) => text(value, 'Chưa có mô tả').replace(/;\s*(?=\S)/g, ';\n');
 export const escapeHistoricalText = (value: string) => value.replace(/[&<>"']/g, char =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 
@@ -28,7 +30,7 @@ export function historicalDetails(feature: HistoricalFeature, points: Map<string
   const position = point?.geometry.coordinates as number[] | undefined;
   const rows: [string, string][] = [
     ['ID HIST', text(p.id, 'Chưa có ID')], ['Tên', text(p.name, 'Chưa có tên')],
-    ['Mô tả', text(p.description, 'Chưa có mô tả')], ['Nguồn', text(p.source, 'Chưa có thông tin')],
+    ['Mô tả', descriptionForDisplay(p.description)], ['Nguồn', text(p.source, 'Chưa có thông tin')],
     ['Phân loại', p.areaType === 'flood' ? 'Vùng ngập' : p.areaType === 'low_lying' ? 'Vùng trũng' : 'Chưa phân loại'],
     ['Tọa độ điểm HIST (vĩ độ, kinh độ)', position ? `${position[1]}, ${position[0]}` : 'Chưa có điểm tham chiếu cùng ID trong dữ liệu đã tải'],
   ];

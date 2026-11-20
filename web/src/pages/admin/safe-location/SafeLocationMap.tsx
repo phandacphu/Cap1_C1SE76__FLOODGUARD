@@ -2,8 +2,8 @@
 import { useEffect, useState } from "react";
 import type { LatLngTuple } from "leaflet";
 import {
-  CircleMarker,
   MapContainer,
+  Marker,
   TileLayer,
   Tooltip,
   useMap,
@@ -16,16 +16,14 @@ import {
   type Coordinates,
   type SafeLocation,
 } from "./safeLocationTypes";
+import { mapGpsPin } from "../mapGpsPin";
 
 // Chỉ dùng làm tâm bản đồ ban đầu khi chưa nhập tọa độ.
 // Không tự điền tọa độ này vào form hoặc bản ghi.
 const viewportFallback: LatLngTuple = [16.0544, 108.2022];
 
-const green = {
-  color: "#15803d",
-  fillColor: "#22c55e",
-  fillOpacity: 0.95,
-};
+const greenGpsPin = mapGpsPin("green");
+const selectedGreenGpsPin = mapGpsPin("green", true);
 
 // Cập nhật vị trí bản đồ khi tọa độ thay đổi.
 function PanToPoint({ point }: { point: Coordinates | null }) {
@@ -145,16 +143,12 @@ export function SafeLocationMap({
 
           {/* Chỉ hiển thị ghim khi có tọa độ */}
           {position && (
-            <CircleMarker
-              center={position}
-              radius={9}
-              pathOptions={green}
-            >
+            <Marker position={position} icon={greenGpsPin}>
               <Tooltip>
                 {demo ? "DỮ LIỆU MẪU · " : ""}
                 {name || "Vị trí đang nhập"}
               </Tooltip>
-            </CircleMarker>
+            </Marker>
           )}
         </MapContainer>
 
@@ -230,17 +224,14 @@ export function SafeLocationOverviewMap({
 
           {/* Một ghim tương ứng với một ID địa điểm */}
           {valid.map((location) => (
-            <CircleMarker
+            <Marker
               key={location.id}
-              center={[
+              position={[
                 location.location!.latitude,
                 location.location!.longitude,
               ]}
-              radius={location.id === selectedId ? 11 : 8}
-              pathOptions={{
-                ...green,
-                weight: location.id === selectedId ? 4 : 2,
-              }}
+              icon={location.id === selectedId ? selectedGreenGpsPin : greenGpsPin}
+              zIndexOffset={location.id === selectedId ? 1000 : 0}
               eventHandlers={{
                 click: () => onSelect(location.id),
               }}
@@ -248,7 +239,7 @@ export function SafeLocationOverviewMap({
               <Tooltip>
                 {location.name} · Chọn để xem chi tiết
               </Tooltip>
-            </CircleMarker>
+            </Marker>
           ))}
         </MapContainer>
 
@@ -260,7 +251,7 @@ export function SafeLocationOverviewMap({
       </div>
 
       <p className="text-xs text-muted">
-        Ghim xanh lá · Chọn ghim hoặc dòng trong bảng để xem cùng một địa điểm.
+        Ghim GPS xanh lá · Chọn ghim hoặc dòng trong bảng để xem cùng một địa điểm.
       </p>
 
       {tileError && (
