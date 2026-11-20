@@ -140,8 +140,6 @@ fun ProfileScreen(
                 ProfileInfo("Họ và tên", fullName)
                 ProfileInfo("Email", email)
                 ProfileInfo("Số điện thoại", phone)
-                ProfileInfo("Địa chỉ", "Chưa cập nhật")
-                ProfileInfo("Vị trí", "Chưa có dữ liệu")
             }
 
             // =====================================
@@ -154,70 +152,6 @@ fun ProfileScreen(
                 onRefresh = onRetrySos,
                 onOpenDetail = onSosStatusClick
             )
-
-            // =====================================
-            // QUYỀN & QUYỀN TRUY CẬP
-            // =====================================
-            ProfileHeading("QUYỀN & QUYỀN TRUY CẬP")
-
-            ProfileCard {
-                ProfileMenu(
-                    "Quyền truy cập vị trí",
-                    "location_permission",
-                    onMenuClick
-                )
-
-                ProfileMenu(
-                    "Quyền nhận thông báo",
-                    "notification_permission",
-                    onMenuClick
-                )
-
-                ProfileMenu(
-                    "Quản lý thông tin cá nhân",
-                    "personal_info",
-                    onMenuClick
-                )
-            }
-
-            // =====================================
-            // CÀI ĐẶT CẢNH BÁO THẢM HỌA
-            // =====================================
-            ProfileHeading("CÀI ĐẶT CẢNH BÁO THẢM HỌA")
-
-            ProfileCard {
-                ProfileSwitch(
-                    title = "Cảnh báo lũ lụt",
-                    checked = floodAlerts,
-                    onCheckedChange = {
-                        floodAlerts = it
-                    }
-                )
-
-                ProfileSwitch(
-                    title = "Thông báo cứu hộ SOS",
-                    checked = sosAlerts,
-                    onCheckedChange = {
-                        sosAlerts = it
-                    }
-                )
-
-                ProfileSwitch(
-                    title = "Thông tin an toàn",
-                    checked = safetyAlerts,
-                    onCheckedChange = {
-                        safetyAlerts = it
-                    }
-                )
-
-                ProfileSwitch(
-                    title = "Cảnh báo theo vị trí",
-                    checked = locationAlerts,
-                    onCheckedChange = {
-                        locationAlerts = it
-                    }
-                )
-            }
 
             // =====================================
             // BẢO MẬT & QUYỀN RIÊNG TƯ

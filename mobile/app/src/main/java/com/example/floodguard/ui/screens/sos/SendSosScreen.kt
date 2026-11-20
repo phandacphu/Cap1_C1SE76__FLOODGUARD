@@ -870,12 +870,6 @@ private fun SosLocationCard(
                     fontSize = 12.sp
                 )
             }
-
-            Text(
-                text = "Vị trí được ghi nhận từ thiết bị, không bảo đảm chính xác tuyệt đối.",
-                color = SosMuted,
-                fontSize = 11.sp
-            )
         }
 
         if (uiState.isLoadingLocation) {

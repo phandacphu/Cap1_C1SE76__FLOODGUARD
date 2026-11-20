@@ -274,12 +274,6 @@ private fun SafeLocationHeader(
                     fontSize = 16.sp,
                     maxLines = 1
                 )
-
-                Text(
-                    text = "FloodGuard • Danh sách từ Backend",
-                    fontSize = 10.sp,
-                    color = MutedText
-                )
             }
         },
         navigationIcon = {
