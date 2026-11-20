@@ -97,7 +97,6 @@ function SosDetail({ id }: { id: string | undefined }) {
                     Mở chỉ đường đến vị trí mới nhất
                   </a>
                 )}
-                <p className="text-xs text-muted">Vị trí có thể đã cũ; đối chiếu thời gian Backend nhận GPS. Tuyến chỉ đường chưa được hệ thống đánh giá an toàn trước ngập.</p>
                 {item.state === 'rescued' && <div className="rounded border border-safe p-4">
                   <p>Người xác nhận: {item.completedBy ?? MISSING}</p>
                   <p>Hoàn tất lúc: {timeLabel(item.completedAt)}</p>

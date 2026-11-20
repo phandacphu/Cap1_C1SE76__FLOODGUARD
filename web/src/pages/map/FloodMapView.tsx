@@ -309,76 +309,44 @@ export const FloodMapView: React.FC = () => {
     }
   }, [renderPolygons]);
 
-  const floodCount = floodAreas.filter(a => a.areaType === 'flood').length;
-  const lowLyingCount = floodAreas.filter(a => a.areaType === 'low_lying').length;
+
+  const mapLegend = (
+          <div className="flex flex-wrap gap-3 text-xs text-slate-300" aria-label="Chú giải">
+            <span>🟡 Vùng ngập</span><span>🔴 Vùng trũng</span>
+            {isRescue && <span><svg width="12" height="16" viewBox="0 0 24 32" aria-hidden="true" className="inline"><path d="M12 30C9 25 2 17 2 11a10 10 0 0 1 20 0c0 6-7 14-10 19Z" fill={AREA_TYPE_COLOR.low_lying} stroke="white" strokeWidth="2"/><circle cx="12" cy="11" r="3.5" fill="white"/></svg> Ngập lịch sử</span>}
+          </div>
+  );
 
   const mapContent = (
     <div className="w-full space-y-4 font-sans text-slate-100 pb-6">
+      {isAdmin && (
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 border-b border-[#1E3A5F]/40 pb-3">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="text-lg font-bold font-mono tracking-tight text-white uppercase">
-              Bản Đồ Vùng Ngập
-            </h1>
-            {isStaleData && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/80 border border-amber-600 text-amber-300">
-                ⚠️ Dữ liệu lưu tạm (Tải lại chưa thành công)
-              </span>
-            )}
-          </div>
-          <p className="text-xs font-mono text-slate-400 mt-0.5">
-            Vùng ngập tham khảo từ hệ thống. Phân loại vùng không xác nhận ngập theo thời gian thực.
-          </p>
-        </div>
-
         {/* Bộ lọc trạng thái vùng ngập (A.2) */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center bg-[#081B30] border border-[#1E3A5F] rounded-lg p-0.5 text-xs font-mono">
-            <button
-              onClick={() => setStatusFilter('flood')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                statusFilter === 'flood' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Vùng ngập ({floodCount})
-            </button>
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                statusFilter === 'all' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Tất cả ({floodAreas.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('low_lying')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
-                statusFilter === 'low_lying' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Vùng trũng ({lowLyingCount})
-            </button>
-            <button onClick={() => setStatusFilter('unknown')} className={`px-2.5 py-1 rounded-md ${statusFilter === 'unknown' ? 'bg-slate-600 text-white' : 'text-slate-400'}`}>
-              Chưa phân loại ({floodAreas.filter(area => area.areaType == null).length})
-            </button>
+            {([['all', 'Tất cả'], ['flood', 'Vùng ngập'], ['low_lying', 'Vùng trũng']] as const).map(([value, label]) => (
+              <button key={value} type="button" aria-pressed={statusFilter === value}
+                onClick={() => setStatusFilter(value)}
+                className={`px-2.5 py-1 rounded-md transition-colors ${statusFilter === value ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
           </div>
 
-          <div className="flex gap-3 text-xs text-slate-300" aria-label="Chú giải">
-            <span>🟡 Vùng ngập</span><span>🔴 Vùng trũng</span>
-            {isRescue && <span><svg width="12" height="16" viewBox="0 0 24 32" aria-hidden="true" className="inline"><path d="M12 30C9 25 2 17 2 11a10 10 0 0 1 20 0c0 6-7 14-10 19Z" fill={AREA_TYPE_COLOR.low_lying} stroke="white" strokeWidth="2"/><circle cx="12" cy="11" r="3.5" fill="white"/></svg> Ngập lịch sử</span>}
-            <span>⚪ Chưa phân loại</span>
-          </div>
+
         </div>
       </div>
 
+      )}
+
       {isRescue ? (
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-[#1E3A5F] bg-[#081B30] px-4 py-3">
           <button type="button" aria-pressed={showRegions}
             onClick={() => { setShowRegions(value => !value); setStatusFilter('all'); setOnlyWithAlerts(false); }}
             className={`rounded-lg border px-4 py-2 text-sm font-semibold ${showRegions ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300' : 'border-slate-600 text-slate-200'}`}>
             Vùng ngập
           </button>
-          {showRegions && <span className="text-xs text-slate-400">Đang hiện vùng ngập, vùng trũng và các lớp lịch sử tham khảo; lịch sử không xác nhận ngập hiện tại.</span>}
+          {mapLegend}
           {showRegions && historyKeys.some(key => !historyLayers[key]?.snapshot && !historyLayers[key]?.error) && <span role="status" className="text-xs text-slate-400">Đang tải lớp lịch sử…</span>}
           {showRegions && historyKeys.filter(key => historyLayers[key]?.error).map(key => <p key={key} role="status" className="text-xs text-amber-300">{({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error}</p>)}
           {alertCountError && <p role="status" className="text-xs text-amber-300">{alertCountError}</p>}
@@ -392,7 +360,10 @@ export const FloodMapView: React.FC = () => {
           {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
         </label>
       </>}
-      {lastUpdated && <p className="text-xs text-slate-400">Dữ liệu tải lúc: {lastUpdated.toLocaleString('vi-VN')}</p>}
+      {(isAdmin || isStaleData) && <div className="flex flex-wrap items-center gap-3">
+        {isStaleData && <span className="text-xs text-amber-300">Dữ liệu lưu tạm</span>}
+          {isAdmin && mapLegend}
+      </div>}
       {/* Thông báo lỗi API và cảnh báo dữ liệu cũ (A.3) */}
       {dataError && (
         <div className="bg-rose-950/60 border border-rose-700 p-3.5 rounded-lg text-rose-200 text-xs font-mono flex items-center justify-between shadow-lg">
@@ -434,17 +405,18 @@ export const FloodMapView: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        <div className="lg:col-span-3 bg-[#081B30] border border-[#1E3A5F] rounded-xl overflow-hidden relative min-h-[560px] shadow-lg">
+      <div className={isAdmin ? "grid grid-cols-1 gap-4 lg:grid-cols-4" : "w-full"}>
+        <div className={`bg-[#081B30] border border-[#1E3A5F] rounded-2xl overflow-hidden relative shadow-lg ${isAdmin ? "lg:col-span-3 min-h-[560px]" : "min-h-[360px]"}`}>
           {dataLoading && (
             <div className="absolute inset-0 bg-[#081B30]/90 z-20 flex flex-col items-center justify-center space-y-2 font-mono text-xs text-cyan-400">
               <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
               <span>Đang tải dữ liệu vùng ngập và khởi tạo bản đồ MapTiler...</span>
             </div>
           )}
-          <div ref={mapContainerRef} className="floodguard-map w-full h-[560px] z-0" />
+          <div ref={mapContainerRef} className="floodguard-map w-full z-0" style={{ height: isRescue ? "clamp(360px, calc(100dvh - 270px), 900px)" : 560 }} />
         </div>
 
+        {isAdmin && (
         <div className="bg-[#081B30] border border-[#1E3A5F] rounded-xl p-4 flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center justify-between border-b border-[#1E3A5F]/40 pb-2">
@@ -512,6 +484,7 @@ export const FloodMapView: React.FC = () => {
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
