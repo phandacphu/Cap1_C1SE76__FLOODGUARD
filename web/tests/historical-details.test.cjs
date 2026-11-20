@@ -19,6 +19,7 @@ test('HIST popup preserves metadata and uses fallback only for missing or blank 
   assert.equal(data['Nguồn'],'Nguồn Admin');
   assert.equal(data['Tọa độ điểm HIST (vĩ độ, kinh độ)'],'16, 108');
   for(const description of [null,'','   ']) assert.equal(fields(point('HIST-TEST',description))['Mô tả'],'Chưa có mô tả');
+  assert.equal(fields(point('HIST-08','Mốc 2022; đợt 2023'))['Mô tả'],'Mốc 2022;\nđợt 2023');
 });
 test('polygon reference matches stable ID only, never same name or nearby geometry', () => {
   const wrong=point('HIST-OTHER');
@@ -65,6 +66,6 @@ test('live Render points/areas preserve metadata and pair by exact HIST ID', {sk
     const html=api.historicalPopupHtml(feature,index,false,1000);
     assert.ok(html.includes(api.escapeHistoricalText(feature.properties.id)));
     const description=feature.properties.description;
-    if(typeof description==='string'&&description.trim()) assert.ok(html.includes(api.escapeHistoricalText(description)));
+    if(typeof description==='string'&&description.trim()) assert.ok(html.includes(api.escapeHistoricalText(fields(feature)['Mô tả'])));
   }
 });

@@ -54,10 +54,12 @@ export function KpiCard({
         <p className={`mt-3 font-mono text-3xl font-semibold leading-none ${TONE_TEXT[tone]}`}>
           {value}
         </p>
-        <div className="mt-2 flex min-h-5 flex-wrap items-center gap-2 font-mono text-[11px] text-muted">
-          {sub}
-          {mock && <MockTag />}
-        </div>
+        {(sub || mock) && (
+          <div className="mt-2 flex min-h-5 flex-wrap items-center gap-2 font-mono text-[11px] text-muted">
+            {sub}
+            {mock && <MockTag />}
+          </div>
+        )}
       </div>
       {footerLabel && (
         <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2 font-mono text-[10px] uppercase tracking-wider text-muted">

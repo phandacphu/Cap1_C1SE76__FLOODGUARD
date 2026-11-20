@@ -14,6 +14,8 @@ import {
 import { listAreas } from '../floodAreaService';
 import { AREA_TYPE_LABEL, AREA_TYPE_COLOR, type FloodAreaItem } from '../floodAreaTypes';
 import { formatAreaId } from '../areaId';
+import { historicalDescriptionLines } from '../historicalDescription';
+import { mapGpsPin } from '../../mapGpsPin';
 
 import { AppShell } from '../../../../components/layout/AppShell';
 import { ADMIN_NAV } from '../../../../components/layout/navConfig';
@@ -31,6 +33,7 @@ const DefaultIcon = L.icon({
     iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
+const historicalPointIcon = mapGpsPin('red');
 
 type LayerKey = HistoricalLayerKey;
 
@@ -69,7 +72,6 @@ export default function HistoricalMapScreen() {
 
     const [areas, setAreas] = useState<FloodAreaItem[] | null>(null);
     const [areasError, setAreasError] = useState<string | null>(null);
-    const [areasLoading, setAreasLoading] = useState(true);
 
     const mountedRef = useRef(false);
     const layerRequestsRef = useRef<Record<LayerKey, number>>({ points: 0, areas: 0, buffers: 0, radar: 0 });
@@ -100,7 +102,6 @@ export default function HistoricalMapScreen() {
 
     const loadAreas = useCallback(() => {
         const request = ++areaRequestRef.current;
-        setAreasLoading(true);
         setAreasError(null);
         void listAreas().then((data) => {
             if (mountedRef.current && areaRequestRef.current === request) setAreas(data);
@@ -108,8 +109,6 @@ export default function HistoricalMapScreen() {
             if (mountedRef.current && areaRequestRef.current === request) {
                 setAreasError(err instanceof Error ? err.message : 'Không tải được vùng Admin.');
             }
-        }).finally(() => {
-            if (mountedRef.current && areaRequestRef.current === request) setAreasLoading(false);
         });
     }, []);
 
@@ -131,7 +130,6 @@ export default function HistoricalMapScreen() {
         };
     }, [loadLayer, loadAreas]);
 
-    const anyLoading = ALL_LAYERS.some((k) => layers[k].status === 'loading');
     const failedKeys = ALL_LAYERS.filter((k) => layers[k].status === 'error');
 
     const bufferStyle = {
@@ -166,18 +164,6 @@ export default function HistoricalMapScreen() {
             header={<AdminHeader alertCount={0} />}
         >
             <div className="mx-auto max-w-[1500px] space-y-5">
-                {(areas ?? []).some((a) => a.areaType === null) && (
-                    <p role="status" className="rounded-xl border border-yellow-700 p-3 text-sm text-yellow-200">
-                        {(areas ?? []).filter((a) => a.areaType === null).length} vùng Admin chưa phân loại nên chưa được vẽ. Mở Quản lý vùng để chọn loại.
-                    </p>
-                )}
-                <div className="bg-[#1e293b] border border-red-900/50 p-4 rounded-xl shadow-sm shrink-0">
-                    <p className="text-gray-300 text-sm">
-                        <span className="text-red-400 font-semibold mr-1">Dữ liệu ngập lịch sử phục vụ tham khảo — không phải cảnh báo ngập hiện tại.</span>
-                        Các lớp này chưa được xác thực là ranh giới vùng ngập và không dùng để phát cảnh báo hay tạo SOS.
-                    </p>
-                </div>
-
                 {/* Each invalid/unavailable historical layer has its own error and retry action. */}
                 {failedKeys.length > 0 && (
                     <div role="alert" className="space-y-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -211,21 +197,6 @@ export default function HistoricalMapScreen() {
                     </div>
                 )}
 
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-[#1e293b] px-4 py-3">
-                    <span role="status" className="text-xs text-gray-300">
-                        Vùng Admin: {areasLoading ? 'đang cập nhật…' : areasError ? 'lỗi làm mới' : `${areas?.length ?? 0} vùng`}
-                        {anyLoading && ' · Đang tải các lớp lịch sử (bản đồ vẫn sử dụng được)'}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={() => { loadAreas(); ALL_LAYERS.forEach(loadLayer); }}
-                        disabled={areasLoading || anyLoading}
-                        className="rounded border border-blue-400/50 px-3 py-1.5 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
-                    >
-                        {areasLoading || anyLoading ? 'Đang làm mới vùng…' : 'Làm mới vùng và lớp lịch sử'}
-                    </button>
-                </div>
-
                 <div className="w-full h-[550px] rounded-xl overflow-hidden relative z-0 border border-gray-800 shadow-md bg-[#1e293b]">
                     <MapContainer
                         center={[16.0544, 108.2022]}
@@ -256,7 +227,7 @@ export default function HistoricalMapScreen() {
                                       ID: ${escapeHtml(props.id || '—')}<br>
                                       Loại: ${escapeHtml(props.areaType === 'low_lying' ? 'Vùng trũng' : 'Vùng ngập')}<br>
                                       Nguồn: ${escapeHtml(props.source || 'Chưa có')}<br>
-                                      ${escapeHtml(props.description || '')}<br>
+                                      ${historicalDescriptionLines(props.description).map((line) => `<div>${escapeHtml(line)}</div>`).join('')}
                                       <em>Dữ liệu lịch sử tham khảo, không phải cảnh báo hiện tại.</em>
                                     </div>`);
                                 }}
@@ -266,15 +237,7 @@ export default function HistoricalMapScreen() {
                             <GeoJSONLayer
                                 key={`points-${layers.points.version}`}
                                 data={pointsData as any}
-                                pointToLayer={(_feature: any, latlng: any) => {
-                                    const redIcon = L.divIcon({
-                                        className: 'custom-div-icon',
-                                        html: `<div style='background-color:#ef4444; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'></div>`,
-                                        iconSize: [16, 16],
-                                        iconAnchor: [8, 8]
-                                    });
-                                    return L.marker(latlng, { icon: redIcon });
-                                }}
+                                pointToLayer={(_feature: any, latlng: any) => L.marker(latlng, { icon: historicalPointIcon })}
                                 onEachFeature={(feature: any, layer: any) => {
                                     if (feature.properties && feature.properties.name) {
                                         layer.bindPopup(
@@ -287,6 +250,11 @@ export default function HistoricalMapScreen() {
                                                     <span style="color: #64748b; font-size: 12px; display: flex; align-items: center; justify-content: space-between;">
                                                         <span>Giai đoạn:</span> <span style="font-weight: 500; color: #334155;">${escapeHtml(feature.properties.data_period || 'N/A')}</span>
                                                     </span>
+                                                    ${historicalDescriptionLines(feature.properties.description).length > 0 ? `
+                                                      <div style="padding-top: 6px; font-size: 12px; line-height: 1.5; color: #334155;">
+                                                        <strong>Mô tả ngập:</strong>
+                                                        ${historicalDescriptionLines(feature.properties.description).map((line) => `<p style="margin: 4px 0 0;">${escapeHtml(line)}</p>`).join('')}
+                                                      </div>` : ''}
                                                 </div>
                                             </div>`
                                         );
@@ -311,7 +279,9 @@ export default function HistoricalMapScreen() {
                                     <div style={{ fontSize: 12 }}>ID: {formatAreaId(a.id)}</div>
                                     <div style={{ fontSize: 12 }}>Loại vùng: {AREA_TYPE_LABEL[a.areaType]}</div>
                                     <div style={{ fontSize: 12 }}>Nguồn: {a.source}</div>
-                                    {a.description && <div style={{ fontSize: 12 }}>{a.description}</div>}
+                                    {historicalDescriptionLines(a.description).map((line, index) => (
+                                        <p key={index} style={{ fontSize: 12, margin: '4px 0 0' }}>{line}</p>
+                                    ))}
                                 </Popup>
                             </Polygon>
                         ))}
@@ -328,7 +298,10 @@ export default function HistoricalMapScreen() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div className="flex flex-col">
                             <div className="font-medium text-gray-200 text-sm flex items-center gap-2 mb-2">
-                                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 24 32">
+                                    <path d="M12 30S2 19.5 2 12a10 10 0 0 1 20 0c0 7.5-10 18-10 18Z" fill="#dc2626" stroke="#fff" strokeWidth="1.7" />
+                                    <circle cx="12" cy="12" r="4" fill="#fff" />
+                                </svg>
                                 <span>Điểm ngập lịch sử</span>
                             </div>
                             <div className="text-xs text-gray-400 leading-relaxed pl-5">Các vị trí từng ghi nhận ngập (2015-2026).</div>

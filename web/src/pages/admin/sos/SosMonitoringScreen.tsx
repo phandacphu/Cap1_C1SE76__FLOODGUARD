@@ -9,6 +9,7 @@ import { SosFrame } from "./SosFrame";
 import { SosConditionBadge, SosErrorPanel, SosModeNotice } from "./SosFeedback";
 import { SosSummaryCards } from "./SosSummaryCards";
 import { formatSosSituations, formatSosTime, formatSosWaterLevel } from "./sosFormat";
+import { newestSosFirst } from "./sosUiProgress";
 
 const INPUT = "mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text [color-scheme:dark] disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -19,16 +20,16 @@ export function SosMonitoringScreen() {
   // Search is deliberately client-side over ALL rows returned by the selected API filters.
   const apiFilters = useMemo<SosFilters>(() => ({
     condition: filters.condition, from: filters.from, to: filters.to,
-    sort: filters.sort, search: "",
-  }), [filters.condition, filters.from, filters.to, filters.sort]);
+    sort: "newest", search: "",
+  }), [filters.condition, filters.from, filters.to]);
   const load = useCallback(() => fetchSosList(token, apiFilters), [token, apiFilters]);
   const resource = useSosResource(JSON.stringify([token, apiFilters]), load);
   const invalidDates = Boolean(draft.from && draft.to && draft.from > draft.to);
   const hasFilters = filters.condition !== "all" || Boolean(filters.from || filters.to || filters.search.trim());
   const data = resource.data;
   const search = filters.search.trim().toLocaleLowerCase("vi");
-  const visible = useMemo(() => (data?.items ?? []).filter(item =>
-    !search || [item.id, item.residentId].some(value => value?.toLocaleLowerCase("vi").includes(search))),
+  const visible = useMemo(() => newestSosFirst((data?.items ?? []).filter(item =>
+    !search || [item.id, item.residentId].some(value => value?.toLocaleLowerCase("vi").includes(search)))),
   [data, search]);
 
   const update = <K extends keyof SosFilters>(key: K, value: SosFilters[K]) =>
@@ -46,8 +47,6 @@ export function SosMonitoringScreen() {
         <div>
           <p className="mb-2 font-mono text-xs uppercase tracking-wider text-water">Admin · Theo dõi SOS</p>
           <h1 className="text-2xl font-bold uppercase tracking-wide">Giám sát &amp; theo dõi yêu cầu SOS</h1>
-          <p className="mt-2 text-sm text-muted">Tra cứu yêu cầu, vị trí cuối đã nhận và kết quả cứu hộ.</p>
-          <p className="mt-2 flex items-center gap-2 text-xs text-muted"><Icon name="shield" className="h-4 w-4" /> Chỉ đọc · Giờ Việt Nam (UTC+7)</p>
         </div>
         <button type="button" disabled={resource.loading} onClick={resource.refresh}
           className="flex items-center gap-2 rounded-lg border border-water/40 px-3 py-2 text-sm text-water disabled:opacity-50">
@@ -55,7 +54,7 @@ export function SosMonitoringScreen() {
           {resource.loading ? "Đang tải..." : "Làm mới"}
         </button>
       </section>
-      <SosModeNotice mock={SOS_MOCK_ENABLED} />
+      {SOS_MOCK_ENABLED && <SosModeNotice mock />}
       {resource.error && <SosErrorPanel error={resource.error} retry={resource.refresh} />}
       {data && resource.error && <p role="status" className="text-sm text-warn">
         Đang giữ dữ liệu lần tải thành công lúc {formatSosTime(resource.updatedAt)}. Chưa xác nhận có cập nhật mới.
@@ -67,7 +66,7 @@ export function SosMonitoringScreen() {
       </div>}
       <section className="rounded-2xl border border-border bg-card/80 p-4" aria-label="Bộ lọc SOS">
         <form onSubmit={event => { event.preventDefault(); if (!invalidDates) applyFilters(draft); }}>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <label className="text-xs text-muted">Tình trạng SOS
               <select aria-label="Tình trạng SOS" className={INPUT} value={draft.condition}
                 onChange={event => update("condition", event.target.value as SosFilters["condition"])}>
@@ -90,13 +89,6 @@ export function SosMonitoringScreen() {
                 placeholder="Chỉ tìm trong dữ liệu đã tải" value={draft.search}
                 onChange={event => update("search", event.target.value)} />
             </label>
-            <label className="text-xs text-muted">Thời gian gửi
-              <select aria-label="Thời gian gửi" className={INPUT} value={draft.sort}
-                onChange={event => update("sort", event.target.value as SosFilters["sort"])}>
-                <option value="newest">Mới nhất trước</option>
-                <option value="oldest">Cũ nhất trước</option>
-              </select>
-            </label>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="submit" disabled={invalidDates} className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg disabled:opacity-50">Áp dụng</button>
@@ -105,10 +97,6 @@ export function SosMonitoringScreen() {
             }}>Xóa bộ lọc</button>
             {invalidDates && <p role="alert" className="text-sm text-sos">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>}
           </div>
-          <p className="mt-3 text-xs leading-5 text-muted">
-            Trạng thái, khoảng ngày và thứ tự được lọc trên toàn bộ dữ liệu qua Backend. Thẻ thống kê dùng cùng bộ lọc API với danh sách.
-            Tìm mã SOS/Resident là lọc cục bộ trên danh sách đã tải, không thay đổi số liệu thống kê.
-          </p>
         </form>
       </section>
       <section aria-label="Danh sách SOS" aria-busy={resource.loading} className="overflow-hidden rounded-2xl border border-border bg-card/80">

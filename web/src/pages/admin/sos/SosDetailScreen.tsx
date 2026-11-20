@@ -9,6 +9,7 @@ import { SosConditionBadge, SosErrorPanel, SosModeNotice } from "./SosFeedback";
 import { formatSosSituations, formatSosTime, formatSosWaterLevel } from "./sosFormat";
 import { SosLocationMap } from "./SosLocationMap";
 import type { SosCoordinates } from "./sosTypes";
+import { SOS_PROGRESS_LABELS, sosProgressIndex } from "./sosUiProgress";
 
 function coordinates(point: SosCoordinates | null | undefined): string {
   return point ? `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}` : "Chưa được cung cấp";
@@ -20,6 +21,7 @@ export function SosDetailScreen() {
   const load = useCallback(() => fetchSosDetail(token, id), [token, id]);
   const resource = useSosResource(JSON.stringify([token, id]), load);
   const item = resource.data;
+  const progress = item ? sosProgressIndex(item) : null;
   return (
     <SosFrame detail>
       <Link className="inline-flex text-sm text-water hover:underline" to="/admin/sos">← Danh sách SOS</Link>
@@ -65,12 +67,6 @@ export function SosDetailScreen() {
             </section>
             {item.condition === "rescued" && <section className="rounded-2xl border border-safe/40 bg-safe/5 p-5">
               <h2 className="font-semibold text-safe">Kết quả cứu hộ · Đã cứu</h2>
-              <dl className="mt-4 space-y-3 text-sm">
-                <div><dt className="text-xs text-muted">Mã nhân viên xác nhận</dt>
-                  <dd className="mt-1">{item.completedBy ?? item.confirmedBy ?? "Chưa được cung cấp"}</dd></div>
-                <div><dt className="text-xs text-muted">Thời gian hoàn tất</dt>
-                  <dd className="mt-1">{formatSosTime(item.completedAt)}</dd></div>
-              </dl>
             </section>}
           </div>
           <div className="min-w-0 space-y-5">
@@ -90,16 +86,20 @@ export function SosDetailScreen() {
               <p className="mt-4 text-xs leading-5 text-muted">Không dùng thời gian cập nhật hồ sơ thay thế thời gian GPS. SOS đã cứu vẫn được xem tại chi tiết/lịch sử.</p>
             </section>
             <section className="rounded-2xl border border-border bg-card/80 p-5">
-              <h2 className="font-semibold">Lịch sử trạng thái</h2>
-              {item.statusHistory?.length ? (
-                <ol className="mt-4 space-y-4 border-l border-border pl-4 text-sm">
-                  {item.statusHistory.map((event, index) => <li key={`${event.id}-${index}`}>
-                    <p className="font-medium">{event.oldStatus ?? "Khởi tạo"} → {event.newStatus ?? "Chưa có trạng thái"}</p>
-                    <p className="mt-1 text-xs text-muted">{formatSosTime(event.changedAt)} · Người thay đổi: {event.changedBy ?? "Chưa được cung cấp"}</p>
-                    {event.note && <p className="mt-1 break-words text-xs text-muted">Ghi chú: {event.note}</p>}
-                  </li>)}
-                </ol>
-              ) : <p className="mt-4 text-sm text-muted">Chưa có lịch sử trạng thái được cung cấp.</p>}
+              <h2 className="font-semibold">Tiến trình cứu hộ</h2>
+              <ol aria-label="Ba giai đoạn cứu hộ" className="mt-4 grid gap-3 sm:grid-cols-3">
+                {SOS_PROGRESS_LABELS.map((label, index) => {
+                  const reached = progress !== null && index <= progress;
+                  const current = progress === index;
+                  return <li key={label} aria-current={current ? "step" : undefined}
+                    className={`rounded-xl border p-3 text-sm ${current
+                      ? "border-water bg-water/10 text-water"
+                      : reached ? "border-safe/40 bg-safe/5 text-safe" : "border-border text-muted"}`}>
+                    <span className="mb-2 block font-mono text-xs">0{index + 1}</span>
+                    <span className="font-semibold">{label}</span>
+                  </li>;
+                })}
+              </ol>
             </section>
           </div>
         </div>
