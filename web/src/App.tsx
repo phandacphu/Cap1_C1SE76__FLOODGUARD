@@ -1,3 +1,4 @@
+import { RescueHistory } from './pages/rescue/history/RescueHistory';
 import { RescueSafeLocations } from './pages/rescue/safe-locations/RescueSafeLocations';
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -69,6 +70,7 @@ export const App: React.FC = () => {
             <Route path="/rescue/safe-locations" element={<RescueSafeLocations />} />
             <Route path="/rescue/dashboard" element={<RescueDashboard />} />
             <Route path="/rescue/sos" element={<RescueSosList />} />
+            <Route path="/rescue/history" element={<RescueHistory />} />
             <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
           </Route>
           <Route path="/rescue" element={<Navigate to="/rescue/dashboard" replace />} />

@@ -61,7 +61,6 @@ export function DirectSosMap({ items, detail = false }: { items: DirectSosReques
           {located.length > 0 && <MapControls focus={focus} />}
         </MapContainer>
       </div>
-      <p className="text-xs text-muted">{items === null ? 'Chưa tải được số SOS.' : `${located.length} yêu cầu có tọa độ hợp lệ trong dữ liệu đang hiển thị.`}</p>
       {detail && located.length === 0 && <p className="text-sm text-muted">Chưa có thông tin vị trí hợp lệ.</p>}
     </div>
   );

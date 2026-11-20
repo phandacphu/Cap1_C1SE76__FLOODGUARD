@@ -57,8 +57,6 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
         <Controls items={items ?? []} />
       </MapContainer>
     </div>
-    <p className="text-xs text-muted">{items === null ? 'Chưa tải được số SOS.' : `${located.length}/${items.length} SOS trong bộ lọc có tọa độ hợp lệ; ${items.length - located.length} SOS thiếu tọa độ vẫn xem được trong danh sách.`} {items !== null && `${groups.length} vị trí GPS riêng biệt; ghim có số biểu thị nhiều SOS trùng tọa độ. `}GPS được cập nhật theo lần đọc API, camera chỉ di chuyển khi bạn thao tác.</p>
-    <p className="text-xs text-muted">Chỉ đường mở theo tọa độ mới nhất đã tải; tuyến đường chưa được đánh giá an toàn trước ngập.</p>
 
   </section>;
 }

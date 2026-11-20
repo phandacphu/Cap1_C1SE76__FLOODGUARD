@@ -55,7 +55,7 @@ export function RescueSafeLocations({source=catalogApi}:{source?:CatalogSource})
           <div className="space-y-3 xl:max-h-[720px] xl:overflow-y-auto">{rows.map(item=><article key={item.id} className={`rounded-xl border p-4 ${item.id===state.selectedId?'border-safe bg-safe/10':'border-border bg-bg/50'}`}>
             <button type="button" onClick={()=>focus(item.id)} className="w-full text-left"><span className="text-xs text-safe">{TYPE_LABEL[item.type]}</span><h3 className="mt-1 break-words font-semibold">{item.name}</h3><p className="mt-2 break-words text-sm text-muted">{item.address}</p></button>
             {item.distanceKm!==null&&<p className="mt-3 text-sm font-semibold text-water">{distanceLabel(item.distanceKm)}</p>}
-            <div className="mt-3 flex flex-wrap gap-3 text-xs"><button className="text-safe underline" type="button" onClick={()=>store.select(item.id)}>Xem chi tiết</button><button className="text-water underline" type="button" onClick={()=>focus(item.id)}>Xem trên bản đồ</button><a className="text-muted underline" href={mapsUrl(item.location)} target="_blank" rel="noopener noreferrer">Mở Google Maps</a></div>
+            <div className="mt-3 flex flex-wrap gap-3 text-xs"><button className="text-water underline" type="button" onClick={()=>focus(item.id)}>Xem trên bản đồ</button><a className="text-muted underline" href={mapsUrl(item.location)} target="_blank" rel="noopener noreferrer">Mở Google Maps</a></div>
           </article>)}</div>
         </section>
         <div className="min-w-0 space-y-4">
