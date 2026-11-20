@@ -137,7 +137,7 @@ private val MapCyan = Color(0xFF00E5FF)
 private val MapGreen = Color(0xFF16C784)
 private val MapOrange = Color(0xFFFFA000)
 
-private val CitizenFloodColor = Color(0xFFFFC107)
+private val CitizenFloodColor = Color(0xFFE53935)
 private val CitizenLowLyingColor = Color(0xFFEF9A9A)
 
 // =====================================================
@@ -467,12 +467,6 @@ private fun FloodMapHeader(
                 color = MapText,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Medium
-            )
-
-            Text(
-                text = "Nguồn dữ liệu: FloodGuard API",
-                color = MapSecondary,
-                fontSize = 10.sp
             )
         }
 
@@ -1482,8 +1476,6 @@ private fun FloodGoogleMap(
                             state = markerState,
                             icon = shelterPointIcon,
                             title = safeLocation.name,
-                            snippet = "Chưa xác minh mức độ an toàn " +
-                                    "và khả năng tiếp nhận hiện tại",
                             visible = state.isShelterLayerEnabled,
                             onClick = {
                                 onSelectSafeLocation(safeLocation.id)
@@ -2214,15 +2206,8 @@ private fun CitizenMapDataPanel(
             )
         }
 
-        OutlinedButton(
-            onClick = onToggleHistoryAreas,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (state.isHistoryAreasLayerEnabled) "Ẩn đa giác HIST" else "Hiện đa giác HIST")
-        }
-
         CitizenSourceStatus(
-            title = "Đa giác HIST do Admin vẽ — tham khảo",
+            title = "Đa giác ngập lịch sử",
             count = state.historyAreas.size,
             loading = state.isLoadingHistoryAreas,
             error = state.historyAreasError,
@@ -2231,7 +2216,7 @@ private fun CitizenMapDataPanel(
         )
 
         Text(
-            text = "Đa giác HIST: vàng là vùng ngập, đỏ là vùng trũng. " +
+            text = "Đa giác: đỏ là vùng ngập, hồng nhạt là vùng trũng. " +
                     "Đây là dữ liệu lịch sử tham khảo, không phải cảnh báo ngập hiện tại.",
             color = MapSecondary,
             fontSize = 12.sp
@@ -2256,7 +2241,7 @@ private fun CitizenMapDataPanel(
         }
 
         CitizenSourceStatus(
-            title = "Vùng trũng — radar tham khảo",
+            title = "Vùng trũng",
             count = state.historyRadarFeatureCount,
             loading = state.isLoadingHistoryRadar,
             error = state.historyRadarError,
@@ -2318,13 +2303,6 @@ private fun CitizenSourceStatus(
                 fontSize = 12.sp
             )
         }
-
-        Text(
-            text = loadedText?.let { "Đã tải: $it" }
-                ?: "Chưa tải thành công.",
-            color = MapSecondary,
-            fontSize = 11.sp
-        )
 
         if (error != null) {
             Text(

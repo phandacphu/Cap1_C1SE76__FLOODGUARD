@@ -335,16 +335,6 @@ private fun HomeHeader(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
             )
-
-            Spacer(
-                modifier = Modifier.height(3.dp)
-            )
-
-            Text(
-                text = "Nguồn cảnh báo: FloodGuard API",
-                color = GrayText,
-                fontSize = 11.sp
-            )
         }
 
 
