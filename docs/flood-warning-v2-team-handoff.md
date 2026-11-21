@@ -3,6 +3,8 @@
 Tài liệu: docs/flood-warning-v2-api.md. Fixture: docs/examples/flood-warning-v2.json.
 Nền 0314e88. Đây là contract mới chưa có API live. Chỉ gắn link GitHub sau khi Phú đã push đúng nhánh/commit và xác minh link tồn tại.
 
+Cập nhật gói PHASE3: code local đã có lifecycle, zones, liên kết thiết bị và GPS riêng Resident; chưa push/merge/deploy các thay đổi code này. FCM/worker vẫn chờ. Thiên đọc thêm `docs/flood-warning-v2-device-gps.md`: PUT device bắt buộc expectedBindingId/expectedRevision, có GET installation để reconcile; không dùng callback đăng nhập cũ tự cập nhật phiên bản rồi rebind. Các tin nhắn dưới mô tả giao việc ban đầu; trạng thái triển khai hiện tại xem `backend/docs/flood-warning-v2-phase3-validation.md`.
+
 ## Gửi Huy — Admin Web
 
 Huy cập nhật Cảnh báo lũ theo contract V2, dựa HTML mẫu nhóm đã duyệt. Form chỉ có tiêu đề và nội dung/hướng dẫn. Bỏ mức độ, chọn vùng, lịch bắt đầu/kết thúc. Tạo thành công active, Backend tự ghi giờ; có thể nhiều bản tin active. Danh sách/summary có Tất cả/Đang bật/Đã tắt; thời gian GMT+7. Chi tiết sửa title/content khi active, giữ ID/startAt; tắt có xác nhận và giữ lịch sử. Inactive chỉ xem, không bật lại/xóa. Giữ idempotency key khi timeout tạo, dùng expectedRevision khi sửa và đọc lại khi409/timeout. Có loading/empty/error/retry, lỗi refresh giữ dữ liệu có nhãn chưa cập nhật. Làm UI bằng fixture trước, chưa gọi Render theo body mới; API mới chưa triển khai. Nối các endpoint Admin đúng tài liệu khi Phú thông báo môi trường sẵn sàng. Không sửa Backend hoặc consumer SOS ngoài phần được giao.

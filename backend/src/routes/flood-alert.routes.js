@@ -1,12 +1,3 @@
-const express = require("express");
-const {
-  listActiveFloodAlerts,
-  listFloodAlerts,
-} = require("../controllers/flood-alert.controller");
+const { createFloodWarningV2Router } = require("./flood-warning-v2-router");
 
-const router = express.Router();
-
-router.get("/", listFloodAlerts);
-router.get("/active", listActiveFloodAlerts);
-
-module.exports = router;
+module.exports = createFloodWarningV2Router();

@@ -3,6 +3,12 @@
 Ngày 22/11/2026. Nền đã đọc: `0314e88af283ecb580b20bb99fc559d77eb49ea0`.
 Đây là kế hoạch, không phải báo cáo các ca test đã PASS.
 
+Cập nhật giai đoạn2B (gói PHASE3): đã thêm liên kết thiết bị với proof, CAS revision, token claim; PUT vị trí và GET đánh giá riêng Resident. Đây là code chưa commit/push/deploy. Worker fan-out/chống lặp thông báo, đánh giá vùng đổi nền và FCM chờ giai đoạn tiếp. Xem `docs/flood-warning-v2-device-gps.md` và `backend/docs/flood-warning-v2-phase3-validation.md`. Kết quả Backend chưa chứng minh uploader Android hoặc push thật.
+
+Cập nhật giai đoạn2A: đã bổ sung GET bộ vùng chuẩn hóa và lõi đối chiếu GPS. Upload/đọc GPS cá nhân theo binding và worker/FCM vẫn chưa có. Xem `backend/docs/flood-warning-v2-phase2-validation.md`; không lấy test lõi GPS làm bằng chứng nhận push hoặc cập nhật GPS nền trên điện thoại.
+
+Cập nhật giai đoạn 1: code lifecycle bản tin đã có trong gói sửa trên nền commit tài liệu `43f0bda536951ef42c34d397ed4d56a3ae6c8c85`; chưa commit/push/merge/deploy code trong lượt này. Xem `backend/docs/flood-warning-v2-phase1-validation.md` để biết đúng phạm vi test. Các mốc Windows trong bảng bên dưới là lịch sử trước khi nhập gói sửa.
+
 ## 1. Điểm dừng trên Windows được Phú cung cấp
 
 | Mục | Có bằng chứng |

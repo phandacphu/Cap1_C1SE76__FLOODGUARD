@@ -1,5 +1,5 @@
 {
-  "contractStatus": "DESIGN_NOT_IMPLEMENTED",
+  "contractStatus": "PARTIAL_IMPLEMENTATION_NOT_DEPLOYED",
   "schemaVersion": 2,
   "baseSha": "0314e88af283ecb580b20bb99fc559d77eb49ea0",
   "testOnly": true,
@@ -21,7 +21,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "schemaVersion": 2,
           "floodAlerts": [
@@ -79,7 +79,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "schemaVersion": 2,
           "floodAlerts": [
@@ -124,7 +124,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "schemaVersion": 2,
           "floodAlerts": [],
@@ -142,7 +142,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -171,7 +171,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-OLD",
@@ -200,7 +200,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "schemaVersion": 2,
           "total": 3,
@@ -227,7 +227,7 @@
       "expectedHttpStatus": 201,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -269,7 +269,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -304,7 +304,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "requestId": "20000000-0000-4000-8000-000000000001",
           "floodAlert": {
@@ -337,7 +337,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -366,7 +366,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -396,7 +396,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "floodAlert": {
             "id": "TEST-WARN-V2-001",
@@ -425,7 +425,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "zonesRevision": "TEST-ZONES-REV-01",
           "generatedAt": "2026-11-22T01:00:30.000Z",
@@ -626,7 +626,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -685,7 +685,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -744,7 +744,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -793,7 +793,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -842,7 +842,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -891,7 +891,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -937,7 +937,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -983,7 +983,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -1029,7 +1029,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -1079,7 +1079,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -1139,7 +1139,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -1236,7 +1236,7 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "evaluation": {
             "installationId": "30000000-0000-4000-8000-000000000001",
@@ -1290,7 +1290,9 @@
           "platform": "android",
           "fcmToken": null,
           "notificationPermission": "denied",
-          "registrationId": "50000000-0000-4000-8000-000000000001"
+          "registrationId": "50000000-0000-4000-8000-000000000001",
+          "expectedBindingId": null,
+          "expectedRevision": 0
         },
         "headers": {
           "X-Installation-Secret": "<installation-secret>"
@@ -1299,12 +1301,13 @@
       "expectedHttpStatus": 200,
       "response": {
         "success": true,
-        "message": "Fixture response; V2 chưa triển khai",
+        "message": "Fixture response; không phải phản hồi server",
         "data": {
           "device": {
             "installationId": "30000000-0000-4000-8000-000000000001",
             "bindingId": "40000000-0000-4000-8000-000000000001",
             "platform": "android",
+            "revision": 1,
             "notificationPermission": "denied",
             "pushEligible": false,
             "updatedAt": "2026-11-22T01:00:30.000Z"

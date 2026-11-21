@@ -3,7 +3,9 @@
 Ngày soạn: 22/11/2026, giờ Việt Nam. Nghiệp vụ đã được Phú duyệt trong chat.
 Nền source đã đọc: `0314e88af283ecb580b20bb99fc559d77eb49ea0` (develop, PR #148).
 
-**Trạng thái: thiết kế API để triển khai. Các endpoint/field V2 dưới đây chưa được cài đặt hoặc nghiệm thu trên local/Render.**
+**Trạng thái: contract toàn phạm vi. Đã có code lifecycle (giai đoạn1), GET bộ vùng và lõi tính GPS (giai đoạn2A), liên kết thiết bị và upload/đọc GPS riêng (giai đoạn2B, gói PHASE3); chưa deploy Render. Worker thông báo và gửi FCM chưa triển khai.**
+Kết quả và giới hạn giai đoạn 1: `backend/docs/flood-warning-v2-phase1-validation.md`. Chưa coi toàn bộ contract đã hoạt động; nhóm tiếp tục dùng fixture cho các phần chưa có.
+Kết quả giai đoạn2A: `backend/docs/flood-warning-v2-phase2-validation.md`. Trạng thái503 chưa triển khai của API binding/GPS trong báo cáo đó đã được thay thế bởi giai đoạn2B; xem `backend/docs/flood-warning-v2-phase3-validation.md` và hướng dẫn `docs/flood-warning-v2-device-gps.md`. Báo cáo trước vẫn là bằng chứng của đúng bản trước.
 Tên endpoint, field và các giới hạn kỹ thuật dưới đây là đặc tả triển khai ở bước 2, không phải mô tả API V1 đang live.
 UI dùng fixture trong `docs/examples/flood-warning-v2.json` trước khi nối API thật.
 
@@ -54,6 +56,7 @@ UI dùng fixture trong `docs/examples/flood-warning-v2.json` trước khi nối 
 | PATCH | /admin/flood-alerts/:alertId | admin | Sửa title/content khi còn active |
 | POST | /admin/flood-alerts/:alertId/deactivate | admin | Tắt, lặp an toàn |
 | PUT | /notification-devices/:installationId | resident | Liên kết installation với tài khoản và cập nhật FCM/quyền |
+| GET | /notification-devices/:installationId | resident + installation secret | Đọc phiên bản liên kết để reconcile; không trả danh tính chủ khác hoặc GPS |
 | DELETE | /notification-devices/:installationId | resident | Hủy đúng liên kết hiện tại trước logout |
 
 Route tĩnh active/zones/location/location-evaluation/summary/creation-requests phải được khai báo trước `/:alertId`.
@@ -131,6 +134,7 @@ Không trả severity, areaId, upcoming/expired hoặc thời gian do Admin tự
 - Mỗi Feature có geometry Polygon/MultiPolygon hợp lệ hoặc null nếu dữ liệu có bản ghi nhưng chưa đủ hình học.
 - properties gồm zoneId, group, name, sourceKind, sourceId, source, recordedAt, dataUpdatedAt, datasetVersion, geometryStatus.
 - group enum: current_flood / historical_flood / low_lying.
+- Trường hợp dữ liệu Admin chưa phân loại: group=null, geometry=null, geometryStatus=invalid và diagnostic unclassified_area; không được tự coi là ngập hiện tại. name/source/thời điểm có thể null khi nguồn chưa cung cấp; UI dùng nhãn loại/nguồn thay tên trống, không bịa địa danh.
 - geometryStatus enum: valid / missing / invalid. Các thời điểm/nguồn chưa có ->null; generatedAt không được giả làm thời điểm ghi nhận ngập.
 - `coverage:{status:"complete"|"partial"|"unavailable",totalZones,evaluableZones,unassessableZones}`. Nguồn tải thất bại không được coi là nguồn rỗng; ghi chẩn đoán reason,sourceKind,zoneId (zoneId được null khi lỗi cả nguồn).
 - zonesRevision là dấu vân tay ổn định của dữ liệu chuẩn hóa, đổi khi thêm/sửa/xóa dữ liệu; không đổi chỉ vì GET lại.
@@ -147,26 +151,33 @@ Không trả severity, areaId, upcoming/expired hoặc thời gian do Admin tự
 - Buffer lịch sử là hình học tham khảo, không tự dùng thay ranh giới của HIST hoặc coi là nhóm cảnh báo thứ tư.
 - Vùng chưa phân loại không được tự mặc định thành current_flood; ghi nhận không đối chiếu được để Admin rà soát.
 - Polygon phải đóng ring, đủ diện tích và không tự cắt; hỗ trợ MultiPolygon và holes. Điểm trên ranh giới tính inside; lòng hole không phải phần bên trong polygon.
+- GeoJSON được kiểm tra topology bằng JSTS; không sửa polygon sai hoặc dựng buffer. Hình học cắt qua đường đổi ngày chưa tách, hoặc trên100.000 đỉnh/vùng, được báo invalid thay vì tính theo outline sai. Dữ liệu khu vực hiện có không chạm giới hạn này.
 - Kiểm tra trong vùng trước; ngoài thì tính khoảng cách địa lý tới đoạn ranh giới gần nhất (bao gồm holes khi thích hợp). Không dùng tâm/đỉnh gần nhất hoặc buffer thay thế.
+- Khoảng cách dùng Turf geodesic, đơn vị mét, là ước tính theo mô hình địa lý của thư viện. Chỉ có dung sai số học1e-7m tại mốc500m để xử lý sai số dấu phẩy động; giá trị đó được chuẩn về500m, không mở rộng bán kính nghiệp vụ.
 - Bản đồ và đánh giá dùng cùng bộ chuẩn hóa/revision. Tắt layer ở client chỉ đổi hiển thị.
+- HTTP200 vẫn trả các bản ghi có geometry=null và coverage unavailable nếu đã đọc được bản ghi nhưng không có outline dùng được. HTTP503 khi không tải được bản ghi vùng nào và có lỗi nguồn; không biến lỗi thành danh sách rỗng thành công.
 
 ## 7. Thiết bị và liên kết tài khoản
 
 PUT /notification-devices/:installationId:
 
 ```json
-{"platform":"android","fcmToken":null,"notificationPermission":"denied","registrationId":"50000000-0000-4000-8000-000000000001"}
+{"platform":"android","fcmToken":null,"notificationPermission":"denied","registrationId":"50000000-0000-4000-8000-000000000001","expectedBindingId":null,"expectedRevision":0}
 ```
 
 - installationId/registrationId là UUID v4; installationId cố định cho lần cài, registrationId tạo cho mỗi phiên đăng nhập/liên kết mới, giữ nguyên khi retry cùng lần đăng ký.
-- fcmToken là string không rỗng hoặc null (chưa lấy được/quyền không cho phép); không trả token trong response/log.
+- fcmToken là chuỗi opaque ASCII in được, không chứa khoảng trắng, dài1..4096 ký tự hoặc null; không phân tích cấu trúc token hoặc trả token trong response/log.
 - notificationPermission: granted/denied/unknown. permission denied không ngăn xem bản tin hoặc gửi GPS.
-- 200: `data:{device:{installationId,bindingId,platform:"android",notificationPermission,pushEligible,updatedAt}}`.
+- 200: `data:{device:{installationId,bindingId,revision,platform:"android",notificationPermission,pushEligible,updatedAt}}`. pushEligible chỉ cho biết đủ token/quyền/liên kết, không xác nhận FCM hợp lệ hoặc push đã gửi.
+- Bổ sung kỹ thuật2B chống request phiên cũ: body PUT đúng6 keys như ví dụ; expectedBindingId và expectedRevision bắt buộc. Lần đầu null/0; lần sau dùng phiên bản vừa đọc, kể cả sau unbind. Mỗi thay đổi thực tế tăng revision. Retry đúng body gần nhất giữ revision/binding, không ghi lặp. Không sửa expectedRevision của một callback cũ rồi gửi lại.
+- GET /notification-devices/:installationId với JWT Resident + X-Installation-Secret trả `data:{installation:{installationId,bindingId,revision,active,boundToCurrentAccount}}`. Installation chưa tồn tại trả null/0/false/false. Có secret đúng mới được đọc installation đã có; không trả ownerId, registrationId, FCM token hoặc GPS. Chỉ reconcile cho phiên đăng nhập hiện tại, không dùng để làm sống lại thao tác phiên cũ.
 - Binding theo chủ tài khoản hiện tại, thay khi đổi account/registrationId; retry cùng registrationId không xoay binding. Token refresh cập nhật cùng liên kết.
 - Backend phải bảo vệ việc nhận chủ thiết bị, không cho chiếm liên kết chỉ bằng đoán installationId; chi tiết xác thực installation được kiểm chứng khi cài đặt FCM, không tin recipientId/role do client tự gửi.
 - Cơ chế mục tiêu: app sinh installation secret ngẫu nhiên tối thiểu 256 bit cho lần cài, lưu an toàn; header `X-Installation-Secret` gửi qua HTTPS ở đăng ký/cập nhật/vị trí/hủy binding. Backend chỉ giữ hash, kiểm tra secret khi installation đã tồn tại. Không chỉ dựa vào UUID. Mất secret thì tạo installation mới, không tự chiếm installation cũ; xử lý token trùng phải được kiểm thử khi triển khai. Không trả/ghi log secret, token hoặc binding credential thô.
 - Các endpoint vị trí/đọc đánh giá/hủy thiết bị gửi headers `X-Installation-Id` và `X-Device-Binding-Id`; JWT phải là owner binding hiện tại. Không khớp ->409 DEVICE_BINDING_CHANGED.
 - DELETE /notification-devices/:installationId hủy đúng binding; lặp cùng binding đã hủy ->200, binding cũ không được hủy binding của account mới. Dừng vị trí gắn binding, giữ sổ chống lặp theo Resident.
+- DELETE không có body hoặc body rỗng; installationId URL khớp header. Trả `data:{installationId,bindingId,unbound:true}`. Token xóa khỏi device, mẫu GPS hiện tại xóa nội dung; receipt đăng ký giữ để chặn request cũ. GET installation để đọc revision mới trước đăng ký mới. Sau logout dùng registrationId mới, không hồi sinh ID phiên đã thay thế/hủy.
+- Token trùng installation khác trả409 DEVICE_TOKEN_CONFLICT, không tự chuyển quyền. Unbind hợp lệ mới giải phóng claim. Mất secret thì dùng installation/secret mới; token cũ bị claim cần chủ cũ hủy hoặc xử lý quản trị có kiểm chứng, chưa có API hỗ trợ tự động giai đoạn2B.
 - Logout: hủy binding khi có mạng, dừng uploader và xóa dữ liệu vị trí/cache tài khoản cũ. Offline: ngừng cục bộ ngay; không gửi dữ liệu người mới bằng token cũ. Đăng nhập lại phải reconcile binding trước đăng ký/gửi GPS mới.
 - Lượt này push Android dành Resident. Các phần dùng chung phải phối hợp để không xóa thiết bị/SOS notification thuộc module khác một cách mù.
 
@@ -201,13 +212,15 @@ PUT /flood-alerts/location (Resident; headers binding như mục 7):
 Response `data:{evaluation}`:
 
 - installationId,bindingId,sequence; sequence/location/capturedAt/receivedAt/accuracyM/validUntil null khi chưa có mẫu.
-- evaluatedAt,zonesRevision; status inside/near/far/unknown; reason null hoặc no_location/permission_denied/location_disabled/no_fix/stale_location/poor_accuracy/incomplete_zone_data/no_active_alert/no_zones/zone_data_unavailable.
+- evaluatedAt,zonesRevision; status inside/near/far/unknown; reason null hoặc no_location/permission_denied/location_disabled/no_fix/stale_location/poor_accuracy/incomplete_zone_data/no_active_alert/no_zones/zone_data_unavailable/invalid_location_time.
 - status unknown nếu không có alert active, không đủ GPS, không có vùng, lỗi nguồn toàn bộ, hoặc không có match nhưng coverage chưa đủ. Không suy unknown thành an toàn.
 - coverage partial nhưng có match hợp lệ: vẫn có inside/near + coverage partial, thông báo chưa đối chiếu được các vùng còn lại.
 - `matches:[{zoneId,group,name,relation:"inside"|"near",distanceToBoundaryM,source,recordedAt}]`; inside distanceToBoundaryM=null để không nhầm với khoảng cách đo; near 0..500m. Phần tử inside trước near; near theo khoảng cách gốc, tie theo zoneId.
 - `activeAlertIds:[]`, `coverage` như bộ vùng; evaluation là của vị trí hiện tại, áp dụng cho mọi bản tin active vì scope giống nhau. UI chỉ gắn khối đỏ vào bản tin đang active, không gắn vào lịch sử inactive.
 - Đạt GPS và toàn bộ vùng valid đều ngoài>500 mới far. validUntil=capturedAt+60giây (không phải evaluatedAt+60).
 - Thông tin cá nhân chỉ của chính Resident/binding, không trả cho Rescue/Admin qua các endpoint này; không ghi tọa độ/token thô vào log.
+- PUT ghi mẫu/receipt sự kiện rồi mới tải vùng để trả đánh giá. Nếu response thất bại sau commit, retry nguyên body/sequence hoặc GET đánh giá; không tự tăng sequence cho mẫu cũ. Response có thể trả sequence mới hơn yêu cầu nếu request khác đã cập nhật: đây là mẫu mới nhất của binding.
+- Giai đoạn2B ghi sample và `warning_v2_location_events` atomically cho sequence mới; replay không tạo event. GET chỉ đọc/đánh giá lại, không tạo event/push. Worker xử lý event, phát lại khi vùng đổi và FCM triển khai tiếp, chưa hoạt động nền.
 
 ## 9. Sự kiện, FCM, dừng và đồng bộ
 
@@ -238,8 +251,11 @@ Response `data:{evaluation}`:
 | 409 IDEMPOTENCY_CONFLICT | Không đổi key tự động để tạo trùng; đối chiếu thao tác |
 | 409 ALERT_REVISION_CONFLICT / ALERT_ALREADY_INACTIVE | Đọc chi tiết mới, cập nhật form/trạng thái; không ghi đè |
 | 409 LOCATION_SEQUENCE_CONFLICT / DEVICE_BINDING_CHANGED | Bỏ phản hồi cũ, đồng bộ đúng binding/sequence; không tăng sequence để phát lại mẫu cũ |
+| 403 INSTALLATION_PROOF_INVALID | Dừng installation cũ; không ghi đè binding chỉ bằng UUID; kiểm tra kho khóa của đúng lần cài |
+| 409 DEVICE_TOKEN_CONFLICT | Không gửi lặp hoặc tự chuyển token giữa installation; xử lý liên kết cũ có chứng minh |
 | 429 RATE_LIMITED | Tôn trọng Retry-After nếu có, giữ dữ liệu cũ và backoff |
 | 503 ZONE_DATA_UNAVAILABLE / PUSH_SERVICE_UNAVAILABLE | Giữ bản tin; báo chưa đối chiếu/gửi được, không đổi thành far/đã nhận |
+| 503 WARNING_V2_FEATURE_NOT_READY | API upload/đọc GPS cá nhân còn giữ chỗ đến khi có binding thiết bị; chưa nối phần này hoặc hiển thị kết quả giả |
 | 500 INTERNAL_ERROR / mất mạng / timeout | Giữ dữ liệu và nhãn chưa cập nhật; thao tác ghi đối chiếu trước retry |
 
 GET vùng có một phần dùng được trả200 coverage.partial. Lỗi hoàn toàn trả503; đánh giá vẫn trả unknown nếu có thể đọc trạng thái cá nhân an toàn. FCM lỗi sau tạo không xóa bản tin đã lưu; ghi trạng thái công việc thất bại/chưa xác định để đối chiếu.
