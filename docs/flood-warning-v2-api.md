@@ -3,7 +3,7 @@
 Ngày soạn: 22/11/2026, giờ Việt Nam. Nghiệp vụ đã được Phú duyệt trong chat.
 Nền source đã đọc: `0314e88af283ecb580b20bb99fc559d77eb49ea0` (develop, PR #148).
 
-**Trạng thái: contract toàn phạm vi. Đã có code lifecycle (giai đoạn1), GET bộ vùng và lõi tính GPS (giai đoạn2A), liên kết thiết bị và upload/đọc GPS riêng (giai đoạn2B, gói PHASE3); chưa deploy Render. Worker thông báo và gửi FCM chưa triển khai.**
+**Trạng thái: API lifecycle, bộ vùng, liên kết thiết bị và GPS đã merge qua PR149, commit29185ae. Gói PHASE4 bổ sung worker chuẩn bị/hủy công việc và chống trùng, chưa merge khi soạn bản cập nhật này. Sender FCM thật vẫn chưa có; chưa xác minh Render sau merge.**
 Kết quả và giới hạn giai đoạn 1: `backend/docs/flood-warning-v2-phase1-validation.md`. Chưa coi toàn bộ contract đã hoạt động; nhóm tiếp tục dùng fixture cho các phần chưa có.
 Kết quả giai đoạn2A: `backend/docs/flood-warning-v2-phase2-validation.md`. Trạng thái503 chưa triển khai của API binding/GPS trong báo cáo đó đã được thay thế bởi giai đoạn2B; xem `backend/docs/flood-warning-v2-phase3-validation.md` và hướng dẫn `docs/flood-warning-v2-device-gps.md`. Báo cáo trước vẫn là bằng chứng của đúng bản trước.
 Tên endpoint, field và các giới hạn kỹ thuật dưới đây là đặc tả triển khai ở bước 2, không phải mô tả API V1 đang live.
@@ -224,6 +224,8 @@ Response `data:{evaluation}`:
 
 ## 9. Sự kiện, FCM, dừng và đồng bộ
 
+Phạm vi PHASE4: `docs/flood-warning-v2-worker.md`. Worker tạo receipt/job pending và hủy khi không còn phù hợp; chưa gọi provider. GPS event processed và control event prepared chỉ là trạng thái nội bộ. Quy ước sender/push bên dưới là mục tiêu của giai đoạn tiếp, không phải bằng chứng đã nhận thông báo. Không thay API/DTO hiện hành.
+
 - Dedupe key ổn định theo (residentId,alertId,kind), kind general/near/inside; không theo zone hoặc thiết bị. Không reset bởi sửa/refresh/relogin/đổi nguồn vùng.
 - Payload sự kiện lưu bất biến ở lần tạo để retry cùng event không bị xung đột vì nội dung/vùng đã đổi; giữ revision và dấu nguồn tại lần phát. Mở thông báo luôn đọc nội dung/trạng thái mới nhất. Không tạo event mới chỉ để cập nhật nội dung push cũ.
 - Ghi sổ sự kiện và outbox atomically; worker không để hai tác vụ tạo near/inside trái quy tắc khi chạy đồng thời. Inside đã ghi nhận (kể cả đang chờ gửi) thì không xếp near về sau.
@@ -255,7 +257,7 @@ Response `data:{evaluation}`:
 | 409 DEVICE_TOKEN_CONFLICT | Không gửi lặp hoặc tự chuyển token giữa installation; xử lý liên kết cũ có chứng minh |
 | 429 RATE_LIMITED | Tôn trọng Retry-After nếu có, giữ dữ liệu cũ và backoff |
 | 503 ZONE_DATA_UNAVAILABLE / PUSH_SERVICE_UNAVAILABLE | Giữ bản tin; báo chưa đối chiếu/gửi được, không đổi thành far/đã nhận |
-| 503 WARNING_V2_FEATURE_NOT_READY | API upload/đọc GPS cá nhân còn giữ chỗ đến khi có binding thiết bị; chưa nối phần này hoặc hiển thị kết quả giả |
+| 503 WARNING_V2_FEATURE_NOT_READY | Ghi chú của giai đoạn cũ: binding/GPS đã có code từ PR149. Nếu server còn trả mã này, kiểm tra đúng phiên bản triển khai; không tạo kết quả GPS giả |
 | 500 INTERNAL_ERROR / mất mạng / timeout | Giữ dữ liệu và nhãn chưa cập nhật; thao tác ghi đối chiếu trước retry |
 
 GET vùng có một phần dùng được trả200 coverage.partial. Lỗi hoàn toàn trả503; đánh giá vẫn trả unknown nếu có thể đọc trạng thái cá nhân an toàn. FCM lỗi sau tạo không xóa bản tin đã lưu; ghi trạng thái công việc thất bại/chưa xác định để đối chiếu.
@@ -278,4 +280,4 @@ GET vùng có một phần dùng được trả200 coverage.partial. Lỗi hoàn
 - Tin nhắn giao việc: `docs/flood-warning-v2-team-handoff.md`.
 - JSON mẫu: `docs/examples/flood-warning-v2.json`. Tất cả ID/timestamp/số đo trong fixture là giả lập; thời gian cố định, không gửi trực tiếp để test GPS hiện tại.
 - Tài liệu V1 để đối chiếu, không dùng làm contract V2: docs/admin-flood-warning-management-api.md, docs/firestore-flood-alert-schema.md, docs/flood-warning-notification-api.md.
-- Bản này không xác nhận Backend V2 đã chạy, không có PASS về FCM/điện thoại/Render, không xác nhận deploy SHA.
+- API đã merge PR149; kết quả từng gói nằm trong backend/docs/flood-warning-v2-phase*-validation.md. Không có PASS về FCM/điện thoại/Render hoặc deploy SHA chỉ từ tài liệu này.

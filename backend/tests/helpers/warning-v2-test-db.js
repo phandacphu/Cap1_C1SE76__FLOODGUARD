@@ -27,14 +27,20 @@ function createTestDb() {
   }
   const db = {
     collection(name) {
-      function query(conditions = []) {
+      function query(conditions = [], ordered = false, cursor = null, maximum = Infinity) {
         return {
-          where(field, op, expected) { assert.equal(op, "=="); return query([...conditions, [field, expected]]); },
+          where(field, op, expected) { assert.equal(op, "=="); return query([...conditions, [field, expected]], ordered, cursor, maximum); },
+          orderBy(field) { assert.equal(String(field), "__name__"); return query(conditions, true, cursor, maximum); },
+          startAfter(id) { assert.equal(typeof id, "string"); return query(conditions, ordered, id, maximum); },
+          limit(count) { assert.ok(Number.isSafeInteger(count) && count > 0); return query(conditions, ordered, cursor, count); },
           async get() {
             if (failRead) throw new Error("SIMULATED_DATABASE_FAILURE_do_not_expose");
-            const docs = [...records.keys()].filter((path) => path.startsWith(`${name}/`))
+            let docs = [...records.keys()].filter((path) => path.startsWith(`${name}/`))
               .map((path) => snapshot({ path, id: path.slice(name.length + 1) }))
               .filter((s) => conditions.every(([field, value]) => s.data()[field] === value));
+            if (ordered) docs.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+            if (cursor !== null) docs = docs.filter((doc) => doc.id > cursor);
+            docs = docs.slice(0, maximum);
             return { docs, size: docs.length, empty: !docs.length };
           },
           doc(id = `test-${++sequence}`) {
