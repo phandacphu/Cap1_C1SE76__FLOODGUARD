@@ -1,0 +1,1575 @@
+{
+  "contractStatus": "PARTIAL_IMPLEMENTATION_NOT_DEPLOYED",
+  "schemaVersion": 2,
+  "baseSha": "0314e88af283ecb580b20bb99fc559d77eb49ea0",
+  "testOnly": true,
+  "clockReference": "2026-11-22T01:00:30.000Z",
+  "notes": [
+    "Tất cả ID/timestamp đều giả lập. Không gửi GPS timestamp cố định này vào API thật.",
+    "Response mẫu để dựng UI. Khoảng cách giả lập không phải bằng chứng geospatial.",
+    "Không gọi API Render V2 trước thông báo triển khai đúng phiên bản.",
+    "Các giá trị credential trong dấu <> chỉ là placeholder, không phải token/secret thật."
+  ],
+  "scenarios": [
+    {
+      "name": "resident-list-two-active-and-history",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "schemaVersion": 2,
+          "floodAlerts": [
+            {
+              "id": "TEST-WARN-V2-002",
+              "schemaVersion": 2,
+              "title": "TEST ONLY - Bản tin đang bật thứ hai",
+              "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+              "status": "active",
+              "scope": "all_published_zones",
+              "startAt": "2026-11-22T01:00:10.000Z",
+              "endAt": null,
+              "createdAt": "2026-11-22T01:00:10.000Z",
+              "updatedAt": "2026-11-22T01:00:10.000Z",
+              "revision": 1
+            },
+            {
+              "id": "TEST-WARN-V2-001",
+              "schemaVersion": 2,
+              "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+              "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+              "status": "active",
+              "scope": "all_published_zones",
+              "startAt": "2026-11-22T01:00:00.000Z",
+              "endAt": null,
+              "createdAt": "2026-11-22T01:00:00.000Z",
+              "updatedAt": "2026-11-22T01:00:00.000Z",
+              "revision": 1
+            },
+            {
+              "id": "TEST-WARN-V2-OLD",
+              "schemaVersion": 2,
+              "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+              "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+              "status": "inactive",
+              "scope": "all_published_zones",
+              "startAt": "2026-11-21T01:00:00.000Z",
+              "endAt": "2026-11-21T02:00:00.000Z",
+              "createdAt": "2026-11-21T01:00:00.000Z",
+              "updatedAt": "2026-11-21T02:00:00.000Z",
+              "revision": 2
+            }
+          ],
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "rescue-filter-active",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts?status=active",
+        "role": "rescue"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "schemaVersion": 2,
+          "floodAlerts": [
+            {
+              "id": "TEST-WARN-V2-002",
+              "schemaVersion": 2,
+              "title": "TEST ONLY - Bản tin đang bật thứ hai",
+              "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+              "status": "active",
+              "scope": "all_published_zones",
+              "startAt": "2026-11-22T01:00:10.000Z",
+              "endAt": null,
+              "createdAt": "2026-11-22T01:00:10.000Z",
+              "updatedAt": "2026-11-22T01:00:10.000Z",
+              "revision": 1
+            },
+            {
+              "id": "TEST-WARN-V2-001",
+              "schemaVersion": 2,
+              "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+              "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+              "status": "active",
+              "scope": "all_published_zones",
+              "startAt": "2026-11-22T01:00:00.000Z",
+              "endAt": null,
+              "createdAt": "2026-11-22T01:00:00.000Z",
+              "updatedAt": "2026-11-22T01:00:00.000Z",
+              "revision": 1
+            }
+          ],
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "successful-empty-list",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts?status=inactive&q=khong-khop",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "schemaVersion": 2,
+          "floodAlerts": [],
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "detail-active",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/TEST-WARN-V2-001",
+        "role": "rescue"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+            "status": "active",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": null,
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T01:00:00.000Z",
+            "revision": 1
+          },
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "detail-inactive",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/TEST-WARN-V2-OLD",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-OLD",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+            "status": "inactive",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-21T01:00:00.000Z",
+            "endAt": "2026-11-21T02:00:00.000Z",
+            "createdAt": "2026-11-21T01:00:00.000Z",
+            "updatedAt": "2026-11-21T02:00:00.000Z",
+            "revision": 2
+          },
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "admin-summary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/flood-alerts/summary",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "schemaVersion": 2,
+          "total": 3,
+          "active": 2,
+          "inactive": 1,
+          "serverTime": "2026-11-22T01:00:30.000Z"
+        }
+      }
+    },
+    {
+      "name": "admin-create-first",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts",
+        "role": "admin",
+        "body": {
+          "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+          "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế."
+        },
+        "headers": {
+          "Idempotency-Key": "20000000-0000-4000-8000-000000000001"
+        }
+      },
+      "expectedHttpStatus": 201,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+            "status": "active",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": null,
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T01:00:00.000Z",
+            "revision": 1
+          },
+          "idempotency": {
+            "requestId": "20000000-0000-4000-8000-000000000001",
+            "replayed": false
+          },
+          "broadcast": {
+            "status": "queued"
+          }
+        }
+      }
+    },
+    {
+      "name": "admin-create-retry-same-operation",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts",
+        "role": "admin",
+        "body": {
+          "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+          "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế."
+        },
+        "headers": {
+          "Idempotency-Key": "20000000-0000-4000-8000-000000000001"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+            "status": "active",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": null,
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T01:00:00.000Z",
+            "revision": 1
+          },
+          "idempotency": {
+            "requestId": "20000000-0000-4000-8000-000000000001",
+            "replayed": true
+          },
+          "broadcast": {
+            "status": "queued"
+          }
+        }
+      }
+    },
+    {
+      "name": "admin-reconcile-create",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/flood-alerts/creation-requests/20000000-0000-4000-8000-000000000001",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "requestId": "20000000-0000-4000-8000-000000000001",
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+            "status": "active",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": null,
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T01:00:00.000Z",
+            "revision": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "admin-edit-preserves-id-start",
+      "request": {
+        "method": "PATCH",
+        "path": "/api/admin/flood-alerts/TEST-WARN-V2-001",
+        "role": "admin",
+        "body": {
+          "expectedRevision": 1,
+          "content": "TEST ONLY - Nội dung đã sửa"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "TEST ONLY - Nội dung đã sửa",
+            "status": "active",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": null,
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T01:00:30.000Z",
+            "revision": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "admin-deactivate-first",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts/TEST-WARN-V2-001/deactivate",
+        "role": "admin",
+        "body": {}
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "TEST ONLY - Nội dung đã sửa",
+            "status": "inactive",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": "2026-11-22T02:00:00.000Z",
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T02:00:00.000Z",
+            "revision": 3
+          },
+          "changed": true
+        }
+      }
+    },
+    {
+      "name": "admin-deactivate-retry",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts/TEST-WARN-V2-001/deactivate",
+        "role": "admin",
+        "body": {}
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "floodAlert": {
+            "id": "TEST-WARN-V2-001",
+            "schemaVersion": 2,
+            "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+            "content": "TEST ONLY - Nội dung đã sửa",
+            "status": "inactive",
+            "scope": "all_published_zones",
+            "startAt": "2026-11-22T01:00:00.000Z",
+            "endAt": "2026-11-22T02:00:00.000Z",
+            "createdAt": "2026-11-22T01:00:00.000Z",
+            "updatedAt": "2026-11-22T02:00:00.000Z",
+            "revision": 3
+          },
+          "changed": false
+        }
+      }
+    },
+    {
+      "name": "zones-current-history-radar-and-admin-low",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/zones",
+        "role": "rescue"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "zonesRevision": "TEST-ZONES-REV-01",
+          "generatedAt": "2026-11-22T01:00:30.000Z",
+          "coverage": {
+            "status": "complete",
+            "totalZones": 4,
+            "evaluableZones": 4,
+            "unassessableZones": []
+          },
+          "geojson": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "geometry": {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [
+                        108.2,
+                        16.05
+                      ],
+                      [
+                        108.21000000000001,
+                        16.05
+                      ],
+                      [
+                        108.21000000000001,
+                        16.060000000000002
+                      ],
+                      [
+                        108.2,
+                        16.060000000000002
+                      ],
+                      [
+                        108.2,
+                        16.05
+                      ]
+                    ]
+                  ]
+                },
+                "properties": {
+                  "zoneId": "admin:TEST-FLOOD-01",
+                  "group": "current_flood",
+                  "name": "Vùng ngập TEST",
+                  "sourceKind": "admin_area",
+                  "sourceId": "TEST-FLOOD-01",
+                  "source": "TEST ONLY - nguồn minh họa",
+                  "recordedAt": "2026-11-22T01:00:00.000Z",
+                  "dataUpdatedAt": null,
+                  "datasetVersion": null,
+                  "geometryStatus": "valid"
+                }
+              },
+              {
+                "type": "Feature",
+                "geometry": {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [
+                        108.20407163533599,
+                        16.05
+                      ],
+                      [
+                        108.214071635336,
+                        16.05
+                      ],
+                      [
+                        108.214071635336,
+                        16.060000000000002
+                      ],
+                      [
+                        108.20407163533599,
+                        16.060000000000002
+                      ],
+                      [
+                        108.20407163533599,
+                        16.05
+                      ]
+                    ]
+                  ]
+                },
+                "properties": {
+                  "zoneId": "admin:TEST-LOW-01",
+                  "group": "low_lying",
+                  "name": "Vùng trũng Admin TEST",
+                  "sourceKind": "admin_area",
+                  "sourceId": "TEST-LOW-01",
+                  "source": "TEST ONLY - nguồn minh họa",
+                  "recordedAt": null,
+                  "dataUpdatedAt": null,
+                  "datasetVersion": null,
+                  "geometryStatus": "valid"
+                }
+              },
+              {
+                "type": "Feature",
+                "geometry": {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [
+                        108.20500745300399,
+                        16.05
+                      ],
+                      [
+                        108.21500745300399,
+                        16.05
+                      ],
+                      [
+                        108.21500745300399,
+                        16.060000000000002
+                      ],
+                      [
+                        108.20500745300399,
+                        16.060000000000002
+                      ],
+                      [
+                        108.20500745300399,
+                        16.05
+                      ]
+                    ]
+                  ]
+                },
+                "properties": {
+                  "zoneId": "radar:TEST-STABLE-HASH-01",
+                  "group": "low_lying",
+                  "name": "Vùng trũng radar TEST",
+                  "sourceKind": "radar",
+                  "sourceId": "TEST-STABLE-HASH-01",
+                  "source": "TEST ONLY - nguồn minh họa",
+                  "recordedAt": null,
+                  "dataUpdatedAt": null,
+                  "datasetVersion": "TEST-DATASET-V1",
+                  "geometryStatus": "valid"
+                }
+              },
+              {
+                "type": "Feature",
+                "geometry": {
+                  "type": "Polygon",
+                  "coordinates": [
+                    [
+                      [
+                        108.205943270672,
+                        16.05
+                      ],
+                      [
+                        108.215943270672,
+                        16.05
+                      ],
+                      [
+                        108.215943270672,
+                        16.060000000000002
+                      ],
+                      [
+                        108.205943270672,
+                        16.060000000000002
+                      ],
+                      [
+                        108.205943270672,
+                        16.05
+                      ]
+                    ]
+                  ]
+                },
+                "properties": {
+                  "zoneId": "history:HIST-TEST-01",
+                  "group": "historical_flood",
+                  "name": "Vùng ngập lịch sử TEST",
+                  "sourceKind": "historical_area",
+                  "sourceId": "HIST-TEST-01",
+                  "source": "TEST ONLY - nguồn minh họa",
+                  "recordedAt": null,
+                  "dataUpdatedAt": null,
+                  "datasetVersion": null,
+                  "geometryStatus": "valid"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "evaluation-inside-valid",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "inside",
+            "reason": null,
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [
+              {
+                "zoneId": "admin:TEST-FLOOD-01",
+                "group": "current_flood",
+                "name": "Vùng ngập TEST",
+                "relation": "inside",
+                "distanceToBoundaryM": null,
+                "source": "TEST ONLY - nguồn minh họa",
+                "recordedAt": "2026-11-22T01:00:00.000Z"
+              }
+            ],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Fixture cục bộ để dựng khối UI đơn vùng; khi test bản đồ nhiều vùng dùng scenario evaluation-multiple-overlapping-zones. Khoảng cách là minh họa, chưa tính bằng Backend."
+    },
+    {
+      "name": "evaluation-near-valid",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.062877825163916,
+              "longitude": 108.205
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "near",
+            "reason": null,
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [
+              {
+                "zoneId": "admin:TEST-FLOOD-01",
+                "group": "current_flood",
+                "name": "Vùng ngập TEST",
+                "relation": "near",
+                "distanceToBoundaryM": 320,
+                "source": "TEST ONLY - nguồn minh họa",
+                "recordedAt": "2026-11-22T01:00:00.000Z"
+              }
+            ],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Fixture cục bộ để dựng khối UI đơn vùng; khi test bản đồ nhiều vùng dùng scenario evaluation-multiple-overlapping-zones. Khoảng cách là minh họa, chưa tính bằng Backend."
+    },
+    {
+      "name": "evaluation-far-valid",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.08,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "far",
+            "reason": null,
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-stale_location",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T00:59:29.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:00:29.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "stale_location",
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-poor_accuracy",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 101,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "poor_accuracy",
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-permission_denied",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": null,
+            "capturedAt": null,
+            "receivedAt": null,
+            "accuracyM": null,
+            "validUntil": null,
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "permission_denied",
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-no_location",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": null,
+            "location": null,
+            "capturedAt": null,
+            "receivedAt": null,
+            "accuracyM": null,
+            "validUntil": null,
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "no_location",
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-no_active_alert",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "no_active_alert",
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [],
+            "activeAlertIds": []
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-unknown-incomplete_zone_data",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident",
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "unknown",
+            "reason": "incomplete_zone_data",
+            "coverage": {
+              "status": "partial",
+              "totalZones": 5,
+              "evaluableZones": 4,
+              "unassessableZones": [
+                {
+                  "zoneId": "history:HIST-TEST-POINT",
+                  "sourceKind": "historical_area",
+                  "reason": "missing_geometry"
+                }
+              ]
+            },
+            "matches": [],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Kết luận/khoảng cách mock để test UI; không phải kết quả geospatial từ polygon mẫu."
+    },
+    {
+      "name": "evaluation-inside-with-partial-coverage",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "inside",
+            "reason": null,
+            "coverage": {
+              "status": "partial",
+              "totalZones": 5,
+              "evaluableZones": 4,
+              "unassessableZones": [
+                {
+                  "zoneId": "history:HIST-TEST-POINT",
+                  "sourceKind": "historical_area",
+                  "reason": "missing_geometry"
+                }
+              ]
+            },
+            "matches": [
+              {
+                "zoneId": "admin:TEST-FLOOD-01",
+                "group": "current_flood",
+                "name": "Vùng ngập TEST",
+                "relation": "inside",
+                "distanceToBoundaryM": null,
+                "source": "TEST ONLY - nguồn minh họa",
+                "recordedAt": "2026-11-22T01:00:00.000Z"
+              }
+            ],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Fixture cục bộ để dựng khối UI đơn vùng; khi test bản đồ nhiều vùng dùng scenario evaluation-multiple-overlapping-zones. Khoảng cách là minh họa, chưa tính bằng Backend."
+    },
+    {
+      "name": "evaluation-multiple-overlapping-zones",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/location-evaluation",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "inside",
+            "reason": null,
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [
+              {
+                "zoneId": "admin:TEST-FLOOD-01",
+                "group": "current_flood",
+                "name": "Vùng ngập TEST",
+                "relation": "inside",
+                "distanceToBoundaryM": null,
+                "source": "TEST ONLY - nguồn minh họa",
+                "recordedAt": "2026-11-22T01:00:00.000Z"
+              },
+              {
+                "zoneId": "admin:TEST-LOW-01",
+                "group": "low_lying",
+                "name": "Vùng trũng Admin TEST",
+                "relation": "near",
+                "distanceToBoundaryM": 200,
+                "source": "TEST ONLY",
+                "recordedAt": null
+              },
+              {
+                "zoneId": "radar:TEST-STABLE-HASH-01",
+                "group": "low_lying",
+                "name": "Vùng trũng radar TEST",
+                "relation": "near",
+                "distanceToBoundaryM": 300,
+                "source": "TEST ONLY",
+                "recordedAt": null
+              },
+              {
+                "zoneId": "history:HIST-TEST-01",
+                "group": "historical_flood",
+                "name": "Vùng ngập lịch sử TEST",
+                "relation": "near",
+                "distanceToBoundaryM": 400,
+                "source": "TEST ONLY",
+                "recordedAt": null
+              }
+            ],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Fixture đa vùng chỉ kiểm thử UI, không chứng minh khoảng cách hình học."
+    },
+    {
+      "name": "upload-valid-gps",
+      "request": {
+        "method": "PUT",
+        "path": "/api/flood-alerts/location",
+        "role": "resident",
+        "body": {
+          "sequence": 1,
+          "availability": "available",
+          "reason": null,
+          "location": {
+            "latitude": 16.0544,
+            "longitude": 108.2022
+          },
+          "capturedAt": "2026-11-22T01:00:20.000Z",
+          "accuracyM": 20
+        },
+        "headers": {
+          "X-Installation-Id": "30000000-0000-4000-8000-000000000001",
+          "X-Device-Binding-Id": "40000000-0000-4000-8000-000000000001",
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "evaluation": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "location": {
+              "latitude": 16.0544,
+              "longitude": 108.2022
+            },
+            "capturedAt": "2026-11-22T01:00:20.000Z",
+            "receivedAt": "2026-11-22T01:00:30.000Z",
+            "accuracyM": 20,
+            "validUntil": "2026-11-22T01:01:20.000Z",
+            "evaluatedAt": "2026-11-22T01:00:30.000Z",
+            "zonesRevision": "TEST-ZONES-REV-01",
+            "status": "inside",
+            "reason": null,
+            "coverage": {
+              "status": "complete",
+              "totalZones": 4,
+              "evaluableZones": 4,
+              "unassessableZones": []
+            },
+            "matches": [
+              {
+                "zoneId": "admin:TEST-FLOOD-01",
+                "group": "current_flood",
+                "name": "Vùng ngập TEST",
+                "relation": "inside",
+                "distanceToBoundaryM": null,
+                "source": "TEST ONLY - nguồn minh họa",
+                "recordedAt": "2026-11-22T01:00:00.000Z"
+              }
+            ],
+            "activeAlertIds": [
+              "TEST-WARN-V2-002",
+              "TEST-WARN-V2-001"
+            ]
+          }
+        }
+      },
+      "note": "Fixture cục bộ để dựng khối UI đơn vùng; khi test bản đồ nhiều vùng dùng scenario evaluation-multiple-overlapping-zones. Khoảng cách là minh họa, chưa tính bằng Backend."
+    },
+    {
+      "name": "device-register-without-push-permission",
+      "request": {
+        "method": "PUT",
+        "path": "/api/notification-devices/30000000-0000-4000-8000-000000000001",
+        "role": "resident",
+        "body": {
+          "platform": "android",
+          "fcmToken": null,
+          "notificationPermission": "denied",
+          "registrationId": "50000000-0000-4000-8000-000000000001",
+          "expectedBindingId": null,
+          "expectedRevision": 0
+        },
+        "headers": {
+          "X-Installation-Secret": "<installation-secret>"
+        }
+      },
+      "expectedHttpStatus": 200,
+      "response": {
+        "success": true,
+        "message": "Fixture response; không phải phản hồi server",
+        "data": {
+          "device": {
+            "installationId": "30000000-0000-4000-8000-000000000001",
+            "bindingId": "40000000-0000-4000-8000-000000000001",
+            "platform": "android",
+            "revision": 1,
+            "notificationPermission": "denied",
+            "pushEligible": false,
+            "updatedAt": "2026-11-22T01:00:30.000Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "invalid-old-fields",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 400,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - INVALID_ALERT_DATA",
+        "code": "INVALID_ALERT_DATA"
+      }
+    },
+    {
+      "name": "not-authenticated",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts",
+        "role": "anonymous"
+      },
+      "expectedHttpStatus": 401,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - AUTH_REQUIRED",
+        "code": "AUTH_REQUIRED"
+      }
+    },
+    {
+      "name": "rescue-cannot-manage",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts",
+        "role": "rescue"
+      },
+      "expectedHttpStatus": 403,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - ROLE_FORBIDDEN",
+        "code": "ROLE_FORBIDDEN"
+      }
+    },
+    {
+      "name": "detail-not-found",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/TEST-MISSING",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 404,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - ALERT_NOT_FOUND",
+        "code": "ALERT_NOT_FOUND"
+      }
+    },
+    {
+      "name": "create-result-not-found",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/flood-alerts/creation-requests/20000000-0000-4000-8000-000000000001",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 404,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - CREATION_REQUEST_NOT_FOUND",
+        "code": "CREATION_REQUEST_NOT_FOUND"
+      }
+    },
+    {
+      "name": "edit-after-inactive",
+      "request": {
+        "method": "PATCH",
+        "path": "/api/admin/flood-alerts/TEST-WARN-V2-OLD",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 409,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - ALERT_ALREADY_INACTIVE",
+        "code": "ALERT_ALREADY_INACTIVE"
+      }
+    },
+    {
+      "name": "idempotency-conflict",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/flood-alerts",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 409,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - IDEMPOTENCY_CONFLICT",
+        "code": "IDEMPOTENCY_CONFLICT"
+      }
+    },
+    {
+      "name": "revision-conflict",
+      "request": {
+        "method": "PATCH",
+        "path": "/api/admin/flood-alerts/TEST-WARN-V2-001",
+        "role": "admin"
+      },
+      "expectedHttpStatus": 409,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - ALERT_REVISION_CONFLICT",
+        "code": "ALERT_REVISION_CONFLICT"
+      }
+    },
+    {
+      "name": "old-gps-sequence",
+      "request": {
+        "method": "PUT",
+        "path": "/api/flood-alerts/location",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 409,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - LOCATION_SEQUENCE_CONFLICT",
+        "code": "LOCATION_SEQUENCE_CONFLICT"
+      }
+    },
+    {
+      "name": "old-account-binding",
+      "request": {
+        "method": "PUT",
+        "path": "/api/flood-alerts/location",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 409,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - DEVICE_BINDING_CHANGED",
+        "code": "DEVICE_BINDING_CHANGED"
+      }
+    },
+    {
+      "name": "rate-limited",
+      "request": {
+        "method": "PUT",
+        "path": "/api/flood-alerts/location",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 429,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - RATE_LIMITED",
+        "code": "RATE_LIMITED"
+      }
+    },
+    {
+      "name": "source-unavailable",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts/zones",
+        "role": "rescue"
+      },
+      "expectedHttpStatus": 503,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - ZONE_DATA_UNAVAILABLE",
+        "code": "ZONE_DATA_UNAVAILABLE"
+      }
+    },
+    {
+      "name": "refresh-server-error",
+      "request": {
+        "method": "GET",
+        "path": "/api/flood-alerts",
+        "role": "resident"
+      },
+      "expectedHttpStatus": 500,
+      "response": {
+        "success": false,
+        "message": "TEST ONLY - INTERNAL_ERROR",
+        "code": "INTERNAL_ERROR"
+      }
+    }
+  ],
+  "boundaryCases": [
+    {
+      "case": "age-60-accuracy-100",
+      "ageSeconds": 60,
+      "accuracyM": 100,
+      "gpsAccepted": true
+    },
+    {
+      "case": "age-over-60",
+      "ageSeconds": 60.001,
+      "accuracyM": 20,
+      "gpsAccepted": false
+    },
+    {
+      "case": "accuracy-over-100",
+      "ageSeconds": 10,
+      "accuracyM": 100.001,
+      "gpsAccepted": false
+    },
+    {
+      "case": "near-499",
+      "distanceM": 499,
+      "relation": "near"
+    },
+    {
+      "case": "near-500",
+      "distanceM": 500,
+      "relation": "near"
+    },
+    {
+      "case": "far-501",
+      "distanceM": 501,
+      "relation": "far"
+    },
+    {
+      "case": "boundary",
+      "onBoundary": true,
+      "relation": "inside"
+    }
+  ],
+  "fcmDataPayloadExamples": [
+    {
+      "schemaVersion": "2",
+      "eventId": "TEST-EVENT-GENERAL-001",
+      "alertId": "TEST-WARN-V2-001",
+      "kind": "general",
+      "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+      "body": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+      "createdAt": "2026-11-22T01:00:00.000Z"
+    },
+    {
+      "schemaVersion": "2",
+      "eventId": "TEST-EVENT-NEAR-001",
+      "alertId": "TEST-WARN-V2-001",
+      "kind": "near",
+      "title": "TEST ONLY - Bạn đang gần vùng trũng",
+      "body": "Có bản tin đang bật. Mở để xem thông tin mới nhất.",
+      "createdAt": "2026-11-22T01:00:30.000Z"
+    },
+    {
+      "schemaVersion": "2",
+      "eventId": "TEST-CONTROL-OFF-001",
+      "alertId": "TEST-WARN-V2-001",
+      "kind": "deactivated",
+      "title": "",
+      "body": "",
+      "createdAt": "2026-11-22T02:00:00.000Z"
+    }
+  ],
+  "offlineUiScenario": {
+    "given": "Đã tải list/detail thành công",
+    "when": "Refresh mất mạng hoặc timeout",
+    "expected": "Giữ dữ liệu, hiện Chưa thể cập nhật; kết quả vị trí hết validUntil chuyển unknown, không đổi thành empty."
+  }
+}
