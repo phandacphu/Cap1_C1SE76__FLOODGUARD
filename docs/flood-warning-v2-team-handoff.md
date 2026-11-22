@@ -1,5 +1,7 @@
 # Flood Warning V2 — tin nhắn giao việc
 
+**Bộ giao việc thay thế ngày22/11/2026:** `handoff/flood-warning-v2/00_DOC_TRUOC.md` và bốn file theo Huy/Khoa/Thiên/Phú. API đã merge tới PR150/be9d99c, sender PHASE5 đang local chưa deploy. Các tin nhắn bên dưới giữ làm lịch sử, không dùng trạng thái “API chưa có” để kết luận source hiện tại. UI gốc đã duyệt có trong thư mục bàn giao mới.
+
 Tài liệu: docs/flood-warning-v2-api.md. Fixture: docs/examples/flood-warning-v2.json.
 Nền 0314e88. Đây là contract mới chưa có API live. Chỉ gắn link GitHub sau khi Phú đã push đúng nhánh/commit và xác minh link tồn tại.
 

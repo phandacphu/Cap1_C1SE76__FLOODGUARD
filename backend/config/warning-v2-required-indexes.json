@@ -1,0 +1,7 @@
+{
+  "indexes": [
+    {"collectionGroup":"flood_alerts","queryScope":"COLLECTION","fields":[{"fieldPath":"schemaVersion","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
+    {"collectionGroup":"warning_v2_devices","queryScope":"COLLECTION","fields":[{"fieldPath":"ownerId","order":"ASCENDING"},{"fieldPath":"active","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}

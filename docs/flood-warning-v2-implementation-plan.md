@@ -1,5 +1,7 @@
 # Flood Warning V2 — nền triển khai, phân việc và kiểm thử
 
+**Mốc mới PHASE5 (22/11/2026):** nền đã merge tới PR150/be9d99c. Gói sender local và bộ bàn giao bốn giao diện ở `flood-warning-v2-sender.md`, `handoff/flood-warning-v2/00_DOC_TRUOC.md`; kết quả `../backend/docs/flood-warning-v2-phase5-validation.md`. Các mốc phía dưới là lịch sử triển khai. Chưa có nghiệm thu FCM/Render/bốn client chỉ từ các báo cáo local này.
+
 Ngày 22/11/2026. Nền đã đọc: `0314e88af283ecb580b20bb99fc559d77eb49ea0`.
 Đây là kế hoạch, không phải báo cáo các ca test đã PASS.
 

@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const app = require("./app");
 const { startWarningV2EventWorker } = require("./services/warning-v2-event-scheduler.service");
+const { startWarningV2PushSender } = require("./services/warning-v2-push-scheduler.service");
 
 const {
   startFloodWarningNotificationScheduler,
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 let stopScheduler = async () => {};
 let stopWarningV2Worker = async () => {};
+let stopWarningV2Push = async () => {};
 let shuttingDown = false;
 
 const server = app.listen(PORT, () => {
@@ -18,6 +20,7 @@ const server = app.listen(PORT, () => {
 
   stopScheduler = startFloodWarningNotificationScheduler();
   stopWarningV2Worker = startWarningV2EventWorker();
+  stopWarningV2Push = startWarningV2PushSender();
 });
 
 async function shutdown() {
@@ -38,6 +41,7 @@ async function shutdown() {
     await Promise.all([
       stopScheduler(),
       stopWarningV2Worker(),
+      stopWarningV2Push(),
       new Promise((resolve, reject) => {
         server.close((error) => {
           if (error) {
