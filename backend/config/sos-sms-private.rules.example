@@ -1,0 +1,5 @@
+// Merge inside the existing /databases/{database}/documents scope.
+// These collections are server-only. Admin SDK bypasses client rules.
+// A broad matching allow elsewhere overrides these denies: remove broad access.
+match /sos_sms_inbox/{id} { allow read, write: if false; }
+match /sos_submissions/{id} { allow read, write: if false; }

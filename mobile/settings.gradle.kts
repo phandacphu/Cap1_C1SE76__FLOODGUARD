@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "FloodGuard"
 include(":app")
+
+include(":sms-gateway")

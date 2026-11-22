@@ -279,6 +279,9 @@ async function createSos(req, res) {
       },
     });
   } catch (error) {
+    if (error.code === "SOS_SUBMISSION_CONFLICT") {
+      return res.status(409).json({ success: false, message: error.message, code: error.code });
+    }
     if (error.code === "DUPLICATE_SOS_REQUEST") {
       return res.status(409).json({
         success: false,

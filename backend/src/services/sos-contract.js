@@ -62,7 +62,7 @@ function normalizeSosInput(residentId, input) {
   if (!validDocumentId(residentId)) throw sosError(code, "Invalid resident ID");
   ensureFields(
     input,
-    ["location", "situations", "numberOfPeople", "waterLevel", "note"],
+    ["location", "situations", "numberOfPeople", "waterLevel", "note", "clientRequestId"],
     code,
   );
   if (
@@ -87,7 +87,11 @@ function normalizeSosInput(residentId, input) {
   const note = input.note?.trim() || null;
   if (note && note.length > 200)
     throw sosError(code, "note must not exceed 200 characters");
+  if (input.clientRequestId !== undefined &&
+      (typeof input.clientRequestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(input.clientRequestId)))
+    throw sosError(code, "clientRequestId must be a lowercase UUID v4");
   return {
+    ...(input.clientRequestId === undefined ? {} : { clientRequestId: input.clientRequestId }),
     residentId: residentId.trim(),
     location: normalizeSosLocation(input.location),
     situations: [...input.situations],
@@ -122,6 +126,10 @@ function toClientSos(request) {
   return {
     id: request.id,
     residentId: request.residentId,
+    source: request.source ?? null,
+    clientRequestId: request.clientRequestId ?? null,
+    smsSenderPhone: request.smsSenderPhone ?? null,
+    smsReceivedAt: isoTimestamp(request.smsReceivedAt),
     location: request.location ?? null,
     initialLocation: request.initialLocation ?? null,
     locationCapturedAt: isoTimestamp(request.locationCapturedAt),

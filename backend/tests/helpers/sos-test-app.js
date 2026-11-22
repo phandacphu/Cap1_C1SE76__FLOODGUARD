@@ -146,6 +146,7 @@ app.use(
   "/api/admin/rescue-requests",
   require("../../src/routes/admin-sos-monitoring.routes"),
 );
+app.use("/api/sos-sms", require("../../src/routes/sos-sms.routes"));
 app.use((error, req, res, next) => {
   if (error.type === "entity.parse.failed")
     return res.status(400).json({ success: false, message: "Invalid JSON" });
@@ -202,14 +203,14 @@ async function withApi(callback) {
   const base = `http://127.0.0.1:${server.address().port}`;
   async function api(
     path,
-    { method = "GET", body, actor = "resident", tokenRole, raw } = {},
+    { method = "GET", body, actor = "resident", tokenRole, raw, extraHeaders = {} } = {},
   ) {
     const headers = { "Content-Type": "application/json" };
     if (actor)
       headers.Authorization = `Bearer ${jwt.sign({ sub: actor, role: tokenRole ?? records.get(`users/${actor}`)?.role ?? "resident" }, process.env.JWT_SECRET, { algorithm: "HS256", expiresIn: "5m" })}`;
     const response = await fetch(base + path, {
       method,
-      headers,
+      headers: { ...headers, ...extraHeaders },
       body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
     });
     return { status: response.status, body: await response.json() };
