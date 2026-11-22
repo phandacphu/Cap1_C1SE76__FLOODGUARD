@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const app = require("./app");
+const { startWarningV2EventWorker } = require("./services/warning-v2-event-scheduler.service");
 
 const {
   startFloodWarningNotificationScheduler,
@@ -9,12 +10,14 @@ const {
 const PORT = process.env.PORT || 5000;
 
 let stopScheduler = async () => {};
+let stopWarningV2Worker = async () => {};
 let shuttingDown = false;
 
 const server = app.listen(PORT, () => {
   console.log(`FLOODGUARD API running on port ${PORT}`);
 
   stopScheduler = startFloodWarningNotificationScheduler();
+  stopWarningV2Worker = startWarningV2EventWorker();
 });
 
 async function shutdown() {
@@ -34,6 +37,7 @@ async function shutdown() {
   try {
     await Promise.all([
       stopScheduler(),
+      stopWarningV2Worker(),
       new Promise((resolve, reject) => {
         server.close((error) => {
           if (error) {
