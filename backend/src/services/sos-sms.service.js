@@ -1,8 +1,8 @@
 const { createHash } = require("node:crypto");
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
-const { ensureFields, parseIsoDate, sosError } = require("./sos-contract");
-const { UUID, parseSms } = require("./sos-sms-contract");
+const { ensureFields, sosError } = require("./sos-contract");
+const { UUID, parseSms, parseSmsIsoDate } = require("./sos-sms-contract");
 const { createSosWithHistory } = require("./create-sos.service");
 const digest = text => createHash("sha256").update(text).digest("hex");
 async function receiveSms(input) {
@@ -11,7 +11,7 @@ async function receiveSms(input) {
       !/^\+?[0-9]{8,15}$/.test(input.senderPhone) || typeof input.body !== "string" ||
       input.body.length > 3000 || !input.body.startsWith("FGSOS1"))
     throw sosError("INVALID_SMS_ENVELOPE", "Invalid SMS envelope");
-  const time = parseIsoDate(input.receivedAt, "receivedAt", "INVALID_SMS_ENVELOPE");
+  const time = parseSmsIsoDate(input.receivedAt, "receivedAt", "INVALID_SMS_ENVELOPE");
   if (time === null || time > Date.now() + 120000) throw sosError("INVALID_SMS_ENVELOPE", "Invalid receive time");
   const ref = db.collection("sos_sms_inbox").doc(digest(input.messageId));
   const fingerprint = digest(JSON.stringify([input.senderPhone, input.receivedAt, input.body]));
@@ -29,7 +29,7 @@ async function receiveSms(input) {
   try {
     const parsed = parseSms(input.body);
     const sos = await createSosWithHistory(parsed.residentId, parsed.input, {
-      senderPhone: input.senderPhone, receivedAt: input.receivedAt, capturedAt: parsed.capturedAt,
+      senderPhone: input.senderPhone, receivedAt: new Date(time).toISOString(), capturedAt: parsed.capturedAt,
     });
     result = { state: "created", requestId: sos.id, code: null };
   } catch (error) {

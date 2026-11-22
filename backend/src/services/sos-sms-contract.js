@@ -27,6 +27,17 @@ function verifyCredential(token, now = Date.now()) {
   if (!validDocumentId(residentId) || Buffer.from(residentId).toString("base64url") !== parts[0]) throw fail();
   return residentId;
 }
+// Android Instant may emit 1..9 fractional digits. Preserve strict date/timezone
+// checks, then deliberately normalize to the backend's millisecond precision.
+// Other API contracts keep their existing parser unchanged.
+function parseSmsIsoDate(value, field, code) {
+  const match = typeof value === "string" && value.match(
+    /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/,
+  );
+  if (!match) throw sosError(code, `${field} must be an ISO datetime with timezone`);
+  const normalized = `${match[1]}${match[2] ? "." + match[2].slice(0, 3) : ""}${match[3]}`;
+  return parseIsoDate(normalized, field, code);
+}
 // ASCII wire format. App-generated base64url note cannot inject delimiters.
 // FGSOS1|credential|UUID|lat,lng|ISO-capture-time|situations|people|water|note64
 function parseSms(body, now = Date.now()) {
@@ -39,7 +50,7 @@ function parseSms(body, now = Date.now()) {
   if (coords.length !== 2 || coords.some(x => !numeric.test(x)) || !/^[1-9]\d*$/.test(p[6])) throw fail();
   let capturedAt = null;
   if (p[4] !== "-") {
-    const ms = parseIsoDate(p[4], "capturedAt", "INVALID_SOS_SMS");
+    const ms = parseSmsIsoDate(p[4], "capturedAt", "INVALID_SOS_SMS");
     if (ms > now + 120000) throw fail();
     capturedAt = new Date(ms).toISOString();
   }
@@ -54,4 +65,4 @@ function parseSms(body, now = Date.now()) {
   normalizeSosInput(residentId, input);
   return { residentId, input, capturedAt };
 }
-module.exports = { UUID, issueCredential, verifyCredential, parseSms };
+module.exports = { UUID, issueCredential, verifyCredential, parseSms, parseSmsIsoDate };

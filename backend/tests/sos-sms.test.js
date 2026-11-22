@@ -131,3 +131,33 @@ test('HTTP online optional reference retries completed request, rejects changed 
   assert.equal((await api('/api/rescue-requests', { method: 'POST', body: { ...input, note: 'different' } })).status, 409);
  });
 });
+
+test('Samsung receipt with six or nine fractional digits creates SOS and retries same ID', async () => {
+ for (const receivedAt of ['2026-11-22T18:45:26.932671Z', '2026-11-22T18:45:26.937661123Z']) {
+  h.reset();
+  const { envelope } = sms({ receivedAt });
+  const result = await receiveSms(envelope);
+  assert.equal(result.state, 'created');
+  assert.equal(h.records.get(`rescue_requests/${result.requestId}`).smsReceivedAt, new Date(receivedAt).toISOString());
+  assert.equal((await receiveSms(envelope)).requestId, result.requestId);
+  assert.equal(h.count('rescue_requests'), 1);
+ }
+});
+test('SMS GPS ISO timestamp accepts Android nanoseconds with explicit timezone', () => {
+ const { envelope } = sms(); const pieces = envelope.body.split('|');
+ for (const capturedAt of ['2026-11-22T18:45:26.932671123Z', '2026-11-23T01:45:26.932671+07:00']) {
+  pieces[4] = capturedAt;
+  assert.equal(parseSms(pieces.join('|')).capturedAt, '2026-11-22T18:45:26.932Z');
+ }
+});
+test('SMS timestamp precision retains strict calendar, timezone and future validation', async () => {
+ const { envelope } = sms(); const pieces = envelope.body.split('|');
+ for (const invalid of ['2026-02-30T18:45:26.932671Z', '2026-11-22T18:45:26.932671',
+   '2026-11-22T18:45:26.1234567890Z', '2026-11-22T25:45:26.932671Z',
+   '2026-11-22T18:45:26.932671Zjunk', new Date(Date.now() + 600000).toISOString()]) {
+  await assert.rejects(receiveSms({ ...envelope, receivedAt: invalid }), { code: 'INVALID_SMS_ENVELOPE' });
+  pieces[4] = invalid;
+  assert.throws(() => parseSms(pieces.join('|')), { code: 'INVALID_SOS_SMS' });
+ }
+ assert.equal(h.count('rescue_requests'), 0);
+});

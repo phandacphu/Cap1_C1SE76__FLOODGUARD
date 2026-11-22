@@ -90,3 +90,14 @@ Gateway hiển thị trạng thái và code, không in credential. Backend có s
 V1 chưa có UI sửa/phê duyệt inbox hay tự gửi SMS phản hồi. Trong demo, người trực
 xem SMS gốc trên điện thoại và liên hệ người gửi khi tin lỗi. Không tuyên bố mọi
 SMS tự do đều được chuyển thành SOS.
+
+## Sua loi review PR152: do chinh xac thoi gian Android
+
+Gateway tren Samsung thuc te luu Instant voi 6/9 chu so thap phan.
+Backend SMS chap nhan ISO8601 co timezone va 1..9 chu so thap phan cho
+receivedAt/capturedAt, chuan hoa ve milliseconds khi ghi metadata SOS.
+Van kiem tra ngay hop le, timezone bat buoc va gio tuong lai >2 phut.
+Envelope/body goc trong inbox va fingerprint retry giu nguyen; khong sua queue
+tren dien thoai, khong doi messageId, khong can build/cai lai APK cho ban sua nay.
+Tin dang blocked HTTP400 co the thu chuyen lai sau khi Backend da cap nhat.
+Cac contract ngay gio cua API khac khong doi. Test SMS sau sua: 14/14 dat.
