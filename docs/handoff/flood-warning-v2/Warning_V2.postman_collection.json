@@ -1,0 +1,594 @@
+{
+  "info": {
+    "name": "FLOODGUARD Warning V2 — manual TEST handoff",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "HTTP contract V2 from PR150 + PHASE5 sender (no HTTP change). Default read-only. Do not bulk-run. Set correct baseUrl/deploy SHA and active role tokens privately. The device example is first registration; reconcile existing bindings before PUT. Never reuse old GPS time or change sequence merely to retry."
+  },
+  "item": [
+    {
+      "name": "Huy — Admin",
+      "item": [
+        {
+          "name": "01 List (all; add status/q manually)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "02 Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts/summary",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "03 Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts/{{alertId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "04 Create TEST (reuse key/body on retry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{title}}\",\n  \"content\": \"{{content}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "const a=pm.response.json().data.floodAlert; pm.environment.set('alertId',a.id); pm.environment.set('revision',a.revision);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 Reconcile create after timeout",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts/creation-requests/{{requestId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "06 Edit active (reload revision first)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts/{{alertId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expectedRevision\": {{revision}},\n  \"content\": \"{{content}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "const a=pm.response.json().data.floodAlert; pm.environment.set('alertId',a.id); pm.environment.set('revision',a.revision);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 Deactivate TEST only",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/flood-alerts/{{alertId}}/deactivate",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "const a=pm.response.json().data.floodAlert; pm.environment.set('alertId',a.id); pm.environment.set('revision',a.revision);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Thien — Resident read",
+      "item": [
+        {
+          "name": "List all V2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "List active",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/active",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Detail exact ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/{{alertId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Zones (all published)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/zones",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Khoa/Phu — Rescue read",
+      "item": [
+        {
+          "name": "List all V2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rescueToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "List active",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rescueToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/active",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Detail exact ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rescueToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/{{alertId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Zones (all published)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rescueToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/zones",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Thien — Device/GPS (Resident only)",
+      "item": [
+        {
+          "name": "Read installation for reconciliation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notification-devices/{{installationId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Register/update current installation",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notification-devices/{{installationId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"android\",\n  \"fcmToken\": null,\n  \"notificationPermission\": \"denied\",\n  \"registrationId\": \"{{registrationId}}\",\n  \"expectedBindingId\": null,\n  \"expectedRevision\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(pm.response.code===200){const d=pm.response.json().data.device;pm.environment.set('bindingId',d.bindingId);pm.environment.set('deviceRevision',d.revision);}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read current location evaluation",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              },
+              {
+                "key": "X-Installation-Id",
+                "value": "{{installationId}}"
+              },
+              {
+                "key": "X-Device-Binding-Id",
+                "value": "{{bindingId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/location-evaluation",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          }
+        },
+        {
+          "name": "Upload location unavailable (increase sequence yourself)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              },
+              {
+                "key": "X-Installation-Id",
+                "value": "{{installationId}}"
+              },
+              {
+                "key": "X-Device-Binding-Id",
+                "value": "{{bindingId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/location",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sequence\": {{sequence}},\n  \"availability\": \"unavailable\",\n  \"reason\": \"no_fix\",\n  \"location\": null,\n  \"capturedAt\": null,\n  \"accuracyM\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload a fresh TEST GPS sample (keep body when retrying)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              },
+              {
+                "key": "X-Installation-Id",
+                "value": "{{installationId}}"
+              },
+              {
+                "key": "X-Device-Binding-Id",
+                "value": "{{bindingId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/flood-alerts/location",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sequence\": {{sequence}},\n  \"availability\": \"available\",\n  \"reason\": null,\n  \"location\": {\n    \"latitude\": {{latitude}},\n    \"longitude\": {{longitude}}\n  },\n  \"capturedAt\": \"{{capturedAt}}\",\n  \"accuracyM\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unbind exact current account before logout",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{residentToken}}"
+              },
+              {
+                "key": "X-Installation-Secret",
+                "value": "{{installationSecret}}"
+              },
+              {
+                "key": "X-Installation-Id",
+                "value": "{{installationId}}"
+              },
+              {
+                "key": "X-Device-Binding-Id",
+                "value": "{{bindingId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/notification-devices/{{installationId}}",
+            "description": "Manual TEST only; use the role token of the active current account. Do not run the whole collection as a Runner."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('allowWrites') !== 'YES_TEST_ONLY') { throw new Error('Read-only default. Enable writes only on the TEST environment approved by Phu.'); }",
+                  "if (!String(pm.environment.get('title') || '').startsWith('TEST ONLY')) { throw new Error('Use a TEST ONLY title.'); }",
+                  "if (!pm.environment.get('requestId')) { pm.environment.set('requestId', pm.variables.replaceIn('{{$guid}}')); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

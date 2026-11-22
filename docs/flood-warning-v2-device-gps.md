@@ -1,5 +1,7 @@
 # Warning V2 — thiết bị và GPS riêng (giai đoạn2B / PHASE3)
 
+**Cập nhật PHASE5:** PHASE3 đã merge qua PR149 và PHASE4 qua PR150/be9d99c; sender có gói code local tiếp theo. Hướng dẫn request/reconcile/GPS dưới đây vẫn áp dụng. Các mô tả “chưa push/merge” phía dưới là lịch sử PHASE3, không phải trạng thái hiện tại. Trạng thái mới: `flood-warning-v2-sender.md`, `handoff/flood-warning-v2/00_DOC_TRUOC.md`. Invalid FCM token bị sender gỡ có điều kiện và tăng revision; Mobile GET reconcile trước update tiếp, không khôi phục token cũ từ callback muộn.
+
 Nghiệp vụ đã duyệt không đổi. Bổ sung cơ chế chống request đến muộn; thay thế trạng thái API GPS chưa triển khai của gói PHASE2. Code vẫn là thay đổi local trên HEAD43f0bda, chưa push/merge/deploy. Base URL phải trỏ đúng build nhập PHASE3; Render cũ chưa có các API này.
 
 ## 1. Dữ liệu lưu trên Android

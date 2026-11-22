@@ -1,0 +1,16 @@
+// AUDIT SNIPPET ONLY. Merge with existing rules; do not replace the project's rules.
+// Remove/limit any overlapping wildcard allow: Firestore grants if ANY matching rule allows.
+// Insert inside match /databases/{database}/documents after auditing existing allows.
+match /flood_warning_v2_events/{document=**} { allow read, write: if false; }
+match /flood_warning_v2_creation_requests/{document=**} { allow read, write: if false; }
+match /warning_v2_devices/{document=**} { allow read, write: if false; }
+match /warning_v2_device_registrations/{document=**} { allow read, write: if false; }
+match /warning_v2_token_claims/{document=**} { allow read, write: if false; }
+match /warning_v2_locations/{document=**} { allow read, write: if false; }
+match /warning_v2_location_events/{document=**} { allow read, write: if false; }
+match /warning_v2_recipient_alerts/{document=**} { allow read, write: if false; }
+match /warning_v2_deliveries/{document=**} { allow read, write: if false; }
+match /warning_v2_worker_cursors/{document=**} { allow read, write: if false; }
+match /warning_v2_push_targets/{document=**} { allow read, write: if false; }
+match /warning_v2_control_jobs/{document=**} { allow read, write: if false; }
+match /warning_v2_push_cursors/{document=**} { allow read, write: if false; }

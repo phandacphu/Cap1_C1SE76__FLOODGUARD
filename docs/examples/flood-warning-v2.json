@@ -1,7 +1,7 @@
 {
-  "contractStatus": "PARTIAL_IMPLEMENTATION_NOT_DEPLOYED",
+  "contractStatus": "HTTP_IMPLEMENTED_PHASE5_SENDER_LOCAL_DEPLOY_UNVERIFIED",
   "schemaVersion": 2,
-  "baseSha": "0314e88af283ecb580b20bb99fc559d77eb49ea0",
+  "baseSha": "be9d99cbc954eb0800bba20fd824ac69a61cd569",
   "testOnly": true,
   "clockReference": "2026-11-22T01:00:30.000Z",
   "notes": [
@@ -1546,16 +1546,31 @@
       "kind": "general",
       "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
       "body": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
-      "createdAt": "2026-11-22T01:00:00.000Z"
+      "createdAt": "2026-11-22T01:00:00.000Z",
+      "installationId": "30000000-0000-4000-8000-000000000001",
+      "bindingId": "40000000-0000-4000-8000-000000000001"
     },
     {
       "schemaVersion": "2",
       "eventId": "TEST-EVENT-NEAR-001",
       "alertId": "TEST-WARN-V2-001",
       "kind": "near",
-      "title": "TEST ONLY - Bạn đang gần vùng trũng",
-      "body": "Có bản tin đang bật. Mở để xem thông tin mới nhất.",
-      "createdAt": "2026-11-22T01:00:30.000Z"
+      "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+      "body": "Bạn đang gần vùng trũng, có nguy cơ ngập khi mưa lớn.",
+      "createdAt": "2026-11-22T01:00:30.000Z",
+      "installationId": "30000000-0000-4000-8000-000000000001",
+      "bindingId": "40000000-0000-4000-8000-000000000001"
+    },
+    {
+      "schemaVersion": "2",
+      "eventId": "TEST-EVENT-INSIDE-001",
+      "alertId": "TEST-WARN-V2-001",
+      "kind": "inside",
+      "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+      "body": "Bạn đang trong vùng trũng, có nguy cơ ngập khi mưa lớn.",
+      "createdAt": "2026-11-22T01:00:30.000Z",
+      "installationId": "30000000-0000-4000-8000-000000000001",
+      "bindingId": "40000000-0000-4000-8000-000000000001"
     },
     {
       "schemaVersion": "2",
@@ -1564,7 +1579,9 @@
       "kind": "deactivated",
       "title": "",
       "body": "",
-      "createdAt": "2026-11-22T02:00:00.000Z"
+      "createdAt": "2026-11-22T02:00:00.000Z",
+      "installationId": "30000000-0000-4000-8000-000000000001",
+      "bindingId": "40000000-0000-4000-8000-000000000001"
     }
   ],
   "offlineUiScenario": {

@@ -3,7 +3,7 @@
 Ngày soạn: 22/11/2026, giờ Việt Nam. Nghiệp vụ đã được Phú duyệt trong chat.
 Nền source đã đọc: `0314e88af283ecb580b20bb99fc559d77eb49ea0` (develop, PR #148).
 
-**Trạng thái: API lifecycle, bộ vùng, liên kết thiết bị và GPS đã merge qua PR149, commit29185ae. Gói PHASE4 bổ sung worker chuẩn bị/hủy công việc và chống trùng, chưa merge khi soạn bản cập nhật này. Sender FCM thật vẫn chưa có; chưa xác minh Render sau merge.**
+**Trạng thái cập nhật PHASE5: API lifecycle/bộ vùng/thiết bị/GPS và worker PHASE4 đã merge tới PR150, commit be9d99c. Gói sender FCM PHASE5 đã có code local, chưa commit/push/merge/deploy. Chưa xác minh Render/FCM/điện thoại thật. Xem docs/flood-warning-v2-sender.md và backend/docs/flood-warning-v2-phase5-validation.md.**
 Kết quả và giới hạn giai đoạn 1: `backend/docs/flood-warning-v2-phase1-validation.md`. Chưa coi toàn bộ contract đã hoạt động; nhóm tiếp tục dùng fixture cho các phần chưa có.
 Kết quả giai đoạn2A: `backend/docs/flood-warning-v2-phase2-validation.md`. Trạng thái503 chưa triển khai của API binding/GPS trong báo cáo đó đã được thay thế bởi giai đoạn2B; xem `backend/docs/flood-warning-v2-phase3-validation.md` và hướng dẫn `docs/flood-warning-v2-device-gps.md`. Báo cáo trước vẫn là bằng chứng của đúng bản trước.
 Tên endpoint, field và các giới hạn kỹ thuật dưới đây là đặc tả triển khai ở bước 2, không phải mô tả API V1 đang live.
@@ -224,7 +224,7 @@ Response `data:{evaluation}`:
 
 ## 9. Sự kiện, FCM, dừng và đồng bộ
 
-Phạm vi PHASE4: `docs/flood-warning-v2-worker.md`. Worker tạo receipt/job pending và hủy khi không còn phù hợp; chưa gọi provider. GPS event processed và control event prepared chỉ là trạng thái nội bộ. Quy ước sender/push bên dưới là mục tiêu của giai đoạn tiếp, không phải bằng chứng đã nhận thông báo. Không thay API/DTO hiện hành.
+Phạm vi PHASE4: `docs/flood-warning-v2-worker.md`. Worker tạo receipt/job pending và hủy khi không còn phù hợp, không gọi provider. PHASE5 bổ sung sender tách riêng, target/lease/retry/unknown và control; xem `docs/flood-warning-v2-sender.md`. GPS event processed, control prepared/control_prepared hoặc parent dispatched chỉ là trạng thái nội bộ. Không trạng thái nào tự chứng minh điện thoại đã nhận. API/DTO HTTP không đổi.
 
 - Dedupe key ổn định theo (residentId,alertId,kind), kind general/near/inside; không theo zone hoặc thiết bị. Không reset bởi sửa/refresh/relogin/đổi nguồn vùng.
 - Payload sự kiện lưu bất biến ở lần tạo để retry cùng event không bị xung đột vì nội dung/vùng đã đổi; giữ revision và dấu nguồn tại lần phát. Mở thông báo luôn đọc nội dung/trạng thái mới nhất. Không tạo event mới chỉ để cập nhật nội dung push cũ.
@@ -235,7 +235,7 @@ Phạm vi PHASE4: `docs/flood-warning-v2-worker.md`. Worker tạo receipt/job pe
 - Trước gửi general: kiểm tra alert còn active và binding còn đúng owner/đủ quyền/token. Near/inside còn phải kiểm tra GPS mới nhất còn valid và kết luận phù hợp, không gửi vị trí cũ.
 - Nếu điều kiện vị trí thay đổi trước gửi: hủy sự kiện không còn phù hợp; giữ khóa chống lặp của kind đã ghi nhận. Không bù spam để đủ ba thông báo.
 - Retry chỉ khi biết chắc thất bại và còn đủ điều kiện; timeout provider chưa rõ kết quả phải đối chiếu, không retry mù. Provider accepted không có nghĩa điện thoại đã hiển thị.
-- Push Android data fields là strings: schemaVersion,eventId,alertId,kind,title,body,createdAt. Nếu cần thông tin vùng đầy đủ thì đọc API; không nhét GeoJSON/GPS cá nhân vào payload.
+- Push Android data fields là strings: schemaVersion,eventId,alertId,kind,title,body,createdAt,installationId,bindingId. Hai field binding được chốt thêm PHASE5 để loại push khác phiên. Data-only, Android kiểm tra phiên/active/evaluation trước hiện local notification. Title/body push rút gọn theo byte, API detail giữ đầy đủ; không nhét GeoJSON/GPS cá nhân vào payload. General/control có thể tới nhiều installation với cùng eventId; near/inside chỉ tới installation tạo GPS của job.
 - Control event kind=deactivated dùng đồng bộ/hủy thông báo cục bộ, không tạo thông báo hiển thị thứ tư. Có thể giao trễ; khi mở app/push/resume luôn đọc trạng thái mới.
 - App lọc eventId đã xử lý, kiểm tra account binding hiện tại và trạng thái alert trước hiển thị. Không cho push cũ gắn vào tài khoản mới.
 - Bất kỳ kết quả đến muộn sau inactive không được bật lại UI cảnh báo. Offline giữ nhãn chưa cập nhật, reconcile khi có mạng.
@@ -270,7 +270,7 @@ GET vùng có một phần dùng được trả200 coverage.partial. Lỗi hoàn
 - Khi deploy phải thay serializer/filter/summary cũ và cập nhật cả bốn client; bỏ cách đọc severity/areaId/endAt bắt buộc. Kiểm kê consumer trước rollout.
 - Route subscription cũ không còn là điều kiện của broadcast V2; không xóa code notification/SOS dùng chung thiếu kiểm tra.
 - Cấu hình hiện có: JWT_SECRET, JWT_EXPIRES_IN, FIREBASE_SERVICE_ACCOUNT_BASE64 (hoặc serviceAccountKey.json local), PORT, FLOOD_WARNING_NOTIFICATION_WORKER_ENABLED. Không đưa giá trị vào Git/docs/log.
-- Cấu hình triển khai V2 dự kiến: FLOOD_WARNING_V2_PUSH_ENABLED (mặc định false ở môi trường dev/test), FLOOD_WARNING_V2_TEST_RECIPIENT_IDS (allowlist tài khoản TEST khi kiểm tra push), worker enable riêng. Phải kiểm chứng test flags không làm giảm phạm vi người nhận khi Phú cho phép phát thật.
+- Cấu hình PHASE5: FLOOD_WARNING_V2_PUSH_ENABLED mặc định false; khi bật bắt buộc FLOOD_WARNING_V2_PUSH_MODE=test|live. Test phải có FLOOD_WARNING_V2_TEST_RECIPIENT_IDS; live phải xóa allowlist. Event worker có cờ riêng. Không bật provider với Emulator. Rollout/rollback theo tài liệu sender; không tự phát backlog TEST khi chuyển live.
 - Emulator dùng Firebase project demo và test harness; config Firebase hiện tại vẫn cần rà vì đang luôn nạp service account. Không chạy test dữ liệu mới bằng key Firebase thật trước khi có guard.
 - Không đưa ORS/Google Maps Directions hoặc dự báo tự động vào chức năng đối chiếu này. Không sửa SOS/Safe Locations ngoài phụ thuộc được xác định.
 
