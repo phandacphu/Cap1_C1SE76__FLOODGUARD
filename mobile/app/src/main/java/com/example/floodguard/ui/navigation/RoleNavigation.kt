@@ -18,4 +18,7 @@ internal fun isRescueRoute(route: String?): Boolean =
         route == AppRoutes.RESCUE_SOS ||
         route?.startsWith("${AppRoutes.RESCUE_SOS_DETAIL}/") == true ||
         route == AppRoutes.RESCUE_SAFE_LOCATIONS ||
-        route?.startsWith("${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/") == true
+        route?.startsWith("${AppRoutes.RESCUE_SAFE_LOCATION_DETAIL}/") == true ||
+        route == AppRoutes.RESCUE_FLOOD_WARNINGS ||
+        route == AppRoutes.RESCUE_FLOOD_WARNING_MAP ||
+        route?.startsWith("${AppRoutes.RESCUE_FLOOD_WARNING_DETAIL}/") == true

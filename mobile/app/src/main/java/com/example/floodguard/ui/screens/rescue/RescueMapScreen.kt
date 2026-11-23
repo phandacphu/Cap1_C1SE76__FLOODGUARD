@@ -48,7 +48,10 @@ import com.example.floodguard.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.floodguard.core.network.ApiClient
-import com.example.floodguard.data.repository.FloodAlertRepository
+import com.example.floodguard.data.local.SessionManager
+import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
+import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
+import com.example.floodguard.data.repository.RescueWarningV2Result
 import com.example.floodguard.data.repository.FloodAreaRepository
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -81,19 +84,39 @@ private val MapFont = FontFamily(
 internal fun RescueMapScreen(
     onBack: () -> Unit,
     location: RescueMapLocationController,
-    onSosTab: (() -> Unit)? = null, onSafeLocationsTab: (() -> Unit)? = null
+    sessionManager: SessionManager,
+    accountKey: String,
+    onSosTab: (() -> Unit)? = null,
+    onSafeLocationsTab: (() -> Unit)? = null,
+    onOverviewTab: (() -> Unit)? = null,
+    title: String = "Bản đồ cứu hộ",
+    initiallyShowFloodLayers: Boolean = false
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
-    val dataViewModel: RescueMapDataViewModel = viewModel {
+    val dataViewModel: RescueMapDataViewModel = viewModel(
+        key = "rescue-map-data-v2:$accountKey"
+    ) {
         val areas = FloodAreaRepository(ApiClient.floodAreaApi)
-        val warnings = FloodAlertRepository(ApiClient.floodAlertApi)
+        val warnings = RescueFloodWarningV2Repository(
+            ApiClient.createAuthenticatedRetrofit(sessionManager)
+                .create(RescueFloodWarningV2Api::class.java)
+        )
         RescueMapDataViewModel(
             loadFloodAreas = areas::getFloodAreas,
-            loadActiveWarnings = warnings::getActiveFloodAlerts
+            loadActiveWarnings = {
+                when (val result = warnings.getActiveWarnings()) {
+                    is RescueWarningV2Result.Success -> Result.success(result.data)
+                    is RescueWarningV2Result.Failure ->
+                        Result.failure(IllegalStateException(result.message))
+                }
+            }
         )
     }
     val dataState by dataViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(dataViewModel) {
+        dataViewModel.retryActiveWarnings()
+    }
     val historyViewModel: RescueHistoryViewModel = viewModel()
     val historyLayers by historyViewModel.layers.collectAsStateWithLifecycle()
     // Coordinates are prepared once by the ViewModel, not during UI recomposition.
@@ -118,7 +141,7 @@ internal fun RescueMapScreen(
     var selectedHistoryPolygon by remember { mutableStateOf<RescueHistoryMapPolygon?>(null) }
     var focusHistoryPolygon by remember { mutableStateOf<List<LatLng>?>(null) }
     var focusMessage by remember { mutableStateOf<String?>(null) }
-    var showFloodLayers by rememberSaveable { mutableStateOf(false) }
+    var showFloodLayers by rememberSaveable(initiallyShowFloodLayers) { mutableStateOf(initiallyShowFloodLayers) }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var attempt by remember { mutableStateOf(0) }
     var mapLoaded by remember { mutableStateOf(false) }
@@ -234,7 +257,7 @@ internal fun RescueMapScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Bản đồ cứu hộ",
+                    title,
                     modifier = Modifier.weight(1f),
                     fontFamily = MapFont,
                     fontWeight = FontWeight.Bold,
@@ -247,6 +270,39 @@ internal fun RescueMapScreen(
             val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
             val warningLoadFailed = dataState.activeWarnings is RescueMapLoadState.Error
             val historyLoadFailed = historyLayers.values.any { it.error }
+            val activeV2Warnings =
+                (dataState.activeWarnings as? RescueMapLoadState.Data)?.items.orEmpty()
+            if (activeV2Warnings.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    color = MapSurface,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            MapLabel("${activeV2Warnings.size} cảnh báo lũ V2 đang hoạt động.", MapText)
+                            MapLabel("Áp dụng chung cho các vùng được hệ thống công bố.")
+                        }
+                        TextButton(onClick = {
+                            selectedAreaId = null
+                            showAreas = true
+                        }) { MapLabel("Xem cảnh báo", MapCyan) }
+                    }
+                }
+            } else if (showFloodLayers && dataState.activeWarnings is RescueMapLoadState.Empty) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MapLabel("Hiện không có cảnh báo lũ đang hoạt động.")
+                    TextButton(onClick = dataViewModel::retryActiveWarnings) {
+                        MapLabel("Tải lại", MapCyan)
+                    }
+                }
+            }
             if (showFloodLayers && (layers.skippedCount > 0 ||
                     areaLoadFailed || warningLoadFailed || historyLoadFailed)) {
                 Surface(
@@ -546,7 +602,7 @@ internal fun RescueMapScreen(
             RescueBottomBar(
                 selectedTab = RescueMainTab.MAP,
                 onSos = onSosTab,
-                onOverview = onBack,
+                onOverview = onOverviewTab ?: onBack,
                 onSafeLocations = onSafeLocationsTab
             )
         }

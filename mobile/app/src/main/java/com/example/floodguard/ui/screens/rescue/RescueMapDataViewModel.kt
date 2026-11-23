@@ -2,7 +2,7 @@ package com.example.floodguard.ui.screens.rescue
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.floodguard.data.model.FloodAlertDto
+import com.example.floodguard.data.repository.RescueFloodWarningV2
 import com.example.floodguard.data.model.FloodAreaDto
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -20,7 +20,7 @@ internal sealed interface RescueMapLoadState<out T> {
 
 internal data class RescueMapDataUiState(
     val floodAreas: RescueMapLoadState<FloodAreaDto> = RescueMapLoadState.Loading,
-    val activeWarnings: RescueMapLoadState<FloodAlertDto> = RescueMapLoadState.Loading
+    val activeWarnings: RescueMapLoadState<RescueFloodWarningV2> = RescueMapLoadState.Loading
 ) {
     val isLoading: Boolean
         get() = floodAreas is RescueMapLoadState.Loading || activeWarnings is RescueMapLoadState.Loading
@@ -31,7 +31,7 @@ internal data class RescueMapDataUiState(
  */
 internal class RescueMapDataViewModel(
     private val loadFloodAreas: suspend () -> Result<List<FloodAreaDto>>,
-    private val loadActiveWarnings: suspend () -> Result<List<FloodAlertDto>>
+    private val loadActiveWarnings: suspend () -> Result<List<RescueFloodWarningV2>>
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(RescueMapDataUiState())
     val uiState = _uiState.asStateFlow()

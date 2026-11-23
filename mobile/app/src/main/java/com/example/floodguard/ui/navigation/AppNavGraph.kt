@@ -88,6 +88,12 @@ import com.example.floodguard.ui.screens.rescue.RescueSafeLocationsScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationDetailScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationViewModel
 import com.example.floodguard.data.repository.RescueSafeLocationRepository
+import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
+import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
+import com.example.floodguard.data.repository.RescueFloodWarningV2ZonesRepository
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningV2ViewModel
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningsV2ListScreen
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningV2DetailScreen
 import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -267,6 +273,48 @@ fun AppNavGraph(
         } else {
             null
         }
+    // Dedicated warning state, separate from Resident and SOS.
+    val rescueWarningViewModel: RescueFloodWarningV2ViewModel? =
+        if (
+            session.isLoggedIn &&
+            session.role == "rescue" &&
+            isRescueRoute(currentRoute)
+        ) {
+            val warningStore = remember(session.accountKey) {
+                ViewModelStore()
+            }
+
+            DisposableEffect(warningStore) {
+                onDispose {
+                    warningStore.clear()
+                }
+            }
+
+            val warningOwner = remember(warningStore) {
+                object : ViewModelStoreOwner {
+                    override val viewModelStore: ViewModelStore =
+                        warningStore
+                }
+            }
+
+            viewModel(
+                viewModelStoreOwner = warningOwner,
+                key = "rescue-flood-warning-v2:${session.accountKey}"
+            ) {
+                val api = ApiClient
+                    .createAuthenticatedRetrofit(sessionManager)
+                    .create(RescueFloodWarningV2Api::class.java)
+
+                RescueFloodWarningV2ViewModel(
+                    repository = RescueFloodWarningV2Repository(api),
+                    zonesRepository =
+                        RescueFloodWarningV2ZonesRepository(api)
+                )
+            }
+        } else {
+            null
+        }
+
     var rescueFilter by rememberSaveable(session.accountKey) { mutableStateOf(SosFilter.ACTIVE) }
     fun openRescueTab(route: String) {
         navController.navigate(route) {
@@ -292,6 +340,19 @@ fun AppNavGraph(
         startDestination = startDestination
     ) {
         composable(route = AppRoutes.RESCUE_HOME) {
+            val warningState = rescueWarningViewModel
+                ?.overviewState
+                ?.collectAsStateWithLifecycle()
+                ?.value
+
+            val warningAccess = rescueWarningViewModel
+                ?.accessFailure
+                ?.collectAsStateWithLifecycle()
+                ?.value
+
+            LaunchedEffect(rescueWarningViewModel) {
+                rescueWarningViewModel?.onOverviewEntered()
+            }
             val sos = rescueSos?.state?.collectAsStateWithLifecycle()?.value ?: RescueSosState()
             rescueSos?.let { store ->
                 RescueSosRefresh(store)
@@ -308,6 +369,46 @@ fun AppNavGraph(
                 uiState = RescueOverviewUiState(
                     summaries = mapOf(RescueSummaryMetric.NEW_SOS to metric(sos.active),
                         RescueSummaryMetric.RESCUED_SOS to metric(sos.rescued)),
+                    warnings = when {
+                        warningAccess != null ->
+                            RescueOverviewSectionState.Failed(
+                                "Không thể truy cập cảnh báo. Kiểm tra phiên đăng nhập."
+                            )
+
+                        warningState == null ->
+                            RescueOverviewSectionState.NotReady
+
+                        warningState.isLoading && !warningState.hasLoaded ->
+                            RescueOverviewSectionState.Loading
+
+                        !warningState.hasLoaded &&
+                            warningState.errorMessage != null ->
+                            RescueOverviewSectionState.Failed(
+                                warningState.errorMessage
+                            )
+
+                        !warningState.hasLoaded ->
+                            RescueOverviewSectionState.NotReady
+
+                        warningState.warnings.isEmpty() ->
+                            RescueOverviewSectionState.Empty(
+                                "Chưa có bản tin cảnh báo lũ."
+                            )
+
+                        else ->
+                            RescueOverviewSectionState.Ready(
+                                "${warningState.activeCount} đang bật / " +
+                                    "${warningState.warnings.size} bản tin. " +
+                                    "Gần nhất: " +
+                                    (warningState.latestWarning?.title
+                                        ?: "Không có") +
+                                    if (warningState.isStale) {
+                                        " · Chưa thể cập nhật dữ liệu mới."
+                                    } else {
+                                        ""
+                                    }
+                            )
+                    },
                     prioritySos = when {
                         sos.accessError != null -> RescueOverviewSectionState.Failed(sos.accessError!!)
                         sos.active.error != null -> RescueOverviewSectionState.Failed(sos.active.error!!)
@@ -316,13 +417,16 @@ fun AppNavGraph(
                         else -> RescueOverviewSectionState.NotReady
                     }),
                 onRetry = { section ->
+                    if (section == RescueOverviewSection.WARNINGS) {
+                        rescueWarningViewModel?.refreshOverview()
+                    }
                     if (section == RescueOverviewSection.SUMMARY || section == RescueOverviewSection.PRIORITY_SOS) {
                         rescueSos?.refresh(SosFilter.ACTIVE)
                         rescueSos?.refresh(SosFilter.RESCUED)
                     }
                 },
                 availableDestinations = setOf(RescueOverviewDestination.MAP,
-                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED, RescueOverviewDestination.SAFE_LOCATIONS),
+                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED, RescueOverviewDestination.SAFE_LOCATIONS, RescueOverviewDestination.WARNINGS),
                 onOpenDestination = { destination ->
                     when (destination) {
                         RescueOverviewDestination.MAP -> openRescueTab(AppRoutes.RESCUE_MAP)
@@ -330,6 +434,8 @@ fun AppNavGraph(
                         RescueOverviewDestination.SOS_RESCUED -> { rescueFilter = SosFilter.RESCUED; openRescueTab(AppRoutes.RESCUE_SOS) }
                         RescueOverviewDestination.SOS_LIST -> openRescueTab(AppRoutes.RESCUE_SOS)
                         RescueOverviewDestination.SAFE_LOCATIONS -> openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                        RescueOverviewDestination.WARNINGS ->
+                            openRescueTab(AppRoutes.RESCUE_FLOOD_WARNINGS)
                         else -> Unit
                     }
                 },
@@ -351,6 +457,8 @@ fun AppNavGraph(
             rescueLocation?.let { location ->
                 RescueMapScreen(
                     location = location,
+                    sessionManager = sessionManager,
+                    accountKey = session.accountKey ?: return@let,
                     onSosTab = { openRescueTab(AppRoutes.RESCUE_SOS) },
                     onSafeLocationsTab = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) },
                     onBack = {
@@ -448,6 +556,107 @@ fun AppNavGraph(
                 }
             }
         }
+        // Rescue warning V2 is separate from Resident warning V1.
+        composable(route = AppRoutes.RESCUE_FLOOD_WARNINGS) {
+            rescueWarningViewModel?.let { vm ->
+                RescueFloodWarningsV2ListScreen(
+                    viewModel = vm,
+                    onBack = {
+                        if (!navController.popBackStack()) {
+                            openRescueTab(AppRoutes.RESCUE_HOME)
+                        }
+                    },
+                    onOpenDetail = { id ->
+                        navController.navigate(
+                            "${AppRoutes.RESCUE_FLOOD_WARNING_DETAIL}/${Uri.encode(id)}"
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOverview = {
+                        openRescueTab(AppRoutes.RESCUE_HOME)
+                    },
+                    onFloodMap = {
+                        openRescueTab(AppRoutes.RESCUE_MAP)
+                    },
+                    onSos = {
+                        openRescueTab(AppRoutes.RESCUE_SOS)
+                    },
+                    onSafeLocations = {
+                        openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                    }
+                )
+            }
+        }
+
+        composable(
+            route = "${AppRoutes.RESCUE_FLOOD_WARNING_DETAIL}/{alertId}"
+        ) { entry ->
+            val id = entry.arguments?.getString("alertId")
+
+            if (!id.isNullOrBlank()) {
+                rescueWarningViewModel?.let { vm ->
+                    RescueFloodWarningV2DetailScreen(
+                        id = id,
+                        ownerKey = entry.id,
+                        viewModel = vm,
+                        onBack = {
+                            if (!navController.popBackStack()) {
+                                openRescueTab(
+                                    AppRoutes.RESCUE_FLOOD_WARNINGS
+                                )
+                            }
+                        },
+                        onOpenWarningMap = {
+                            navController.navigate(
+                                AppRoutes.RESCUE_FLOOD_WARNING_MAP
+                            ) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOverview = {
+                            openRescueTab(AppRoutes.RESCUE_HOME)
+                        },
+                        onFloodMap = {
+                            openRescueTab(AppRoutes.RESCUE_MAP)
+                        },
+                        onSos = {
+                            openRescueTab(AppRoutes.RESCUE_SOS)
+                        },
+                        onSafeLocations = {
+                            openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                        }
+                    )
+                }
+            }
+        }
+
+        composable(route = AppRoutes.RESCUE_FLOOD_WARNING_MAP) {
+            rescueLocation?.let { location ->
+                RescueMapScreen(
+                    location = location,
+                    sessionManager = sessionManager,
+                    accountKey = session.accountKey ?: return@let,
+                    title = "Bản đồ ngập",
+                    initiallyShowFloodLayers = true,
+                    onBack = {
+                        if (!navController.popBackStack()) {
+                            openRescueTab(AppRoutes.RESCUE_FLOOD_WARNINGS)
+                        }
+                    },
+                    onOverviewTab = {
+                        openRescueTab(AppRoutes.RESCUE_HOME)
+                    },
+                    onSosTab = {
+                        openRescueTab(AppRoutes.RESCUE_SOS)
+                    },
+                    onSafeLocationsTab = {
+                        openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                    }
+                )
+            }
+        }
+
         composable(route = AppRoutes.ACCESS_DENIED) {
             RescueEntryScreen(
                 accessDenied = true,
