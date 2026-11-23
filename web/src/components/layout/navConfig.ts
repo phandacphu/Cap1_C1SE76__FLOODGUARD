@@ -20,7 +20,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Quản lý Rescue Staff", icon: "staff", to: "/admin/rescue-staff" },
   { label: "Thông báo", icon: "bell", to: "/admin/notifications" },
   { label: "Báo cáo", icon: "report", to: "/admin/reports" },
-  { label: "Cài đặt hệ thống", icon: "settings" },
+  { label: "Cài đặt hệ thống", icon: "settings", to: "/admin/settings" },
 ];
 
 /** Rescue sidebar (Figma: Rescue Staff). Used by the Rescue screens. */
