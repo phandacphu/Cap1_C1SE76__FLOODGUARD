@@ -1,7 +1,9 @@
 import { apiGet, ApiError } from "../../api/http";
 import { fetchSosSummary } from "./sos/sosApi";
 import type { SosSummary } from "./sos/sosTypes";
-import type { AdminUser, FloodAlert, FloodArea } from "../../types/admin";
+import type { AdminUser, FloodArea } from "../../types/admin";
+import { floodWarningApi } from "./flood-warning/floodWarningApi";
+import type { FloodWarning } from "./flood-warning/floodWarningTypes";
 import { fetchAdminSafeLocations } from "./safe-location/safeLocationApi";
 import type { SafeLocation } from "./safe-location/safeLocationTypes";
 
@@ -9,7 +11,7 @@ import type { SafeLocation } from "./safe-location/safeLocationTypes";
 export type Section<T> = { ok: true; data: T } | { ok: false; status: number };
 
 export interface AdminOverview {
-  alerts: Section<FloodAlert[]>;
+  alerts: Section<FloodWarning[]>;
   areas: Section<FloodArea[]>;
   safeLocations: Section<SafeLocation[]>;
   /** Admin-only endpoint (CCF-116). */
@@ -43,11 +45,7 @@ async function measureHealth(): Promise<number | null> {
 
 export async function fetchAdminOverview(token: string): Promise<AdminOverview> {
   const [alerts, areas, safeLocations, sos, users, apiLatencyMs] = await Promise.all([
-    settle(
-      apiGet<{ floodAlerts: FloodAlert[] }>("/flood-alerts/active", token).then(
-        (data) => data.floodAlerts ?? [],
-      ),
-    ),
+    settle(floodWarningApi.list("active")),
     settle(
       apiGet<{ floodAreas: FloodArea[] }>("/flood-areas", token).then(
         (data) => data.floodAreas ?? [],

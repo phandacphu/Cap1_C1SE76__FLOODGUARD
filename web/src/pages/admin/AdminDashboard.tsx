@@ -10,15 +10,9 @@ import { AuditFeedPanel } from "./components/AuditFeedPanel";
 import { InfraPanel } from "./components/InfraPanel";
 import { KpiCard } from "./components/KpiCard";
 import { Panel } from "./components/Panel";
-import { RiskAreasPanel } from "./components/RiskAreasPanel";
 import { SosDashboardPanel } from "./sos/SosDashboardPanel";
 import { formatDashboardSosCount } from "./sos/sosFormat";
-import {
-  SEVERITY_LABEL,
-  countAlertsBySeverity,
-  formatNumber,
-  rankRiskAreas,
-} from "./adminStats";
+import { formatNumber } from "./adminStats";
 import { useAdminOverview } from "./useAdminOverview";
 
 const DAY_MS = 86_400_000;
@@ -37,7 +31,6 @@ export function AdminDashboard() {
     const sos = overview.sos.ok ? overview.sos.data : null;
     const users = overview.users.ok ? overview.users.data : null;
 
-    const alertCounts = countAlertsBySeverity(alerts);
 
     const staff = users ? users.filter((u) => u.role === "rescue") : null;
     const weekAgo = now.getTime() - 7 * DAY_MS;
@@ -45,8 +38,6 @@ export function AdminDashboard() {
     return {
       now,
       alerts,
-      alertCounts,
-      affectedAreas: new Set(alerts.map((a) => a.areaId)).size,
       areaNames: new Map(areas.map((a) => [a.id, a.name])),
       floodAreas: areas.filter((a) => a.areaType === "flood"),
       lowLyingAreas: areas.filter((a) => a.areaType === "low_lying"),
@@ -60,7 +51,6 @@ export function AdminDashboard() {
         : null,
       staff,
       activeStaff: staff ? staff.filter((u) => u.isActive).length : null,
-      riskAreas: rankRiskAreas(areas, alerts),
     };
   }, [overview]);
 
@@ -154,16 +144,9 @@ export function AdminDashboard() {
                 icon="alert"
                 tone="sos"
                 value={String(view.alerts.length).padStart(2, "0")}
-                sub={
-                  view.alerts.length > 0
-                    ? (["critical", "high", "medium", "low"] as const)
-                        .filter((s) => view.alertCounts[s] > 0)
-                        .map((s) => `${view.alertCounts[s]} ${SEVERITY_LABEL[s]}`)
-                        .join(", ")
-                    : "Không có cảnh báo"
-                }
-                footerLabel="Vùng ảnh hưởng"
-                footerValue={`${view.affectedAreas} khu vực`}
+                sub={view.alerts.length > 0 ? "Bản tin V2 đang bật" : "Không có cảnh báo đang bật"}
+                footerLabel="Phạm vi"
+                footerValue="Tất cả vùng công bố"
               />
               <KpiCard
                 label="Vùng ngập Admin"
@@ -217,15 +200,15 @@ export function AdminDashboard() {
                 errorStatus={overview && !overview.sos.ok ? overview.sos.status : null} />
 
               <Panel
-                title="Vùng có cảnh báo"
-                subtitle="Số cảnh báo liên kết theo lần tải gần nhất"
+                title="Phạm vi cảnh báo V2"
+                subtitle="Áp dụng cho toàn bộ vùng hệ thống đang công bố"
                 tag={
                   <span className="rounded bg-sos/15 px-2 py-1 font-mono text-[10px] text-sos">
-                    CẢNH BÁO LIÊN KẾT
+                    TOÀN HỆ THỐNG
                   </span>
                 }
               >
-                <RiskAreasPanel areas={view.riskAreas} />
+                <p className="p-4 text-sm text-muted">Bản tin V2 không liên kết một vùng riêng hoặc mức độ. Xem danh sách và lịch sử tại <a className="text-water underline" href="/admin/flood-warnings">Quản lý cảnh báo lũ</a>.</p>
               </Panel>
             </section>
 
@@ -251,7 +234,7 @@ export function AdminDashboard() {
                   </span>
                 }
               >
-                <ActiveAlertsPanel alerts={view.alerts} areaNames={view.areaNames} />
+                <ActiveAlertsPanel alerts={view.alerts} />
               </Panel>
 
               <Panel title="Hạ tầng C4I" icon="server">
