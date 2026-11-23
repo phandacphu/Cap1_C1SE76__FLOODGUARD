@@ -18,6 +18,7 @@ import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
 import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import RescueStaffUiScreen from './pages/admin/rescue-staff/RescueStaffUiScreen';
+import AdminNotificationsUiScreen from './pages/admin/notifications/AdminNotificationsUiScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -66,6 +67,7 @@ export const App: React.FC = () => {
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
             <Route path="/admin/rescue-staff" element={<RescueStaffUiScreen />} />
+            <Route path="/admin/notifications" element={<AdminNotificationsUiScreen />} />
           </Route>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
