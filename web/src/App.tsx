@@ -17,6 +17,10 @@ import SafeLocationManagementScreen from './pages/admin/safe-location/SafeLocati
 import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
 import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
+import RescueStaffUiScreen from './pages/admin/rescue-staff/RescueStaffUiScreen';
+import AdminNotificationsUiScreen from './pages/admin/notifications/AdminNotificationsUiScreen';
+import AdminReportsUiScreen from './pages/admin/reports/AdminReportsUiScreen';
+import AdminSettingsUiScreen from './pages/admin/settings/AdminSettingsUiScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
@@ -64,6 +68,10 @@ export const App: React.FC = () => {
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
+            <Route path="/admin/rescue-staff" element={<RescueStaffUiScreen />} />
+            <Route path="/admin/notifications" element={<AdminNotificationsUiScreen />} />
+            <Route path="/admin/reports" element={<AdminReportsUiScreen />} />
+            <Route path="/admin/settings" element={<AdminSettingsUiScreen />} />
           </Route>
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
