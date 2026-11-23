@@ -19,7 +19,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
   { label: "Quản lý Rescue Staff", icon: "staff", to: "/admin/rescue-staff" },
   { label: "Thông báo", icon: "bell", to: "/admin/notifications" },
-  { label: "Báo cáo", icon: "report" },
+  { label: "Báo cáo", icon: "report", to: "/admin/reports" },
   { label: "Cài đặt hệ thống", icon: "settings" },
 ];
 
