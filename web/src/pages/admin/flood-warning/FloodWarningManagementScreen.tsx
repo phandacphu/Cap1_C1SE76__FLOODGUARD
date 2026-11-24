@@ -81,9 +81,10 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     const ticket = guard.current.beginList();
     const token = localStorage.getItem("floodguard_token");
     const activeId = selectedId.current;
-    guard.current.invalidateDetail();
     const synchronizeDetail = !!activeId && !inFlight.current;
-    if (synchronizeDetail) { detailSync.current = true; setDetailBusy(true); setEditor(undefined); setConfirmOff(false); }
+    // A write for A may finish while a user-initiated GET for B is pending.
+    // In that case this list refresh does not own B's detail request/loading.
+    if (synchronizeDetail) { guard.current.invalidateDetail(); detailSync.current = true; setDetailBusy(true); setEditor(undefined); setConfirmOff(false); }
     setLoading(true); setError("");
     try {
       // Both promises must settle: a late 401/403 outranks a quick 500 or stale success.

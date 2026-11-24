@@ -7,10 +7,12 @@ import { jsx, jsxs } from 'react/jsx-runtime';
 
 // Minimal hook/JSX component harness: invokes the actual screen's handlers and
 // rerenders after each async boundary, without a browser or real HTTP requests.
-function mount(source) {
+function mount(source, { effects = false } = {}) {
   const slots = [];
   let cursor = 0;
   let tree;
+  let pendingEffects = [];
+  const equalDeps = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => Object.is(item, b[i]));
   const hooks = {
     useState(initial) {
       const index = cursor++;
@@ -22,25 +24,30 @@ function mount(source) {
       if (!(index in slots)) slots[index] = { current: initial };
       return slots[index];
     },
-    useCallback(callback) { cursor++; return callback; },
-    useEffect() { cursor++; },
+    useCallback(callback, deps) {
+      const index = cursor++;
+      if (!(index in slots) || !equalDeps(slots[index].deps, deps)) slots[index] = { deps, callback };
+      return slots[index].callback;
+    },
+    useEffect(callback, deps) {
+      const index = cursor++;
+      if (!effects) return;
+      if (!(index in slots) || !equalDeps(slots[index].deps, deps)) {
+        const previous = slots[index];
+        slots[index] = { deps, cleanup: null };
+        pendingEffects.push(() => {
+          previous?.cleanup?.();
+          slots[index].cleanup = callback() ?? null;
+        });
+      }
+    },
   };
   class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
   class WarningRequestError extends ApiError {}
-  class WarningFlowGuard {
-    epoch = 0; listVersion = 0; detailVersion = 0; locked = false;
-    beginList() { return { epoch: this.epoch, version: ++this.listVersion }; }
-    beginDetail() { return { epoch: this.epoch, version: ++this.detailVersion }; }
-    snapshot() { return this.epoch; }
-    validEpoch(e) { return !this.locked && this.epoch === e; }
-    validList(t) { return this.validEpoch(t.epoch) && t.version === this.listVersion; }
-    validDetail(t) { return this.validEpoch(t.epoch) && t.version === this.detailVersion; }
-    invalidateDetail() { this.detailVersion++; }
-    invalidateList() { this.listVersion++; }
-    invalidateAll() { this.epoch++; this.listVersion++; this.detailVersion++; }
-    lock() { this.locked = true; this.invalidateAll(); }
-    get isLocked() { return this.locked; }
-  }
+  const guardPath = new URL('../src/pages/admin/flood-warning/warningFlowGuard.ts', import.meta.url);
+  const guardCode = ts.transpileModule(readFileSync(guardPath, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const guardExports = {};
+  vm.runInNewContext(guardCode, { exports: guardExports });
   const path = new URL('../src/pages/admin/flood-warning/FloodWarningManagementScreen.tsx', import.meta.url);
   const js = ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const exports = {};
@@ -51,10 +58,15 @@ function mount(source) {
     '../../../context/AuthContext': { useAuth: () => ({ logout() {} }) },
     './floodWarningApi': { WarningRequestError },
     './floodWarningTypes': { warningOrder: () => 0, warningTime: String },
-    './warningFlowGuard': { WarningFlowGuard, patchNeedsReconciliation: (s) => s === 0 || s === 429 || s >= 500 },
+    './warningFlowGuard': guardExports,
   };
   vm.runInNewContext(js, { exports, require: (name) => modules[name] ?? {}, localStorage: { getItem: () => null }, sessionStorage: { getItem: () => null }, crypto: { randomUUID: () => 'test-key' } });
-  const render = () => { cursor = 0; tree = exports.default({ source }); return tree; };
+  const render = () => {
+    cursor = 0; pendingEffects = [];
+    tree = exports.default({ source });
+    pendingEffects.forEach((run) => run());
+    return tree;
+  };
   function elements(node, found = []) {
     if (Array.isArray(node)) { node.forEach((child) => elements(child, found)); return found; }
     if (node && typeof node === 'object' && node.props) { found.push(node); elements(node.props.children, found); }
@@ -69,6 +81,7 @@ function mount(source) {
   };
   return {
     render, button, ApiError,
+    buttons: (name) => elements(tree).filter((node) => node.type === 'button' && label(node).includes(name)).map((node) => node.props),
     detailText: () => label(elements(tree).find((node) => node.type === 'section' && node.props['aria-label'] === 'Chi tiết cảnh báo')),
     editForm: () => elements(tree).find((node) => typeof node.props.onSave === 'function' && 'warning' in node.props)?.props,
     labels: () => elements(tree).map(label).join(' '),
@@ -135,6 +148,33 @@ test('late deactivate A never replaces currently selected B even when list refre
   assert.equal(view.button('Chỉnh sửa').disabled, false);
 });
 
+test('deactivate A refresh finishes before pending GET B: B resolves and loading clears', async () => {
+  const pendingDeactivate = deferred();
+  const pendingB = deferred();
+  const source = {
+    demo: true,
+    async list() { return [warning('A'), warning('B')]; },
+    async summary() { return { total: 2, active: 2, inactive: 0 }; },
+    async detail(id) { return id === 'B' ? pendingB.promise : warning('A'); },
+    async deactivate() { return pendingDeactivate.promise; },
+  };
+  const view = mount(source); view.render();
+  view.button('Làm mới').onClick(); await tick(); view.render();
+  view.buttons('Xem chi tiết')[0].onClick(); await tick(); view.render();
+  view.button('Tắt cảnh báo').onClick(); view.render();
+  view.button('Xác nhận tắt').onClick(); view.render();
+  view.button('Đóng').onClick(); view.render();
+  view.buttons('Xem chi tiết')[1].onClick(); view.render();
+  assert.equal(view.labels().includes('Đang tải chi tiết'), true);
+  pendingDeactivate.resolve({ ...warning('A'), status: 'inactive', endAt: '2026-11-24T01:00:00Z' });
+  await tick(); view.render();
+  assert.equal(view.labels().includes('Đang tải chi tiết'), true);
+  pendingB.resolve(warning('B')); await tick(); view.render();
+  assert.equal(view.detailText().includes('Warning B'), true);
+  assert.equal(view.labels().includes('Đang tải chi tiết'), false);
+  assert.equal(view.buttons('Xem chi tiết').every((button) => !button.disabled), true);
+});
+
 test('filter change during pending PATCH preserves uncertain draft if reconciliation fails', async () => {
   const pendingPatch = deferred();
   let detailReadFails = false;
@@ -145,16 +185,16 @@ test('filter change during pending PATCH preserves uncertain draft if reconcilia
     async detail() { if (detailReadFails) throw new Error('read failed'); return warning('A'); },
     async update() { return pendingPatch.promise; },
   };
-  const view = mount(source); view.render();
-  view.button('Làm mới').onClick(); await tick(); view.render();
+  const view = mount(source, { effects: true }); view.render();
+  await tick(); view.render();
   view.button('Xem chi tiết').onClick(); await tick(); view.render();
   view.button('Chỉnh sửa').onClick(); view.render();
   const form = view.editForm();
   assert.ok(form);
   form.onSave({ title: 'Draft to retain', content: 'Uncertain body' });
   view.render();
-  view.button('Đã tắt').onClick(); view.render();
-  view.button('Làm mới').onClick(); await tick(); view.render();
+  view.button('Đã tắt').onClick(); view.render(); // executes effect cleanup and new refresh
+  await tick(); view.render();
   detailReadFails = true;
   pendingPatch.reject(new view.ApiError('500', 500));
   await tick(); view.render();
