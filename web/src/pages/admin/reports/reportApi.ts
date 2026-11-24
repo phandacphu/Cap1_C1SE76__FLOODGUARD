@@ -3,10 +3,11 @@ import { parseApiSummary } from "../sos/sosContract";
 import type { SosSummary } from "../sos/sosTypes";
 import { fetchAdminSafeLocations } from "../safe-location/safeLocationApi";
 import { locationTypeLabels, type SafeLocationType } from "../safe-location/safeLocationTypes";
+import { fetchHistoricalAreas, fetchHistoricalRadar } from "../flood-area/historicalMapService";
 
 export type ReportRange = "7d" | "30d" | "90d";
 export interface WarningSummary { total: number; active: number; inactive: number }
-export interface FloodAreaSummary { total: number; byAreaType: { flood: number; low_lying: number; unclassified: number } }
+export interface FloodAreaSummary { total: number; historicalFlood: number; radarCandidates: number }
 export interface SafeLocationSummary { total: number; byType: Record<SafeLocationType | "unclassified", number> }
 const days: Record<ReportRange, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
@@ -42,21 +43,12 @@ export async function fetchWarningReport(token: string): Promise<WarningSummary>
   return parseWarningSummary(await apiGet<unknown>("/admin/flood-alerts/summary", token));
 }
 
-export function parseFloodAreaSummary(value: unknown): FloodAreaSummary {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Thống kê vùng ngập sai cấu trúc.");
-  const data = value as Record<string, unknown>;
-  const types = data.byAreaType;
-  if (!types || typeof types !== "object" || Array.isArray(types)) throw new Error("Thống kê vùng ngập thiếu phân loại.");
-  const by = types as Record<string, unknown>;
-  const valid = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
-  if (!valid(data.total) || !valid(by.flood) || !valid(by.low_lying) || !valid(by.unclassified) ||
-    data.total !== by.flood + by.low_lying + by.unclassified) throw new Error("Tổng số vùng ngập không khớp dữ liệu phân loại.");
-  return { total: data.total, byAreaType: { flood: by.flood, low_lying: by.low_lying, unclassified: by.unclassified } };
-}
-
-export async function fetchFloodAreaReport(token: string, range: ReportRange): Promise<FloodAreaSummary> {
-  const query = new URLSearchParams(reportWindow(range));
-  return parseFloodAreaSummary(await apiGet<unknown>(`/admin/flood-areas/summary?${query}`, token));
+/** Counts GeoJSON features, not independent polygons or confirmed flood extents. */
+export async function fetchFloodAreaReport(): Promise<FloodAreaSummary> {
+  const [history, radar] = await Promise.all([fetchHistoricalAreas(), fetchHistoricalRadar()]);
+  const historicalFlood = history.features.length;
+  const radarCandidates = radar.features.length;
+  return { total: historicalFlood + radarCandidates, historicalFlood, radarCandidates };
 }
 
 export async function fetchSafeLocationReport(token: string): Promise<SafeLocationSummary> {

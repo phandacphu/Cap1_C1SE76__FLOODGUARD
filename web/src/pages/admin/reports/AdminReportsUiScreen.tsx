@@ -32,7 +32,7 @@ export default function AdminReportsUiScreen() {
     // A new date range invalidates the previous SOS statistics; refresh errors retain the previous range only when unchanged.
     const sosRequest = fetchSosReport(token, range);
     const warningRequest = fetchWarningReport(token);
-    const areaRequest = fetchFloodAreaReport(token, range);
+    const areaRequest = fetchFloodAreaReport();
     const locationRequest = fetchSafeLocationReport(token);
     void sosRequest.then((data) => {
       if (allowed()) setSos({ data, loading: false, error: "", stale: false });
@@ -73,7 +73,7 @@ export default function AdminReportsUiScreen() {
 
   function chooseRange(next: ReportRange) {
     if (next === range || locked) return;
-    setRange(next); setSos(empty()); setAreas(empty());
+    setRange(next); setSos(empty());
   }
   function refresh() {
     if (locked || sos.loading || warning.loading || areas.loading || locations.loading) return;
@@ -98,7 +98,7 @@ export default function AdminReportsUiScreen() {
       </button></div>}>
     {locked && <p role="alert" className="rounded-xl border border-red-500/40 p-4 text-sm">Phiên hoặc quyền Admin không hợp lệ. Dữ liệu báo cáo đã bị khóa.</p>}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4">
-      <div><p className="text-sm font-semibold text-white">Khoảng thời gian SOS và vùng ngập</p>
+      <div><p className="text-sm font-semibold text-white">Khoảng thời gian SOS</p>
         <p className="mt-1 text-xs text-slate-400">Từ {formatDate(window.from)} đến {formatDate(window.to)} (GMT+7)</p></div>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Chọn khoảng thời gian báo cáo">
         {([["7d", "7 ngày"], ["30d", "30 ngày"], ["90d", "90 ngày"]] as const).map(([key, label]) => <button type="button" key={key}
@@ -148,17 +148,17 @@ export default function AdminReportsUiScreen() {
         <PreviewStat title="Đã tắt" value={warning.data.inactive} detail="Lịch sử cảnh báo" tone="warn" /></div>
         : <p className="p-5 text-sm text-slate-400">Chưa có số liệu cảnh báo lũ.</p>}
     </PreviewPanel>
-    <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Quản lý vùng ngập · Trong kỳ</h2>{sectionLink("/admin/flood-areas", "Xem vùng ngập")}</div>
+    <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Quản lý vùng ngập</h2>{sectionLink("/admin/flood-areas", "Xem vùng ngập")}</div>
     <PreviewPanel title="Thống kê vùng ngập và vùng trũng">
       {areas.data ? <div className="space-y-5 p-5">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <PreviewStat title="Tổng vùng" value={areas.data.total} detail="Trong kỳ" />
-          <PreviewStat title="Vùng ngập" value={areas.data.byAreaType.flood} detail="Trong kỳ" tone="warn" />
-          <PreviewStat title="Vùng trũng" value={areas.data.byAreaType.low_lying} detail="Trong kỳ" tone="water" />
-          <PreviewStat title="Chưa phân loại" value={areas.data.byAreaType.unclassified} detail="Trong kỳ" tone="muted" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <PreviewStat title="Tổng đối tượng" value={areas.data.total} detail="Dữ liệu lịch sử và radar" />
+          <PreviewStat title="Vùng ngập lịch sử" value={areas.data.historicalFlood} detail="Số đối tượng lịch sử" tone="warn" />
+          <PreviewStat title="Vùng trũng (radar)" value={areas.data.radarCandidates} detail="Số đối tượng phân tích radar" tone="water" />
         </div>
-        {([ ["Vùng ngập", areas.data.byAreaType.flood, "bg-warn"], ["Vùng trũng", areas.data.byAreaType.low_lying, "bg-water"], ["Chưa phân loại", areas.data.byAreaType.unclassified, "bg-slate-500"] ] as const).map(([label, count, color]) =>
+        {([ ["Vùng ngập lịch sử", areas.data.historicalFlood, "bg-warn"], ["Vùng trũng (radar)", areas.data.radarCandidates, "bg-water"] ] as const).map(([label, count, color]) =>
           <div key={label}><div className="mb-2 flex justify-between text-sm"><span>{label}</span><strong>{count}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-800"><div className={`h-full ${color}`} style={{ width: `${areas.data!.total ? count / areas.data!.total * 100 : 0}%` }} /></div></div>)}
+        <p className="text-xs text-slate-400">Đếm đối tượng trên lớp bản đồ; vùng radar là lớp phân tích, không phải vùng ngập đã xác minh.</p>
       </div> : <p className="p-5 text-sm text-slate-400">Chưa có số liệu vùng ngập.</p>}
     </PreviewPanel>
     <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Quản lý điểm an toàn · Toàn hệ thống</h2>{sectionLink("/admin/safe-locations", "Xem điểm an toàn")}</div>
