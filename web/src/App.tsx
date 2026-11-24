@@ -13,6 +13,7 @@ import HistoricalMapScreen from './pages/admin/flood-area/components/HistoricalM
 import UserManagementScreen from './pages/admin/user-management/UserManagementScreen';
 import FloodWarningManagementScreen from './pages/admin/flood-warning/FloodWarningManagementScreen';
 import { floodWarningApi } from './pages/admin/flood-warning/floodWarningApi';
+import { createFloodWarningDemo } from './pages/admin/flood-warning/floodWarningDemo';
 import SafeLocationManagementScreen from './pages/admin/safe-location/SafeLocationManagementScreen';
 import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
@@ -25,6 +26,12 @@ import { RescueDashboard } from './pages/rescue/RescueDashboard';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 import { FloodMapView } from './pages/map/FloodMapView';
+
+// Development-only, opt-in, stable for the lifetime of this loaded module.
+// No API fallback: a demo failure remains a demo failure.
+const warningSource = import.meta.env.DEV && import.meta.env.VITE_ADMIN_FLOOD_WARNING_MOCK === 'true'
+  ? createFloodWarningDemo()
+  : floodWarningApi;
 
 /** "/" sends a logged-in user to their dashboard and everybody else to the login page. */
 const RootRedirect: React.FC = () => {
@@ -63,7 +70,7 @@ export const App: React.FC = () => {
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/users" element={<UserManagementScreen />} />
             <Route path="/admin/flood-areas" element={<FloodAreaManagementScreen />} />
-            <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={floodWarningApi} />} />
+            <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={warningSource} />} />
             <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationApi} />} />
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />

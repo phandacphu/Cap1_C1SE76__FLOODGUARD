@@ -1,107 +1,77 @@
 import { API_URL } from "../../../api/authApi";
 import { ApiError } from "../../../api/http";
-import { listAreas } from "../flood-area/floodAreaService";
-import type { FloodWarning, FloodWarningSource, WarningFields } from "./floodWarningTypes";
+import type { FloodWarning, WarningFields, WarningSource, WarningStatus, WarningSummary } from "./floodWarningTypes";
 
-const TIMEOUT_MS = 70_000;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+function incompatible(): never { throw new ApiError("Phản hồi không đúng schema cảnh báo V2, không thể xem là dữ liệu trống.", 502); }
+export function parseWarning(v: unknown): FloodWarning {
+  if (!object(v) || v.schemaVersion !== 2 || typeof v.id !== "string" || !v.id ||
+    typeof v.title !== "string" || !v.title.trim() || typeof v.content !== "string" || !v.content.trim() ||
+    !["active", "inactive"].includes(String(v.status)) || v.scope !== "all_published_zones" ||
+    !Number.isSafeInteger(v.revision) || (v.revision as number) < 1 ||
+    ![v.startAt, v.createdAt, v.updatedAt].every((t) => typeof t === "string" && Number.isFinite(Date.parse(t))) ||
+    (v.status === "active" ? v.endAt !== null : typeof v.endAt !== "string" || !Number.isFinite(Date.parse(v.endAt))) ||
+    (typeof v.endAt === "string" && Date.parse(v.endAt) < Date.parse(v.startAt as string))) incompatible();
+  return v as unknown as FloodWarning;
 }
-
-function readToken(): string {
+function matchingAlert(value: unknown, requestedId: string): FloodWarning {
+  const result = parseWarning(value);
+  if (result.id !== requestedId) incompatible();
+  return result;
+}
+export class WarningRequestError extends ApiError {
+  readonly code: string;
+  readonly uncertain: boolean;
+  constructor(message: string, status: number, code: string, uncertain = false) { super(message, status); this.code = code; this.uncertain = uncertain; }
+}
+async function call(path: string, method = "GET", payload?: object, key?: string): Promise<Record<string, unknown>> {
   const token = localStorage.getItem("floodguard_token");
-  if (!token) throw new ApiError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.", 401);
-  return token;
-}
-
-function parseWarning(value: unknown): FloodWarning {
-  if (!isRecord(value) ||
-      typeof value.id !== "string" || !value.id.trim() ||
-      typeof value.title !== "string" ||
-      typeof value.content !== "string" ||
-      typeof value.areaId !== "string" ||
-      !["low", "medium", "high", "critical"].includes(String(value.severity)) ||
-      (value.status !== "active" && value.status !== "inactive") ||
-      typeof value.startAt !== "string" ||
-      typeof value.endAt !== "string") {
-    throw new ApiError("Phản hồi cảnh báo lũ từ máy chủ không đúng cấu trúc.", 502);
-  }
-  return {
-    id: value.id,
-    title: value.title,
-    content: value.content,
-    areaId: value.areaId,
-    severity: value.severity as FloodWarning["severity"],
-    status: value.status,
-    startAt: value.startAt,
-    endAt: value.endAt,
-  };
-}
-
-type Method = "GET" | "POST" | "PATCH";
-
-async function callAdmin(path: string, method: Method, fields?: WarningFields): Promise<Record<string, unknown>> {
-  const token = readToken();
+  if (!token) throw new WarningRequestError("Phiên đăng nhập đã hết hạn.", 401, "AUTH_REQUIRED");
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
-
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const response = await fetch(`${API_URL}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(fields ? { "Content-Type": "application/json" } : {}),
-      },
-      body: fields ? JSON.stringify(fields) : undefined,
-      signal: controller.signal,
+      method, signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}`, ...(payload ? { "Content-Type": "application/json" } : {}), ...(key ? { "Idempotency-Key": key } : {}) },
+      body: payload ? JSON.stringify(payload) : undefined,
     });
-
-    const body: unknown = await response.json().catch(() => null);
-    const message = isRecord(body) && typeof body.message === "string"
-      ? body.message
-      : `Lỗi máy chủ (${response.status}).`;
-    if (!response.ok) throw new ApiError(message, response.status);
-    if (!isRecord(body) || body.success !== true || !isRecord(body.data)) {
-      throw new ApiError("Phản hồi từ máy chủ không đúng cấu trúc.", 502);
-    }
-    if (method === "POST" && response.status !== 201) {
-      throw new ApiError("Máy chủ chưa xác nhận tạo cảnh báo (HTTP 201). Hãy tải lại trước khi thử lại.", 502);
-    }
-    return body.data;
+    const json: unknown = await response.json().catch(() => null);
+    const message = object(json) && typeof json.message === "string" ? json.message : `HTTP ${response.status}`;
+    const code = object(json) && typeof json.code === "string" ? json.code : "HTTP_ERROR";
+    if (!response.ok) throw new WarningRequestError(message, response.status, code);
+    if (!object(json) || json.success !== true || !object(json.data)) incompatible();
+    return json.data;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    if (controller.signal.aborted) {
-      throw new ApiError(
-        "Kết nối quá hạn. Lệnh lưu có thể đã thành công; hãy tải lại danh sách trước khi thao tác tiếp, không tự gửi lại.",
-        504,
-      );
-    }
-    throw new ApiError("Không thể kết nối máy chủ.", 0);
-  } finally {
-    window.clearTimeout(timeout);
-  }
+    throw new WarningRequestError(controller.signal.aborted ? "Kết nối quá thời gian; kết quả chưa rõ." : "Mất kết nối; kết quả chưa rõ.", controller.signal.aborted ? 504 : 0, "NETWORK_UNCERTAIN", method !== "GET");
+  } finally { clearTimeout(timer); }
 }
-
-export const floodWarningApi: FloodWarningSource = {
+const route = (id: string) => `/admin/flood-alerts/${encodeURIComponent(id)}`;
+export const floodWarningApi: WarningSource = {
   demo: false,
-  async list() {
-    // Both Admin lists use the shared Backend and authenticated Admin token.
-    const [data, areas] = await Promise.all([
-      callAdmin("/admin/flood-alerts", "GET"),
-      listAreas(),
-    ]);
-    if (!Array.isArray(data.floodAlerts)) {
-      throw new ApiError("Danh sách cảnh báo trả về sai cấu trúc.", 502);
-    }
-    return {
-      warnings: data.floodAlerts.map(parseWarning),
-      areas: areas.map(({ id, name }) => ({ id, name })),
-    };
+  async list(status?: WarningStatus, q?: string) {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (q?.trim()) params.set("q", q.trim());
+    const data = await call(`/admin/flood-alerts${params.size ? `?${params}` : ""}`);
+    if (data.schemaVersion !== 2 || !Array.isArray(data.floodAlerts)) incompatible();
+    const alerts = data.floodAlerts.map(parseWarning);
+    if (new Set(alerts.map((alert) => alert.id)).size !== alerts.length) incompatible();
+    return alerts;
   },
-  async save(id, fields) {
-    const path = id ? `/admin/flood-alerts/${encodeURIComponent(id)}` : "/admin/flood-alerts";
-    const data = await callAdmin(path, id ? "PATCH" : "POST", fields);
+  async summary() {
+    const data = await call("/admin/flood-alerts/summary");
+    if (data.schemaVersion !== 2 || ![data.total, data.active, data.inactive].every((n) => Number.isSafeInteger(n) && (n as number) >= 0) ||
+      (data.total as number) !== (data.active as number) + (data.inactive as number)) incompatible();
+    return data as unknown as WarningSummary;
+  },
+  async detail(id) { return matchingAlert((await call(route(id))).floodAlert, id); },
+  async create(fields: WarningFields, key: string) { return parseWarning((await call("/admin/flood-alerts", "POST", fields, key)).floodAlert); },
+  async creationRequest(key) {
+    const data = await call(`/admin/flood-alerts/creation-requests/${encodeURIComponent(key)}`);
+    if (data.requestId !== key) incompatible();
     return parseWarning(data.floodAlert);
   },
+  async update(id, revision, fields) { return matchingAlert((await call(route(id), "PATCH", { expectedRevision: revision, ...fields })).floodAlert, id); },
+  async deactivate(id) { return matchingAlert((await call(`${route(id)}/deactivate`, "POST", {})).floodAlert, id); },
 };
