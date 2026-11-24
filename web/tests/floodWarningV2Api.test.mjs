@@ -53,6 +53,7 @@ test('update sends revision, deactivate uses POST {}, reconcile uses GET', async
   await api.deactivate(active.id);
   assert.equal(requests.at(-1).method, 'POST');
   assert.deepEqual(JSON.parse(requests.at(-1).body), {});
+  reply({ requestId: '8feec7ad-0123-4123-a123-123456789abc', floodAlert: active });
   await api.creationRequest('8feec7ad-0123-4123-a123-123456789abc');
   assert.match(requests.at(-1).url, /creation-requests\//);
 });
@@ -61,4 +62,16 @@ test('409 retains API code and network uncertainty is distinguished', async () =
   await assert.rejects(api.update(active.id, 1, { title: 'New' }), (e) => e instanceof WarningRequestError && e.code === 'ALERT_REVISION_CONFLICT');
   response = async () => { throw new TypeError('offline'); };
   await assert.rejects(api.create({ title: 'A', content: 'B' }, '8feec7ad-0123-4123-a123-123456789abc'), (e) => e.uncertain === true);
+});
+test('rejects detail/update/deactivate responses whose ID differs from requested ID', async () => {
+  reply({ floodAlert: { ...active, id: 'OTHER-ID' } });
+  await assert.rejects(api.detail(active.id), { status: 502 });
+  await assert.rejects(api.update(active.id, 1, { title: 'Edited' }), { status: 502 });
+  await assert.rejects(api.deactivate(active.id), { status: 502 });
+});
+test('rejects mismatched creation request ID and duplicate list alert IDs', async () => {
+  reply({ requestId: 'WRONG-KEY', floodAlert: active });
+  await assert.rejects(api.creationRequest('8feec7ad-0123-4123-a123-123456789abc'), { status: 502 });
+  reply({ schemaVersion: 2, floodAlerts: [active, { ...active }] });
+  await assert.rejects(api.list(), { status: 502 });
 });

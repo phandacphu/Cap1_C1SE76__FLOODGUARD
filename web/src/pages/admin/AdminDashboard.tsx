@@ -25,7 +25,7 @@ export function AdminDashboard() {
   const view = useMemo(() => {
     if (!overview) return null;
     const now = overview.updatedAt;
-    const alerts = overview.alerts.ok ? overview.alerts.data : [];
+    const alerts = overview.alerts.ok ? overview.alerts.data : null;
     const areas = overview.areas.ok ? overview.areas.data : [];
     const safeLocationCount = overview.safeLocations.ok ? overview.safeLocations.data.length : null;
     const sos = overview.sos.ok ? overview.sos.data : null;
@@ -65,7 +65,7 @@ export function AdminDashboard() {
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={view?.alerts.length ?? 0} />}
+      header={<AdminHeader alertCount={view?.alerts?.length} />}
     >
       <div className="mx-auto max-w-[1500px] space-y-5">
         {/* Title bar */}
@@ -143,8 +143,8 @@ export function AdminDashboard() {
                 label="Cảnh báo đang hiệu lực"
                 icon="alert"
                 tone="sos"
-                value={String(view.alerts.length).padStart(2, "0")}
-                sub={view.alerts.length > 0 ? "Bản tin V2 đang bật" : "Không có cảnh báo đang bật"}
+                value={view.alerts === null ? "—" : String(view.alerts.length).padStart(2, "0")}
+                sub={view.alerts === null ? "Chưa xác định — tải API cảnh báo thất bại" : view.alerts.length > 0 ? "Bản tin V2 đang bật" : "Không có cảnh báo đang bật"}
                 footerLabel="Phạm vi"
                 footerValue="Tất cả vùng công bố"
               />
@@ -226,7 +226,7 @@ export function AdminDashboard() {
               </Panel>
 
               <Panel
-                title={`Cảnh báo hiệu lực (${String(view.alerts.length).padStart(2, "0")})`}
+                title={`Cảnh báo hiệu lực (${view.alerts === null ? "—" : String(view.alerts.length).padStart(2, "0")})`}
                 icon="alert"
                 tag={
                   <span className="rounded bg-sos/15 px-2 py-1 font-mono text-[10px] text-sos">
@@ -234,7 +234,7 @@ export function AdminDashboard() {
                   </span>
                 }
               >
-                <ActiveAlertsPanel alerts={view.alerts} />
+                {view.alerts === null ? <p role="alert" className="py-6 text-sm text-warn">Chưa thể tải cảnh báo V2. Số lượng chưa xác định, vui lòng làm mới để thử lại.</p> : <ActiveAlertsPanel alerts={view.alerts} />}
               </Panel>
 
               <Panel title="Hạ tầng C4I" icon="server">

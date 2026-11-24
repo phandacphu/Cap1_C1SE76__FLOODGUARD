@@ -14,6 +14,11 @@ export function parseWarning(v: unknown): FloodWarning {
     (typeof v.endAt === "string" && Date.parse(v.endAt) < Date.parse(v.startAt as string))) incompatible();
   return v as unknown as FloodWarning;
 }
+function matchingAlert(value: unknown, requestedId: string): FloodWarning {
+  const result = parseWarning(value);
+  if (result.id !== requestedId) incompatible();
+  return result;
+}
 export class WarningRequestError extends ApiError {
   readonly code: string;
   readonly uncertain: boolean;
@@ -50,7 +55,9 @@ export const floodWarningApi: WarningSource = {
     if (q?.trim()) params.set("q", q.trim());
     const data = await call(`/admin/flood-alerts${params.size ? `?${params}` : ""}`);
     if (data.schemaVersion !== 2 || !Array.isArray(data.floodAlerts)) incompatible();
-    return data.floodAlerts.map(parseWarning);
+    const alerts = data.floodAlerts.map(parseWarning);
+    if (new Set(alerts.map((alert) => alert.id)).size !== alerts.length) incompatible();
+    return alerts;
   },
   async summary() {
     const data = await call("/admin/flood-alerts/summary");
@@ -58,9 +65,13 @@ export const floodWarningApi: WarningSource = {
       (data.total as number) !== (data.active as number) + (data.inactive as number)) incompatible();
     return data as unknown as WarningSummary;
   },
-  async detail(id) { return parseWarning((await call(route(id))).floodAlert); },
+  async detail(id) { return matchingAlert((await call(route(id))).floodAlert, id); },
   async create(fields: WarningFields, key: string) { return parseWarning((await call("/admin/flood-alerts", "POST", fields, key)).floodAlert); },
-  async creationRequest(key) { return parseWarning((await call(`/admin/flood-alerts/creation-requests/${encodeURIComponent(key)}`)).floodAlert); },
-  async update(id, revision, fields) { return parseWarning((await call(route(id), "PATCH", { expectedRevision: revision, ...fields })).floodAlert); },
-  async deactivate(id) { return parseWarning((await call(`${route(id)}/deactivate`, "POST", {})).floodAlert); },
+  async creationRequest(key) {
+    const data = await call(`/admin/flood-alerts/creation-requests/${encodeURIComponent(key)}`);
+    if (data.requestId !== key) incompatible();
+    return parseWarning(data.floodAlert);
+  },
+  async update(id, revision, fields) { return matchingAlert((await call(route(id), "PATCH", { expectedRevision: revision, ...fields })).floodAlert, id); },
+  async deactivate(id) { return matchingAlert((await call(`${route(id)}/deactivate`, "POST", {})).floodAlert, id); },
 };
