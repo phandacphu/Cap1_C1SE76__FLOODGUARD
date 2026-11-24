@@ -12,6 +12,7 @@ export class WarningFlowGuard {
   validList(ticket: { epoch: number; version: number }) { return this.validEpoch(ticket.epoch) && this.listVersion === ticket.version; }
   validDetail(ticket: { epoch: number; version: number }) { return this.validEpoch(ticket.epoch) && this.detailVersion === ticket.version; }
   invalidateDetail() { this.detailVersion++; }
+  invalidateList() { this.listVersion++; }
   invalidateAll() { this.epoch++; this.listVersion++; this.detailVersion++; }
   lock() { this.locked = true; this.invalidateAll(); }
   get isLocked() { return this.locked; }

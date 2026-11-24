@@ -62,6 +62,7 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
   const selectedId = useRef<string | null>(null);
   const inFlight = useRef(false);
   const latest = useRef({ status, query });
+  const detailSync = useRef(false);
   useEffect(() => { latest.current = { status, query }; }, [status, query]);
 
   const handleAuthorization = useCallback((err: unknown, requestToken: string | null) => {
@@ -81,7 +82,8 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     const token = localStorage.getItem("floodguard_token");
     const activeId = selectedId.current;
     guard.current.invalidateDetail();
-    if (activeId) { setDetailBusy(true); setEditor(undefined); setConfirmOff(false); }
+    const synchronizeDetail = !!activeId && !inFlight.current;
+    if (synchronizeDetail) { detailSync.current = true; setDetailBusy(true); setEditor(undefined); setConfirmOff(false); }
     setLoading(true); setError("");
     try {
       // Both promises must settle: a late 401/403 outranks a quick 500 or stale success.
@@ -98,7 +100,7 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
       const list = (results[0] as PromiseFulfilledResult<FloodWarning[]>).value;
       const stats = (results[1] as PromiseFulfilledResult<WarningSummary>).value;
       setRows(list.sort(warningOrder)); setSummary(stats); setNotice("");
-      if (activeId && selectedId.current === activeId) {
+      if (synchronizeDetail && !inFlight.current && selectedId.current === activeId) {
         const detailTicket = guard.current.beginDetail();
         try {
           const fresh = await source.detail(activeId);
@@ -115,17 +117,23 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     } catch (err) {
       if (handleAuthorization(err, token) || !guard.current.validList(ticket)) return;
       setError(describe(err));
-    } finally { if (guard.current.validList(ticket)) { setLoading(false); setDetailBusy(false); } }
+      if (synchronizeDetail && selectedId.current === activeId) {
+        setDetail(null);
+        setNotice("Chưa xác minh được trạng thái/revision mới. Hãy làm mới thành công trước khi sửa hoặc tắt.");
+      }
+    } finally { if (guard.current.validList(ticket)) { setLoading(false); if (synchronizeDetail && selectedId.current === activeId) { detailSync.current = false; setDetailBusy(false); } } }
   }, [source, handleAuthorization]);
   useEffect(() => {
     const task = Promise.resolve().then(() => refresh(status, query));
     const currentGuard = guard.current;
-    return () => { void task; currentGuard.invalidateAll(); };
+    return () => { void task; currentGuard.invalidateList(); };
   }, [refresh, status, query]);
+  useEffect(() => { const currentGuard = guard.current; return () => currentGuard.invalidateAll(); }, []);
 
   async function openDetail(id: string) {
     if (guard.current.isLocked) return;
     selectedId.current = id;
+    detailSync.current = true;
     const ticket = guard.current.beginDetail();
     const token = localStorage.getItem("floodguard_token");
     setDetail(null); setDetailBusy(true); setFormError("");
@@ -136,9 +144,9 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
         setDetail(null); setNotice(describe(err));
         if (err instanceof ApiError && err.status === 404) selectedId.current = null;
       }
-    } finally { if (guard.current.validDetail(ticket)) setDetailBusy(false); }
+    } finally { if (guard.current.validDetail(ticket)) { detailSync.current = false; setDetailBusy(false); } }
   }
-  function closeDetail() { guard.current.invalidateDetail(); selectedId.current = null; setDetail(null); setDetailBusy(false); setConfirmOff(false); }
+  function closeDetail() { guard.current.invalidateDetail(); selectedId.current = null; detailSync.current = false; setDetail(null); setDetailBusy(false); setConfirmOff(false); }
   async function reconcile() {
     if (!pending || inFlight.current || guard.current.isLocked) return;
     const epoch = guard.current.snapshot();
@@ -157,7 +165,7 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     } finally { inFlight.current = false; setBusy(false); }
   }
   async function save(fields: WarningFields, retry = false) {
-    if (inFlight.current || guard.current.isLocked || pendingEdit) return;
+    if (inFlight.current || guard.current.isLocked || pendingEdit || (editor && (detailSync.current || detailBusy || selectedId.current !== editor.id))) return;
     if (pending && !retry) { setFormError("Cần xử lý thao tác tạo chưa xác định trước."); return; }
     const target = editor;
     if (target === undefined && !retry) return;
@@ -180,7 +188,9 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
       }
       if (!guard.current.validEpoch(epoch)) return;
       setEditor(undefined); setNotice(`Đã lưu bản tin ${saved.id}. Công việc phát thông báo được ghi nhận, không đồng nghĩa mọi thiết bị đã nhận.`);
-      await refresh(); await openDetail(saved.id);
+      const stillSelected = target ? selectedId.current === saved.id : selectedId.current === null;
+      await refresh();
+      if (stillSelected && (target ? selectedId.current === saved.id : selectedId.current === null)) await openDetail(saved.id);
     } catch (err) {
       if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
       if (target && !retry && err instanceof ApiError && (err.status === 409 || err.status === 429 || err.status >= 500 || err.status === 0)) {
@@ -192,7 +202,7 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
         try {
           const fresh = await source.detail(target.id);
           if (!guard.current.validEpoch(epoch)) return;
-          setDetail(fresh); selectedId.current = target.id;
+          if (selectedId.current === target.id) setDetail(fresh);
           setPendingEdit(null);
           setNotice("Đã đối chiếu được chi tiết mới. Kiểm tra revision/nội dung; nếu cần sửa tiếp, chủ động mở lại form.");
         } catch (readError) {
@@ -217,8 +227,8 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     try {
       const fresh = await source.detail(warning.id);
       if (!guard.current.validEpoch(epoch)) return;
-      selectedId.current = warning.id; guard.current.invalidateDetail();
-      setDetail(fresh); setEditor(undefined); setPendingEdit(null);
+      if (selectedId.current === warning.id) { guard.current.invalidateDetail(); setDetail(fresh); }
+      setEditor(undefined); setPendingEdit(null);
       const applied = fresh.title === draft.title && fresh.content === draft.content;
       setNotice(applied ? "Đã đối chiếu: nội dung yêu cầu sửa đang có trên Backend." :
         "Nội dung hoặc revision khác với bản gửi. Đã tải bản hiện tại; xem lại trước khi thực hiện thao tác mới.");
@@ -228,7 +238,7 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     } finally { inFlight.current = false; setBusy(false); }
   }
   async function deactivate() {
-    if (!detail || inFlight.current || guard.current.isLocked || pendingEdit) return;
+    if (!detail || inFlight.current || guard.current.isLocked || pendingEdit || detailSync.current || detailBusy || selectedId.current !== detail.id) return;
     const epoch = guard.current.snapshot();
     const token = localStorage.getItem("floodguard_token");
     inFlight.current = true; setBusy(true); setConfirmOff(false);
@@ -236,14 +246,16 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
     try {
       const updated = await source.deactivate(id);
       if (!guard.current.validEpoch(epoch)) return;
-      setDetail(updated); setNotice("Đã tắt cảnh báo. Bản tin được giữ trong lịch sử."); await refresh();
+      if (selectedId.current === id) setDetail(updated);
+      setNotice("Đã tắt cảnh báo. Bản tin được giữ trong lịch sử."); await refresh();
     }
     catch (err) {
       if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
       try {
         const fresh = await source.detail(id);
         if (!guard.current.validEpoch(epoch)) return;
-        setDetail(fresh); setNotice(fresh.status === "inactive" ? "Bản tin đã tắt; đã đối chiếu trạng thái mới." : `Chưa xác nhận đã tắt: ${describe(err)}. Đã tải lại trạng thái.`);
+        if (selectedId.current === id) setDetail(fresh);
+        setNotice(fresh.status === "inactive" ? "Bản tin đã tắt; đã đối chiếu trạng thái mới." : `Chưa xác nhận đã tắt: ${describe(err)}. Đã tải lại trạng thái.`);
       }
       catch (readError) {
         if (handleAuthorization(readError, token) || !guard.current.validEpoch(epoch)) return;
@@ -302,14 +314,14 @@ export default function FloodWarningManagementScreen({ source }: { source: Warni
           <div>Trạng thái: {detail.status === "active" ? "Đang bật" : "Đã tắt"}</div><div>Phạm vi: Tất cả vùng hệ thống công bố</div>
           <div>Bắt đầu: {warningTime(detail.startAt)}</div><div>Kết thúc: {warningTime(detail.endAt)}</div>
           <div>Tạo lúc: {warningTime(detail.createdAt)}</div><div>Cập nhật: {warningTime(detail.updatedAt)}</div></dl>
-        {detail.status === "active" && <div className="flex gap-2"><button className={button} disabled={busy || authError || !!pendingEdit} onClick={() => { setFormError(""); setEditor(detail); }}>Chỉnh sửa</button>
-          <button className={`${button} text-sos`} disabled={busy || authError || !!pendingEdit} onClick={() => setConfirmOff(true)}>Tắt cảnh báo</button></div>}
+        {detail.status === "active" && <div className="flex gap-2"><button className={button} disabled={busy || authError || !!pendingEdit || detailBusy} onClick={() => { if (detailSync.current || detailBusy || selectedId.current !== detail.id) return; setFormError(""); setEditor(detail); }}>Chỉnh sửa</button>
+          <button className={`${button} text-sos`} disabled={busy || authError || !!pendingEdit || detailBusy} onClick={() => { if (detailSync.current || detailBusy || selectedId.current !== detail.id) return; setConfirmOff(true); }}>Tắt cảnh báo</button></div>}
         {detail.status === "inactive" && <p className="text-sm text-muted">Bản tin lịch sử chỉ xem. Đợt mới cần tạo bản tin mới.</p>}
       </section>}
       {confirmOff && detail && <section role="alertdialog" aria-modal="true" aria-label="Xác nhận tắt cảnh báo" className="rounded-xl border border-sos/40 bg-card p-5">
         <p>Bạn chắc chắn muốn tắt “{detail.title}”? Không thể bật lại hoặc sửa bản tin đã tắt.</p><div className="mt-3 flex gap-2">
           <button className={button} disabled={busy} onClick={() => setConfirmOff(false)}>Hủy</button>
-          <button className={`${button} text-sos`} disabled={busy || authError} onClick={() => void deactivate()}>{busy ? "Đang tắt…" : "Xác nhận tắt"}</button></div></section>}
+          <button className={`${button} text-sos`} disabled={busy || authError || detailBusy} onClick={() => void deactivate()}>{busy ? "Đang tắt…" : "Xác nhận tắt"}</button></div></section>}
       {editor !== undefined && !authError && <FloodWarningForm key={editor?.id ?? "create"} warning={editor} busy={busy} locked={!!pending || !!pendingEdit} error={formError}
         onClose={() => setEditor(undefined)} onSave={(fields) => void save(fields)} />}
     </div>
