@@ -68,7 +68,7 @@ export default function AdminReportsUiScreen() {
   const other = sos.data?.legacyOther ?? 0;
 
   return <AdminUiPreview preview={false} title="Báo cáo & thống kê"
-    subtitle="Số liệu thực từ Backend: SOS theo kỳ đã chọn; cảnh báo V2 toàn hệ thống, không lọc theo kỳ."
+    subtitle="Tổng hợp tình hình SOS và cảnh báo mưa lớn, nguy cơ ngập."
     action={<div className="flex gap-2"><button type="button" className={previewSecondaryButton} disabled={locked || sos.loading || warning.loading} onClick={refresh}>Làm mới</button>
       <button type="button" disabled title="Chưa có chức năng xuất báo cáo được duyệt" className={`${previewSecondaryButton} inline-flex cursor-not-allowed items-center gap-2 opacity-50`}>
         <Icon name="download" className="h-4 w-4" /> Xuất báo cáo
@@ -89,12 +89,12 @@ export default function AdminReportsUiScreen() {
     {warning.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">Cảnh báo V2: {warning.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{warning.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <PreviewStat title="Tổng SOS" value={value(sos.data?.total)} detail="Trong kỳ đã chọn" />
-      <PreviewStat title="Đã cứu" value={value(sos.data?.rescued)} detail="Trạng thái nghiệp vụ rescued" tone="safe" />
-      <PreviewStat title="SOS đang hoạt động" value={value(sos.data?.active)} detail="Trạng thái nghiệp vụ active" tone="warn" />
-      <PreviewStat title="Cảnh báo V2" value={value(warning.data?.total)} detail="Toàn hệ thống · không lọc theo kỳ" />
+      <PreviewStat title="Đã cứu" value={value(sos.data?.rescued)} detail="Trong kỳ đã chọn" tone="safe" />
+      <PreviewStat title="SOS đang hoạt động" value={value(sos.data?.active)} detail="Trong kỳ đã chọn" tone="warn" />
+      <PreviewStat title="Cảnh báo V2" value={value(warning.data?.total)} detail="Toàn hệ thống" />
     </div>
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
-      <PreviewPanel title="Phân loại SOS trong kỳ" extra={<PreviewBadge tone="muted">Theo trạng thái Backend</PreviewBadge>}>
+      <PreviewPanel title="Phân loại SOS trong kỳ" extra={<PreviewBadge tone="muted">Theo trạng thái</PreviewBadge>}>
         {sos.data ? <div className="space-y-4 p-6">
           {([
             ["Đã cứu", sos.data.rescued, "bg-safe"], ["Đang hoạt động", sos.data.active, "bg-warn"],
@@ -103,20 +103,19 @@ export default function AdminReportsUiScreen() {
             <div className="mb-2 flex justify-between text-sm"><span>{label}</span><strong>{amount}</strong></div>
             <div className="h-3 overflow-hidden rounded-full bg-slate-800"><div className={`h-full ${color}`} style={{ width: `${total ? (amount / total) * 100 : 0}%` }} /></div>
           </div>)}
-          <p className="text-xs text-slate-400">Không có biểu đồ theo ngày/tuần/tháng vì API summary không trả chuỗi thời gian.</p>
         </div> : <p className="p-6 text-sm text-slate-400">Chưa có số liệu SOS được xác nhận.</p>}
       </PreviewPanel>
       <PreviewPanel title="Tiến độ cứu hộ" extra={<PreviewBadge tone="muted">{sos.data ? `${completion}% đã cứu` : "Chưa xác định"}</PreviewBadge>}>
         {sos.data ? <div className="flex flex-col items-center gap-5 p-6"><div role="img" aria-label={`${completion}% SOS đã cứu`} className="flex h-40 w-40 items-center justify-center rounded-full"
           style={{ background: `conic-gradient(#2ee88a 0% ${completion}%, #334155 ${completion}% 100%)` }}>
           <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full bg-card"><strong className="text-3xl">{completion}%</strong><span className="text-xs text-slate-400">Đã cứu</span></div>
-        </div><p className="text-center text-sm text-slate-400">{sos.data.rescued} / {sos.data.total} yêu cầu SOS trong kỳ. Có {other} hồ sơ lịch sử không thuộc nhóm active/rescued.</p></div>
+        </div><p className="text-center text-sm text-slate-400">Đã cứu {sos.data.rescued} / {sos.data.total} yêu cầu SOS trong kỳ.</p></div>
           : <p className="p-6 text-sm text-slate-400">Chưa xác định tiến độ.</p>}
       </PreviewPanel>
     </div>
     <PreviewPanel title="Cảnh báo V2 · Toàn hệ thống">
       {warning.data ? <div className="grid gap-4 p-5 sm:grid-cols-3"><PreviewStat title="Tổng bản tin" value={warning.data.total} detail="V2" />
-        <PreviewStat title="Đang bật" value={warning.data.active} detail="Có thể nhiều bản tin active" tone="safe" />
+        <PreviewStat title="Đang bật" value={warning.data.active} detail="Cảnh báo đang hiệu lực" tone="safe" />
         <PreviewStat title="Đã tắt" value={warning.data.inactive} detail="Lịch sử V2" tone="warn" /></div>
         : <p className="p-5 text-sm text-slate-400">Chưa có thống kê cảnh báo V2 được xác nhận.</p>}
     </PreviewPanel>

@@ -33,7 +33,7 @@ test('reports show verified counts and no fixture or fake time-series values', (
   assert.doesNotMatch(screen, /previewReports|current\.trend|requests: 42/);
   assert.match(screen, /sos\.data\?\.rescued/);
   assert.match(screen, /warning\.data\?\.total/);
-  assert.match(screen, /Toàn hệ thống · không lọc theo kỳ/);
+  assert.match(screen, /detail="Toàn hệ thống"/);
   assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
   assert.match(screen, /setLocked\(true\)/);
 });

@@ -65,7 +65,7 @@ export default function AdminNotificationsUiScreen() {
 
   const selected = records.find((item) => item.id === selectedId) ?? null;
   return <AdminUiPreview preview={false} title="Thông báo & Nhật ký gửi"
-    subtitle="Tra cứu nhật ký gửi thông báo của hệ thống. Đây không phải hộp thư đã đọc/chưa đọc của Admin."
+    subtitle="Tra cứu lịch sử gửi thông báo của hệ thống."
     action={<button type="button" className={previewSecondaryButton} disabled={loading || locked || !loaded} onClick={() => void search()}>Làm mới kết quả</button>}>
     <PreviewPanel title="Tra cứu nhật ký" extra={<PreviewBadge tone="muted">Chỉ đọc · Admin</PreviewBadge>}>
       <form className="grid gap-3 p-5 sm:grid-cols-[minmax(180px,0.35fr)_minmax(0,1fr)_auto]"
@@ -78,7 +78,6 @@ export default function AdminNotificationsUiScreen() {
           disabled={loading || locked} onChange={(event) => clear(key, event.target.value)} placeholder="Nhập chính xác một mã…" /></label>
         <button type="submit" className={`${buttonClass} self-end`} disabled={loading || locked || !value.trim()}>Tra cứu</button>
       </form>
-      <p className="px-5 pb-4 text-xs text-slate-400">Kết quả phân trang theo ID nhật ký, không phải thời gian. “Đã gửi” không có nghĩa người dùng đã nhận hoặc đọc thông báo.</p>
     </PreviewPanel>
 
     {locked && <p role="alert" className="rounded-xl border border-red-500/40 p-4 text-sm">Phiên hoặc quyền Admin không hợp lệ. Đã khóa dữ liệu nhật ký.</p>}

@@ -17,7 +17,7 @@ test('V2 schema validates global counts without converting errors to zero', () =
   assert.match(api, /data\.schemaVersion !== 2/);
   assert.match(api, /data\.active as number\) \+ \(data\.inactive as number\)/);
   assert.match(screen, /value\(warning\.data\?\.total\)/);
-  assert.match(screen, /Không có biểu đồ theo ngày/);
+  assert.doesNotMatch(screen, /Không có biểu đồ theo ngày/);
 });
 
 test('report removes stale data on range change and blocks late responses and access denial', () => {

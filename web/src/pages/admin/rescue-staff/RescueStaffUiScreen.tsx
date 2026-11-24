@@ -100,14 +100,14 @@ export default function RescueStaffUiScreen() {
     } finally { inFlight.current = false; setSaving(false); }
   }
 
-  return <AdminUiPreview preview={false} title="Quản lý Rescue Staff" subtitle="Tài khoản nhân viên cứu hộ từ hệ thống người dùng FLOODGUARD. Trạng thái tài khoản không phải trạng thái trực tuyến hoặc ca trực."
+  return <AdminUiPreview preview={false} title="Quản lý Rescue Staff" subtitle="Quản lý tài khoản nhân viên cứu hộ."
     action={<button className={button} disabled={loading || locked} onClick={refresh}>{loading ? "Đang làm mới…" : "Làm mới"}</button>}>
     {notice && <p role="status" className="rounded-xl border border-water/40 bg-water/10 p-3 text-sm">{notice}</p>}
     {error && <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">{available ? "Chưa cập nhật — đang giữ dữ liệu cũ. " : "Không tải được danh sách. "}{error} <button className={button} onClick={refresh}>Thử lại</button></p>}
     {locked && <p role="alert" className="rounded-xl border border-sos/40 p-3">Không đủ quyền quản lý Rescue Staff.</p>}
-    <div className="grid gap-3 sm:grid-cols-3"><PreviewStat title="Tổng tài khoản Rescue" value={kpi(rescue.length)} detail="role=rescue" />
+    <div className="grid gap-3 sm:grid-cols-3"><PreviewStat title="Tổng tài khoản Rescue" value={kpi(rescue.length)} detail="Nhân viên cứu hộ" />
       <PreviewStat title="Được kích hoạt" value={kpi(rescue.filter((u) => u.isActive).length)} detail="Trạng thái tài khoản" tone="safe" />
-      <PreviewStat title="Đã vô hiệu hóa" value={kpi(rescue.filter((u) => !u.isActive).length)} detail="Không phải ngoại tuyến" tone="warn" /></div>
+      <PreviewStat title="Đã vô hiệu hóa" value={kpi(rescue.filter((u) => !u.isActive).length)} detail="Trạng thái tài khoản" tone="warn" /></div>
     <PreviewPanel title="Danh sách tài khoản Rescue" extra={<PreviewBadge tone="muted">{available ? filtered.length : "—"} kết quả</PreviewBadge>}>
       <div className="grid gap-3 p-5 sm:grid-cols-[minmax(0,1fr)_210px]">
         <label className="relative block"><span className="sr-only">Tìm nhân viên Rescue</span><span className="pointer-events-none absolute left-3 top-3 text-slate-500"><Icon name="search" className="h-4 w-4" /></span>
