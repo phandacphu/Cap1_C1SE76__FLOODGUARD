@@ -17,20 +17,23 @@ test('reports sidebar opens an Admin-only route without changing other pages', (
   }
 });
 
-test('report range changes local KPIs and charts; export stays disabled', () => {
+test('report range chooses a server SOS window, while export stays disabled', () => {
   assert.match(screen, /useState<ReportRange>\("7d"\)/);
-  assert.match(screen, /\["7d", "7 ngày"\]/);
-  assert.match(screen, /\["30d", "30 ngày"\]/);
-  assert.match(screen, /\["90d", "90 ngày"\]/);
-  assert.match(screen, /onClick=\{\(\) => setRange\(value\)\}/);
-  assert.match(screen, /current\.trend\.map/);
+  assert.match(screen, /"7d", "7 ngày"/);
+  assert.match(screen, /"30d", "30 ngày"/);
+  assert.match(screen, /"90d", "90 ngày"/);
+  assert.match(screen, /chooseRange\(key\)/);
+  assert.match(screen, /fetchSosReport\(token, range\)/);
+  assert.match(screen, /fetchWarningReport\(token\)/);
   assert.match(screen, /conic-gradient/);
-  assert.match(screen, /disabled[\s\S]*?Xuất báo cáo/);
+  assert.match(screen, /disabled title="Chưa có chức năng xuất báo cáo/);
 });
 
-test('the reports UI has no API requests or unnecessary implementation notes', () => {
-  assert.match(screen, /const previewReports: Record<ReportRange, ReportPreview>/);
+test('reports show verified counts and no fixture or fake time-series values', () => {
+  assert.doesNotMatch(screen, /previewReports|current\.trend|requests: 42/);
+  assert.match(screen, /sos\.data\?\.rescued/);
+  assert.match(screen, /warning\.data\?\.total/);
+  assert.match(screen, /Toàn hệ thống · không lọc theo kỳ/);
   assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
-  assert.doesNotMatch(screen, /<p[^>]*>[^<]*(?:chưa nối|chưa kết nối|API|Firebase)/i);
-  assert.doesNotMatch(screen, /Dữ liệu minh họa để kiểm tra bố cục|Các con số và biểu đồ là dữ liệu mẫu/);
+  assert.match(screen, /setLocked\(true\)/);
 });
