@@ -9,6 +9,7 @@ export type ReportRange = "7d" | "30d" | "90d";
 export interface WarningSummary { total: number; active: number; inactive: number }
 export interface FloodAreaSummary { total: number; historicalFlood: number; radarCandidates: number }
 export interface ManagedAreaSummary { total: number; flood: number; lowLying: number; unclassified: number }
+export interface CombinedAreaSummary { total: number; flood: number; lowLying: number }
 export interface SafeLocationSummary { total: number; byType: Record<SafeLocationType | "unclassified", number> }
 const days: Record<ReportRange, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
@@ -69,6 +70,13 @@ export function parseManagedAreaSummary(value: unknown): ManagedAreaSummary {
 /** Admin-managed areas across all dates, separate from public history and radar map layers. */
 export async function fetchManagedAreaReport(token: string): Promise<ManagedAreaSummary> {
   return parseManagedAreaSummary(await apiGet<unknown>("/admin/flood-areas/summary", token));
+}
+
+/** Counts records from independent sources. Unclassified Admin areas are excluded. */
+export function combineAreaReports(history: FloodAreaSummary, managed: ManagedAreaSummary): CombinedAreaSummary {
+  const flood = history.historicalFlood + managed.flood;
+  const lowLying = history.radarCandidates + managed.lowLying;
+  return { total: flood + lowLying, flood, lowLying };
 }
 
 export async function fetchSafeLocationReport(token: string): Promise<SafeLocationSummary> {

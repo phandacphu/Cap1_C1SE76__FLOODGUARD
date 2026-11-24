@@ -6,7 +6,7 @@ import { ApiError } from "../../../api/http";
 import type { SosSummary } from "../sos/sosTypes";
 import { AdminUiPreview, PreviewBadge, PreviewPanel, PreviewStat, previewSecondaryButton } from "../ui-preview/AdminUiPreview";
 import { locationTypeLabels } from "../safe-location/safeLocationTypes";
-import { fetchSosReport, fetchWarningReport, fetchFloodAreaReport, fetchManagedAreaReport, fetchSafeLocationReport, reportWindow, type ReportRange, type WarningSummary, type FloodAreaSummary, type ManagedAreaSummary, type SafeLocationSummary } from "./reportApi";
+import { fetchSosReport, fetchWarningReport, fetchFloodAreaReport, fetchManagedAreaReport, fetchSafeLocationReport, combineAreaReports, reportWindow, type ReportRange, type WarningSummary, type CombinedAreaSummary, type SafeLocationSummary } from "./reportApi";
 
 type Load<T> = { data: T | null; loading: boolean; error: string; stale: boolean };
 const empty = <T,>(): Load<T> => ({ data: null, loading: true, error: "", stale: false });
@@ -19,8 +19,7 @@ export default function AdminReportsUiScreen() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [sos, setSos] = useState<Load<SosSummary>>(empty);
   const [warning, setWarning] = useState<Load<WarningSummary>>(empty);
-  const [areas, setAreas] = useState<Load<FloodAreaSummary>>(empty);
-  const [managedAreas, setManagedAreas] = useState<Load<ManagedAreaSummary>>(empty);
+  const [areas, setAreas] = useState<Load<CombinedAreaSummary>>(empty);
   const [locations, setLocations] = useState<Load<SafeLocationSummary>>(empty);
   const [locked, setLocked] = useState(false);
   const generation = useRef(0);
@@ -33,8 +32,8 @@ export default function AdminReportsUiScreen() {
     // A new date range invalidates the previous SOS statistics; refresh errors retain the previous range only when unchanged.
     const sosRequest = fetchSosReport(token, range);
     const warningRequest = fetchWarningReport(token);
-    const areaRequest = fetchFloodAreaReport();
-    const managedAreaRequest = fetchManagedAreaReport(token);
+    const areaRequest = Promise.all([fetchFloodAreaReport(), fetchManagedAreaReport(token)])
+      .then(([history, managed]) => combineAreaReports(history, managed));
     const locationRequest = fetchSafeLocationReport(token);
     void sosRequest.then((data) => {
       if (allowed()) setSos({ data, loading: false, error: "", stale: false });
@@ -56,12 +55,6 @@ export default function AdminReportsUiScreen() {
       if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) { deny(cause); return; }
       if (allowed()) setAreas((old) => ({ ...old, loading: false, error: failed(cause), stale: old.data !== null }));
     });
-    void managedAreaRequest.then((data) => {
-      if (allowed()) setManagedAreas({ data, loading: false, error: "", stale: false });
-    }, (cause: unknown) => {
-      if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) { deny(cause); return; }
-      if (allowed()) setManagedAreas((old) => ({ ...old, loading: false, error: failed(cause), stale: old.data !== null }));
-    });
     void locationRequest.then((data) => {
       if (allowed()) setLocations({ data, loading: false, error: "", stale: false });
     }, (cause: unknown) => {
@@ -73,7 +66,6 @@ export default function AdminReportsUiScreen() {
       setLocked(true); setSos({ data: null, loading: false, error: failed(cause), stale: false });
       setWarning({ data: null, loading: false, error: failed(cause), stale: false });
       setAreas({ data: null, loading: false, error: failed(cause), stale: false });
-      setManagedAreas({ data: null, loading: false, error: failed(cause), stale: false });
       setLocations({ data: null, loading: false, error: failed(cause), stale: false });
       if (cause.status === 401) logout();
     }
@@ -85,11 +77,10 @@ export default function AdminReportsUiScreen() {
     setRange(next); setSos(empty());
   }
   function refresh() {
-    if (locked || sos.loading || warning.loading || areas.loading || managedAreas.loading || locations.loading) return;
+    if (locked || sos.loading || warning.loading || areas.loading || locations.loading) return;
     setSos((old) => ({ ...old, loading: true, error: "" }));
     setWarning((old) => ({ ...old, loading: true, error: "" }));
     setAreas((old) => ({ ...old, loading: true, error: "" }));
-    setManagedAreas((old) => ({ ...old, loading: true, error: "" }));
     setLocations((old) => ({ ...old, loading: true, error: "" }));
     setRefreshKey((value) => value + 1);
   }
@@ -102,7 +93,7 @@ export default function AdminReportsUiScreen() {
 
   return <AdminUiPreview preview={false} title="Báo cáo & thống kê"
     subtitle="Tổng hợp tình hình cứu hộ, cảnh báo lũ, vùng ngập và điểm an toàn."
-    action={<div className="flex gap-2"><button type="button" className={previewSecondaryButton} disabled={locked || sos.loading || warning.loading || areas.loading || managedAreas.loading || locations.loading} onClick={refresh}>Làm mới</button>
+    action={<div className="flex gap-2"><button type="button" className={previewSecondaryButton} disabled={locked || sos.loading || warning.loading || areas.loading || locations.loading} onClick={refresh}>Làm mới</button>
       <button type="button" disabled title="Chưa có chức năng xuất báo cáo được duyệt" className={`${previewSecondaryButton} inline-flex cursor-not-allowed items-center gap-2 opacity-50`}>
         <Icon name="download" className="h-4 w-4" /> Xuất báo cáo
       </button></div>}>
@@ -119,12 +110,10 @@ export default function AdminReportsUiScreen() {
     {sos.loading && <p role="status" className="text-sm text-slate-400">Đang tải thống kê SOS…</p>}
     {warning.loading && <p role="status" className="text-sm text-slate-400">Đang tải thống kê cảnh báo lũ…</p>}
     {areas.loading && <p role="status" className="text-sm text-slate-400">Đang tải thống kê vùng ngập…</p>}
-    {managedAreas.loading && <p role="status" className="text-sm text-slate-400">Đang tải vùng quản lý…</p>}
     {locations.loading && <p role="status" className="text-sm text-slate-400">Đang tải thống kê điểm an toàn…</p>}
     {sos.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">SOS: {sos.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{sos.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
     {warning.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">Cảnh báo lũ: {warning.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{warning.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
     {areas.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">Vùng ngập: {areas.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{areas.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
-    {managedAreas.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">Vùng quản lý: {managedAreas.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{managedAreas.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
     {locations.error && <p role="alert" className="rounded-xl border border-amber-600/40 p-4 text-sm">Điểm an toàn: {locations.stale ? "Chưa cập nhật, đang hiển thị dữ liệu cũ. " : ""}{locations.error}<button className={`${previewSecondaryButton} ml-3`} disabled={locked} onClick={refresh}>Thử lại</button></p>}
     <div className="grid gap-4 sm:grid-cols-3">
       <PreviewStat title="Tổng SOS" value={value(sos.data?.total)} detail="Trong kỳ đã chọn" />
@@ -160,21 +149,14 @@ export default function AdminReportsUiScreen() {
         : <p className="p-5 text-sm text-slate-400">Chưa có số liệu cảnh báo lũ.</p>}
     </PreviewPanel>
     <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Quản lý vùng ngập</h2>{sectionLink("/admin/flood-areas", "Xem vùng ngập")}</div>
-    <PreviewPanel title="Vùng ngập và vùng trũng do Admin quản lý">
-      {managedAreas.data ? <div className="grid gap-4 p-5 sm:grid-cols-3">
-        <PreviewStat title="Tổng vùng" value={managedAreas.data.total} detail="Đang quản lý" />
-        <PreviewStat title="Vùng ngập" value={managedAreas.data.flood} detail="Đang quản lý" tone="warn" />
-        <PreviewStat title="Vùng trũng" value={managedAreas.data.lowLying} detail="Đang quản lý" tone="water" />
-      </div> : <p className="p-5 text-sm text-slate-400">Chưa có số liệu vùng quản lý.</p>}
-    </PreviewPanel>
     <PreviewPanel title="Thống kê vùng ngập và vùng trũng">
       {areas.data ? <div className="space-y-5 p-5">
         <div className="grid gap-4 sm:grid-cols-3">
-          <PreviewStat title="Tổng đối tượng" value={areas.data.total} detail="Dữ liệu lịch sử và radar" />
-          <PreviewStat title="Vùng ngập lịch sử" value={areas.data.historicalFlood} detail="Số đối tượng lịch sử" tone="warn" />
-          <PreviewStat title="Vùng trũng (radar)" value={areas.data.radarCandidates} detail="Số đối tượng phân tích radar" tone="water" />
+          <PreviewStat title="Tổng vùng" value={areas.data.total} detail="Toàn hệ thống" />
+          <PreviewStat title="Vùng ngập" value={areas.data.flood} detail="Toàn hệ thống" tone="warn" />
+          <PreviewStat title="Vùng trũng" value={areas.data.lowLying} detail="Toàn hệ thống" tone="water" />
         </div>
-        {([ ["Vùng ngập lịch sử", areas.data.historicalFlood, "bg-warn"], ["Vùng trũng (radar)", areas.data.radarCandidates, "bg-water"] ] as const).map(([label, count, color]) =>
+        {([ ["Vùng ngập", areas.data.flood, "bg-warn"], ["Vùng trũng", areas.data.lowLying, "bg-water"] ] as const).map(([label, count, color]) =>
           <div key={label}><div className="mb-2 flex justify-between text-sm"><span>{label}</span><strong>{count}</strong></div><div className="h-3 overflow-hidden rounded-full bg-slate-800"><div className={`h-full ${color}`} style={{ width: `${areas.data!.total ? count / areas.data!.total * 100 : 0}%` }} /></div></div>)}
       </div> : <p className="p-5 text-sm text-slate-400">Chưa có số liệu vùng ngập.</p>}
     </PreviewPanel>

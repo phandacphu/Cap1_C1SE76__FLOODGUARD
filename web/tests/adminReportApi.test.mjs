@@ -26,7 +26,16 @@ test('managed area summary uses existing global Admin API and validates all back
   assert.match(api, /counts\.flood \+ counts\.low_lying \+ counts\.unclassified/);
   assert.doesNotMatch(api, /\/admin\/flood-areas\/summary\?/);
   assert.match(screen, /fetchManagedAreaReport\(token\)/);
-  assert.match(screen, /setManagedAreas\(\{ data: null, loading: false/);
+  assert.match(screen, /Promise\.all\(\[fetchFloodAreaReport\(\), fetchManagedAreaReport\(token\)\]\)/);
+  assert.match(screen, /combineAreaReports\(history, managed\)/);
+});
+
+test('combined area counts exclude unclassified Admin data without hardcoding the initial 184', () => {
+  assert.match(api, /const flood = history\.historicalFlood \+ managed\.flood/);
+  assert.match(api, /const lowLying = history\.radarCandidates \+ managed\.lowLying/);
+  assert.match(api, /total: flood \+ lowLying/);
+  assert.doesNotMatch(api, /total:\s*187|total:\s*184|historicalFlood:\s*27|radarCandidates:\s*157/);
+  assert.match(screen, /setAreas\(\{ data: null, loading: false/);
 });
 
 test('report removes stale data on range change and blocks late responses and access denial', () => {

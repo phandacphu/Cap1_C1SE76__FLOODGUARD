@@ -43,16 +43,17 @@ test('report keeps warning section but removes warning top card and developer ex
   assert.match(screen, /PreviewPanel title="Cảnh báo lũ"/);
   assert.doesNotMatch(screen, /Giá trị sẽ được lấy từ API quản lý vùng/);
   assert.doesNotMatch(screen, /Đếm đối tượng trên lớp bản đồ/);
-  assert.match(screen, /Vùng ngập và vùng trũng do Admin quản lý/);
-  assert.match(screen, /managedAreas\.data\.lowLying/);
-  assert.match(screen, /areas\.data\.radarCandidates/);
+  assert.equal((screen.match(/PreviewPanel title="Thống kê vùng ngập và vùng trũng"/g) ?? []).length, 1);
+  assert.doesNotMatch(screen, /Vùng ngập và vùng trũng do Admin quản lý/);
+  assert.doesNotMatch(screen, /radar|Radar/);
+  assert.match(screen, /areas\.data\.lowLying/);
 });
 
 test('report has four real-data sections with business-facing flood warning name', () => {
   for (const name of ['Theo dõi SOS', 'Quản lý cảnh báo lũ', 'Quản lý vùng ngập', 'Quản lý điểm an toàn']) assert.ok(screen.includes(name));
   for (const path of ['/admin/sos', '/admin/flood-warnings', '/admin/flood-areas', '/admin/safe-locations']) assert.ok(screen.includes(`"${path}"`));
   assert.doesNotMatch(screen, /Cảnh báo V2|Lịch sử V2|detail="V2"/);
-  assert.match(screen, /areas\.data\.radarCandidates/);
+  assert.match(screen, /areas\.data\.flood/);
   assert.match(screen, /locations\.data\.total/);
   assert.doesNotMatch(screen, /PreviewStat title="Chưa phân loại"|Quản lý vùng ngập · Trong kỳ/);
 });
