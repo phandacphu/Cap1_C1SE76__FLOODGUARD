@@ -118,11 +118,18 @@ export function Sidebar({
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between text-xs text-muted">
-          {user?.role === "ADMIN" ? (
+          {user?.role === "ADMIN" || user?.role === "RESCUE_STAFF" ? (
             <Link
-              to="/admin/profile"
+              to={
+                user?.role === "ADMIN"
+                  ? "/admin/profile"
+                  : "/rescue/profile"
+              }
               onClick={onNavigate}
-              className="flex items-center gap-1.5 transition hover:text-water"
+              className={`flex items-center gap-1.5 transition ${accent === "safe"
+                  ? "hover:text-safe"
+                  : "hover:text-water"
+                }`}
             >
               <Icon name="user" className="h-3.5 w-3.5" /> Hồ sơ
             </Link>

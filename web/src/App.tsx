@@ -24,6 +24,7 @@ import AdminNotificationsUiScreen from './pages/admin/notifications/AdminNotific
 import AdminReportsUiScreen from './pages/admin/reports/AdminReportsUiScreen';
 import AdminSettingsUiScreen from './pages/admin/settings/AdminSettingsUiScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
+import { RescueProfile } from './pages/rescue/profile/RescueProfile';
 import { RescueSosList } from './pages/rescue/RescueSosList';
 import { RescueSosDetail } from './pages/rescue/RescueSosDetail';
 import { FloodMapView } from './pages/map/FloodMapView';
@@ -86,6 +87,7 @@ export const App: React.FC = () => {
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
             <Route path="/rescue/safe-locations" element={<RescueSafeLocations />} />
             <Route path="/rescue/dashboard" element={<RescueDashboard />} />
+            <Route path="/rescue/profile" element={<RescueProfile />} />
             <Route path="/rescue/sos" element={<RescueSosList />} />
             <Route path="/rescue/history" element={<RescueHistory />} />
             <Route path="/rescue/sos/:id" element={<RescueSosDetail />} />
