@@ -1,216 +1,330 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../../api/http";
 import { AdminHeader } from "../../../components/layout/AdminHeader";
 import { AppShell } from "../../../components/layout/AppShell";
 import { ADMIN_NAV } from "../../../components/layout/navConfig";
-import { useClock } from "../../../components/layout/useClock";
-import { Icon } from "../../../components/ui/Icon";
+import { useAuth } from "../../../context/AuthContext";
 import { KpiCard } from "../components/KpiCard";
 import { FloodWarningForm } from "./FloodWarningForm";
-import { periodLabels, severityLabels, warningPeriod, warningTime, type FloodWarning, type FloodWarningSource, type WarningData, type WarningFields } from "./floodWarningTypes";
+import { WarningRequestError } from "./floodWarningApi";
+import { warningOrder, warningTime, type FloodWarning, type WarningFields, type WarningSource, type WarningStatus, type WarningSummary } from "./floodWarningTypes";
+import { WarningFlowGuard, patchNeedsReconciliation } from "./warningFlowGuard";
 
-const input = "w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text focus:border-water focus:outline-none";
-const button = "inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-bg disabled:opacity-50";
-const title = "Quản lý cảnh báo lũ";
-
-const severityTone = {
-  low: "border-water/30 bg-water/10 text-water",
-  medium: "border-warn/30 bg-warn/10 text-warn",
-  high: "border-sos/30 bg-sos/10 text-sos",
-  critical: "border-sos/40 bg-sos/15 text-sos",
-};
-
-const periodTone = {
-  current: "border-safe/30 bg-safe/10 text-safe",
-  upcoming: "border-water/30 bg-water/10 text-water",
-  expired: "border-warn/30 bg-warn/10 text-warn",
-  inactive: "border-border text-muted",
-  unknown: "border-border text-muted",
-};
-
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "ready"; data: WarningData }
-  | { kind: "error"; error: unknown };
-
-function describeError(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401) return "Phiên đăng nhập đã hết hạn.";
-    if (error.status === 403) return "Bạn không có quyền quản lý cảnh báo lũ.";
-    if (error.status === 404) return "Không tìm thấy cảnh báo hoặc vùng ngập đã chọn.";
-    if (error.status === 400) return error.message;
-  }
-  return "Không thể hoàn tất yêu cầu. Hãy làm mới để kiểm tra dữ liệu trước khi thử lại.";
+const button = "rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-bg disabled:opacity-50";
+const field = "rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text";
+type Pending = { account: string; key: string; body: WarningFields };
+type PendingEdit = { warning: FloodWarning; draft: WarningFields };
+const STORAGE = "floodguard_warning_v2_pending";
+function account() {
+  try { const token = localStorage.getItem("floodguard_token") || ""; const claims = JSON.parse(atob(token.split(".")[1])) as { sub?: string }; return claims.sub || ""; }
+  catch { return ""; }
 }
-
-export default function FloodWarningManagementScreen({ source }: { source: FloodWarningSource }) {
-  const now = +useClock();
-  const [load, setLoad] = useState<LoadState>({ kind: "loading" });
-  const [loadVersion, setLoadVersion] = useState(0);
+function readPending(): Pending | null {
+  try { const value = JSON.parse(sessionStorage.getItem(STORAGE) || "null") as Pending | null; return value?.account && value.account === account() ? value : null; }
+  catch { return null; }
+}
+function describe(error: unknown): string {
+  if (error instanceof WarningRequestError) {
+    if (error.code === "ALERT_REVISION_CONFLICT") return "Bản tin đã được người khác chỉnh sửa. Đã tải lại chi tiết để đối chiếu; không tự ghi đè.";
+    if (error.code === "ALERT_ALREADY_INACTIVE") return "Bản tin đã tắt, chỉ còn quyền xem lịch sử.";
+    if (error.status === 429) return "Máy chủ giới hạn yêu cầu. Vui lòng chờ trước khi thử lại.";
+  }
+  if (error instanceof ApiError) {
+    if (error.status === 401) return "Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.";
+    if (error.status === 403) return "Bạn không có quyền quản lý cảnh báo.";
+    if (error.status === 404) return "Không tìm thấy bản tin V2 này.";
+    return error.message;
+  }
+  return "Không thể cập nhật dữ liệu. Vui lòng thử lại sau.";
+}
+export default function FloodWarningManagementScreen({ source }: { source: WarningSource }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [rows, setRows] = useState<FloodWarning[] | null>(null);
+  const [summary, setSummary] = useState<WarningSummary | null>(null);
+  const [status, setStatus] = useState<WarningStatus | "">("");
+  const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [period, setPeriod] = useState("");
-  const [editor, setEditor] = useState<{ warning: FloodWarning | null } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<{ message: string; correctable: boolean } | null>(null);
-  const [message, setMessage] = useState("");
-  const savingRef = useRef(false);
-  const request = useRef<{ source: FloodWarningSource; version: number; result: Promise<WarningData> } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [detail, setDetail] = useState<FloodWarning | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [editor, setEditor] = useState<FloodWarning | null | undefined>(undefined);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [pending, setPending] = useState<Pending | null>(() => source.demo ? null : readPending());
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  const [accessDenied, setAccessDenied] = useState<number | null>(null);
+  const guard = useRef(new WarningFlowGuard());
+  const selectedId = useRef<string | null>(null);
+  const inFlight = useRef(false);
+  const latest = useRef({ status, query });
+  const detailSync = useRef(false);
+  useEffect(() => { latest.current = { status, query }; }, [status, query]);
 
-  useEffect(() => {
-    let current = true;
-    if (request.current?.source !== source || request.current.version !== loadVersion) {
-      request.current = { source, version: loadVersion, result: source.list() };
-    }
-    request.current.result.then(
-      (data) => { if (current) setLoad({ kind: "ready", data }); },
-      (error: unknown) => { if (current) setLoad({ kind: "error", error }); },
-    );
-    return () => { current = false; };
-  }, [source, loadVersion]);
+  const handleAuthorization = useCallback((err: unknown, requestToken: string | null) => {
+    if (!(err instanceof ApiError) || ![401, 403].includes(err.status) ||
+      requestToken !== localStorage.getItem("floodguard_token")) return false;
+    guard.current.lock();
+    selectedId.current = null;
+    setAccessDenied(err.status); setError(describe(err)); setRows(null); setSummary(null);
+    setDetail(null); setDetailBusy(false); setEditor(undefined); setConfirmOff(false);
+    setPendingEdit(null); setNotice(""); setLoading(false);
+    return true;
+  }, []);
 
-  function refresh() {
-    if (load.kind === "loading" || savingRef.current) return;
-    setLoad({ kind: "loading" });
-    setMessage("");
-    setLoadVersion((version) => version + 1);
-  }
-
-  function openEditor(warning: FloodWarning | null) {
-    setSaveError(null);
-    setMessage("");
-    setEditor({ warning });
-  }
-
-  async function save(fields: WarningFields) {
-    if (savingRef.current || !editor || load.kind !== "ready") return;
-    savingRef.current = true;
-    setSaving(true);
-    setSaveError(null);
+  const refresh = useCallback(async (filter = latest.current.status, q = latest.current.query) => {
+    if (guard.current.isLocked) return;
+    const ticket = guard.current.beginList();
+    const token = localStorage.getItem("floodguard_token");
+    const activeId = selectedId.current;
+    const synchronizeDetail = !!activeId && !inFlight.current;
+    // A write for A may finish while a user-initiated GET for B is pending.
+    // In that case this list refresh does not own B's detail request/loading.
+    if (synchronizeDetail) { guard.current.invalidateDetail(); detailSync.current = true; setDetailBusy(true); setEditor(undefined); setConfirmOff(false); }
+    setLoading(true); setError("");
     try {
-      const saved = await source.save(editor.warning?.id ?? null, fields);
-      const { warnings, areas } = load.data;
-      const updated = editor.warning
-        ? warnings.map((warning) => warning.id === saved.id ? saved : warning)
-        : [saved, ...warnings];
-      setLoad({ kind: "ready", data: { warnings: updated, areas } });
-      setEditor(null);
-      setMessage(source.demo ? "Đã lưu cảnh báo trong dữ liệu thử." : "Đã lưu cảnh báo.");
-    } catch (error) {
-      setSaveError({ message: describeError(error), correctable: error instanceof ApiError && error.status === 400 });
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
+      // Both promises must settle: a late 401/403 outranks a quick 500 or stale success.
+      const observe = <T,>(request: Promise<T>): Promise<T> => request.catch((err: unknown) => {
+        handleAuthorization(err, token);
+        throw err;
+      });
+      const results = await Promise.allSettled([observe(source.list(filter || undefined, q || undefined)), observe(source.summary())]);
+      const authFailure = results.find((r) => r.status === "rejected" && r.reason instanceof ApiError && [401, 403].includes(r.reason.status));
+      if (authFailure && authFailure.status === "rejected" && handleAuthorization(authFailure.reason, token)) return;
+      if (!guard.current.validList(ticket)) return;
+      const failed = results.find((r) => r.status === "rejected");
+      if (failed && failed.status === "rejected") throw failed.reason;
+      const list = (results[0] as PromiseFulfilledResult<FloodWarning[]>).value;
+      const stats = (results[1] as PromiseFulfilledResult<WarningSummary>).value;
+      setRows(list.sort(warningOrder)); setSummary(stats); setNotice("");
+      if (synchronizeDetail && !inFlight.current && selectedId.current === activeId) {
+        const detailTicket = guard.current.beginDetail();
+        try {
+          const fresh = await source.detail(activeId);
+          if (guard.current.validList(ticket) && guard.current.validDetail(detailTicket) && selectedId.current === activeId) setDetail(fresh);
+        } catch (err) {
+          if (handleAuthorization(err, token)) return;
+          if (guard.current.validList(ticket) && guard.current.validDetail(detailTicket)) {
+            setDetail(null);
+            if (err instanceof ApiError && err.status === 404) selectedId.current = null;
+            setNotice(`Không thể đồng bộ chi tiết đã chọn: ${describe(err)}`);
+          }
+        }
+      }
+    } catch (err) {
+      if (handleAuthorization(err, token) || !guard.current.validList(ticket)) return;
+      setError(describe(err));
+      if (synchronizeDetail && selectedId.current === activeId) {
+        setDetail(null);
+        setNotice("Chưa xác minh được trạng thái/revision mới. Hãy làm mới thành công trước khi sửa hoặc tắt.");
+      }
+    } finally { if (guard.current.validList(ticket)) { setLoading(false); if (synchronizeDetail && selectedId.current === activeId) { detailSync.current = false; setDetailBusy(false); } } }
+  }, [source, handleAuthorization]);
+  useEffect(() => {
+    const task = Promise.resolve().then(() => refresh(status, query));
+    const currentGuard = guard.current;
+    return () => { void task; currentGuard.invalidateList(); };
+  }, [refresh, status, query]);
+  useEffect(() => { const currentGuard = guard.current; return () => currentGuard.invalidateAll(); }, []);
+
+  async function openDetail(id: string) {
+    if (guard.current.isLocked) return;
+    selectedId.current = id;
+    detailSync.current = true;
+    const ticket = guard.current.beginDetail();
+    const token = localStorage.getItem("floodguard_token");
+    setDetail(null); setDetailBusy(true); setFormError("");
+    try { const result = await source.detail(id); if (guard.current.validDetail(ticket) && selectedId.current === id) setDetail(result); }
+    catch (err) {
+      if (handleAuthorization(err, token)) return;
+      if (guard.current.validDetail(ticket)) {
+        setDetail(null); setNotice(describe(err));
+        if (err instanceof ApiError && err.status === 404) selectedId.current = null;
+      }
+    } finally { if (guard.current.validDetail(ticket)) { detailSync.current = false; setDetailBusy(false); } }
   }
-
-  const data = load.kind === "ready" ? load.data : null;
-  const entries = (data?.warnings ?? []).map((warning) => ({ warning, period: warningPeriod(warning, now) }));
-  const areas = new Map(data?.areas.map((area) => [area.id, area.name]));
-  const search = query.trim().toLocaleLowerCase("vi");
-  const visible = entries
-    .filter(({ warning, period: effective }) =>
-      (!severity || warning.severity === severity) && (!period || effective === period) &&
-      (!search || [warning.title, warning.id, warning.areaId, areas.get(warning.areaId) ?? ""]
-        .some((value) => value.toLocaleLowerCase("vi").includes(search))))
-    .sort((first, second) => (Date.parse(second.warning.startAt) || 0) - (Date.parse(first.warning.startAt) || 0));
-  const status = load.kind === "error" && load.error instanceof ApiError ? load.error.status : 0;
-
-  return (
-    <AppShell nav={ADMIN_NAV} brandSub="COMMAND C4I" brandTag="ADMIN" roleLabel="QUẢN TRỊ VIÊN C4I" accent="water" header={<AdminHeader title={title} />}>
-      <div className="mx-auto max-w-[96rem] space-y-5">
-        <section className="rounded-2xl border border-border bg-card p-5 sm:p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="font-mono text-xs tracking-widest text-water">ADMIN · CẢNH BÁO LŨ</p>
-              <h1 className="mt-2 text-2xl font-bold sm:text-3xl">{title}</h1>
-              <p className="mt-2 max-w-xl text-sm text-muted">Quản lý nội dung cảnh báo, vùng ảnh hưởng và thời gian hiệu lực theo giờ Việt Nam.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={button} onClick={refresh} disabled={load.kind === "loading" || saving}>
-                <Icon name="refresh" className="h-4 w-4" /> Làm mới
-              </button>
-              <button type="button" className="rounded-lg bg-water px-4 py-2 text-sm font-bold text-bg hover:bg-water/85 disabled:opacity-50"
-                disabled={!data?.areas.length || saving} onClick={() => openEditor(null)}>+ Tạo cảnh báo</button>
-            </div>
-          </div>
-        </section>
-
-        {source.demo && <aside className="rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm text-warn">
-          <strong>TEST ONLY · Dữ liệu mô phỏng</strong>
-          <p className="mt-1">Các thay đổi chỉ lưu trong phiên thử của trang. Tải lại trình duyệt sẽ đặt lại dữ liệu.</p>
-        </aside>}
-        {message && <p role="status" className="rounded-xl border border-safe/30 bg-safe/10 p-3 text-sm text-safe">{message}</p>}
-
-        {load.kind === "loading" && <p role="status" className="rounded-xl border border-border bg-card p-8 text-center text-muted">Đang tải cảnh báo lũ…</p>}
-        {load.kind === "error" && <section role="alert" className="space-y-3 rounded-xl border border-sos/35 bg-card p-5">
-          <h2 className="font-semibold text-sos">Tải danh sách thất bại</h2>
-          <p className="text-sm">{describeError(load.error)}</p>
-          {status === 401 ? <Link to="/login" className={button}>Đăng nhập lại</Link> : status !== 403 && <button type="button" className={button} onClick={refresh}>Thử lại</button>}
-        </section>}
-
-        {data && <>
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <KpiCard label="Tổng cảnh báo" icon="alert" value={String(entries.length)} tone="text" />
-            <KpiCard label="Đang hiệu lực" icon="pulse" value={String(entries.filter((item) => item.period === "current").length)} tone="safe" />
-            <KpiCard label="Sắp tới" icon="clock" value={String(entries.filter((item) => item.period === "upcoming").length)} tone="water" />
-            <KpiCard label="Đã hết hạn" icon="history" value={String(entries.filter((item) => item.period === "expired").length)} tone="warn" />
-          </div>
-          {!data.areas.length && <p role="status" className="rounded-xl border border-warn/35 bg-warn/10 p-3 text-sm text-warn">Cần có vùng ngập để tạo hoặc cập nhật cảnh báo.</p>}
-          <section className="grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-[2fr_1fr_1fr_auto]" aria-label="Bộ lọc cảnh báo">
-            <label className="space-y-1 text-xs text-muted"><span>Tìm cảnh báo</span>
-              <input type="search" className={input} placeholder="Tiêu đề, mã hoặc vùng ngập" value={query} onChange={(e) => setQuery(e.target.value)} />
-            </label>
-            <label className="space-y-1 text-xs text-muted"><span id="ccf120-managementscreen-severity">Mức độ</span>
-              <select aria-labelledby="ccf120-managementscreen-severity" className={input} value={severity} onChange={(e) => setSeverity(e.target.value)}>
-                <option value="">Tất cả</option>
-                {Object.entries(severityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-              </select>
-            </label>
-            <label className="space-y-1 text-xs text-muted"><span id="ccf120-managementscreen-period">Hiệu lực</span>
-              <select aria-labelledby="ccf120-managementscreen-period" className={input} value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option value="">Tất cả</option>
-                {Object.entries(periodLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-              </select>
-            </label>
-            <button type="button" className={`${button} self-end`} disabled={!query && !severity && !period} onClick={() => { setQuery(""); setSeverity(""); setPeriod(""); }}>Xóa bộ lọc</button>
-          </section>
-
-          <section className="overflow-hidden rounded-2xl border border-border bg-card">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border p-4">
-              <h2 className="font-bold">Danh sách cảnh báo</h2>
-              <span className="text-xs text-muted">{visible.length} / {entries.length} cảnh báo · ICT</span>
-            </div>
-            {!visible.length ? <p className="p-8 text-center text-sm text-muted">{entries.length ? "Không có kết quả theo bộ lọc." : "Chưa có cảnh báo lũ."}</p> :
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[49rem] text-left text-sm">
-                  <thead className="bg-bg/65 text-xs text-muted">
-                    <tr>{["Cảnh báo", "Mức độ", "Vùng ngập", "Bắt đầu / Kết thúc", "Trạng thái", "Thao tác"].map((label) => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}</tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {visible.map(({ warning, period: effective }) => <tr key={warning.id} className="align-top hover:bg-bg/30">
-                      <th scope="row" className="max-w-64 break-words px-4 py-4 font-medium">
-                        <span className="block">{warning.title}</span>
-                        <span className="mt-1 block font-mono text-xs text-muted">{warning.id}</span>
-                      </th>
-                      <td className="px-4 py-4"><span className={`inline-block rounded-full border px-2 py-1 text-xs ${severityTone[warning.severity]}`}>{severityLabels[warning.severity]}</span></td>
-                      <td className="max-w-48 break-words px-4 py-4">{areas.get(warning.areaId) ?? "Vùng chưa có tên"}<span className="mt-1 block font-mono text-xs text-muted">{warning.areaId}</span></td>
-                      <td className="whitespace-nowrap px-4 py-4 text-xs leading-6 text-muted"><div>{warningTime(warning.startAt)}</div><div>{warningTime(warning.endAt)}</div></td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-block rounded-full border px-2 py-1 text-xs ${periodTone[effective]}`}>{periodLabels[effective]}</span>
-                        <span className="mt-1 block text-xs text-muted">{warning.status === "active" ? "Đã bật" : "Đã tắt"}</span>
-                      </td>
-                      <td className="px-4 py-4"><button type="button" className={button} disabled={!data.areas.length || saving} aria-label={`Chỉnh sửa ${warning.title}`} onClick={() => openEditor(warning)}>Chỉnh sửa</button></td>
-                    </tr>)}
-                  </tbody>
-                </table>
-              </div>}
-          </section>
-        </>}
-
-        {editor && data && <FloodWarningForm warning={editor.warning} areas={data.areas} demo={source.demo} busy={saving} error={saveError} onReview={() => setSaveError(null)} onClose={() => setEditor(null)} onSave={save} />}
-      </div>
-    </AppShell>
-  );
+  function closeDetail() { guard.current.invalidateDetail(); selectedId.current = null; detailSync.current = false; setDetail(null); setDetailBusy(false); setConfirmOff(false); }
+  async function reconcile() {
+    if (!pending || inFlight.current || guard.current.isLocked) return;
+    const epoch = guard.current.snapshot();
+    const token = localStorage.getItem("floodguard_token");
+    inFlight.current = true; setBusy(true); setFormError("");
+    try {
+      const result = await source.creationRequest(pending.key);
+      if (!guard.current.validEpoch(epoch)) return;
+      sessionStorage.removeItem(STORAGE); setPending(null); setEditor(undefined);
+      setNotice(`Đã đối chiếu được bản tin ${result.id}.`); await refresh(); await openDetail(result.id);
+    } catch (err) {
+      if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
+      setFormError(err instanceof WarningRequestError && err.code === "CREATION_REQUEST_NOT_FOUND"
+        ? "Chưa tìm thấy yêu cầu. Request cũ vẫn có thể đang xử lý; chỉ được gửi lại cùng khóa và nội dung."
+        : describe(err));
+    } finally { inFlight.current = false; setBusy(false); }
+  }
+  async function save(fields: WarningFields, retry = false) {
+    if (inFlight.current || guard.current.isLocked || pendingEdit || (editor && (detailSync.current || detailBusy || selectedId.current !== editor.id))) return;
+    if (pending && !retry) { setFormError("Cần xử lý thao tác tạo chưa xác định trước."); return; }
+    const target = editor;
+    if (target === undefined && !retry) return;
+    const epoch = guard.current.snapshot();
+    const token = localStorage.getItem("floodguard_token");
+    inFlight.current = true; setBusy(true); setFormError("");
+    let operation: Pending | null = null;
+    try {
+      let saved: FloodWarning;
+      if (target && !retry) {
+        saved = await source.update(target.id, target.revision, { title: fields.title, content: fields.content });
+      } else {
+        operation = retry && pending ? pending : { account: account(), key: crypto.randomUUID(), body: fields };
+        if (!source.demo && !operation.account) throw new Error("Không xác định được tài khoản Admin.");
+        if (!source.demo) { sessionStorage.setItem(STORAGE, JSON.stringify(operation)); setPending(operation); }
+        saved = await source.create(operation.body, operation.key);
+        if (!guard.current.validEpoch(epoch)) return;
+        if (!source.demo) sessionStorage.removeItem(STORAGE);
+        setPending(null);
+      }
+      if (!guard.current.validEpoch(epoch)) return;
+      setEditor(undefined); setNotice(`Đã lưu bản tin ${saved.id}. Công việc phát thông báo được ghi nhận, không đồng nghĩa mọi thiết bị đã nhận.`);
+      const stillSelected = target ? selectedId.current === saved.id : selectedId.current === null;
+      await refresh();
+      if (stillSelected && (target ? selectedId.current === saved.id : selectedId.current === null)) await openDetail(saved.id);
+    } catch (err) {
+      if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
+      if (target && !retry && err instanceof ApiError && (err.status === 409 || err.status === 429 || err.status >= 500 || err.status === 0)) {
+        const uncertain = patchNeedsReconciliation(err.status, err instanceof WarningRequestError ? err.code : undefined);
+        if (uncertain) setPendingEdit({ warning: target, draft: fields });
+        setEditor(undefined);
+        guard.current.invalidateDetail();
+        setDetail(null);
+        try {
+          const fresh = await source.detail(target.id);
+          if (!guard.current.validEpoch(epoch)) return;
+          if (selectedId.current === target.id) setDetail(fresh);
+          setPendingEdit(null);
+          setNotice("Đã đối chiếu được chi tiết mới. Kiểm tra revision/nội dung; nếu cần sửa tiếp, chủ động mở lại form.");
+        } catch (readError) {
+          if (handleAuthorization(readError, token) || !guard.current.validEpoch(epoch)) return;
+          setPendingEdit({ warning: target, draft: fields });
+          setNotice(`Chưa đối chiếu được kết quả sửa. Không gửi PATCH lại: ${describe(readError)}`);
+        }
+      }
+      if (operation && err instanceof WarningRequestError && err.uncertain) {
+        setFormError("Tạo chưa rõ kết quả. Đối chiếu yêu cầu trước; khi cần retry dùng đúng khóa và nội dung cũ.");
+      } else if (operation && err instanceof WarningRequestError && !err.uncertain && err.status < 500 && err.status !== 429) {
+        sessionStorage.removeItem(STORAGE); setPending(null); setFormError(describe(err));
+      } else setFormError(describe(err));
+    } finally { inFlight.current = false; setBusy(false); }
+  }
+  async function reconcileEdit() {
+    if (!pendingEdit || inFlight.current || guard.current.isLocked) return;
+    const epoch = guard.current.snapshot();
+    const token = localStorage.getItem("floodguard_token");
+    const { warning, draft } = pendingEdit;
+    inFlight.current = true; setBusy(true);
+    try {
+      const fresh = await source.detail(warning.id);
+      if (!guard.current.validEpoch(epoch)) return;
+      if (selectedId.current === warning.id) { guard.current.invalidateDetail(); setDetail(fresh); }
+      setEditor(undefined); setPendingEdit(null);
+      const applied = fresh.title === draft.title && fresh.content === draft.content;
+      setNotice(applied ? "Đã đối chiếu: nội dung yêu cầu sửa đang có trên Backend." :
+        "Nội dung hoặc revision khác với bản gửi. Đã tải bản hiện tại; xem lại trước khi thực hiện thao tác mới.");
+    } catch (err) {
+      if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
+      setNotice(`Đối chiếu sửa vẫn thất bại, chưa được gửi lại: ${describe(err)}`);
+    } finally { inFlight.current = false; setBusy(false); }
+  }
+  async function deactivate() {
+    if (!detail || inFlight.current || guard.current.isLocked || pendingEdit || detailSync.current || detailBusy || selectedId.current !== detail.id) return;
+    const epoch = guard.current.snapshot();
+    const token = localStorage.getItem("floodguard_token");
+    inFlight.current = true; setBusy(true); setConfirmOff(false);
+    const id = detail.id;
+    try {
+      const updated = await source.deactivate(id);
+      if (!guard.current.validEpoch(epoch)) return;
+      if (selectedId.current === id) setDetail(updated);
+      setNotice("Đã tắt cảnh báo. Bản tin được giữ trong lịch sử."); await refresh();
+    }
+    catch (err) {
+      if (handleAuthorization(err, token) || !guard.current.validEpoch(epoch)) return;
+      try {
+        const fresh = await source.detail(id);
+        if (!guard.current.validEpoch(epoch)) return;
+        if (selectedId.current === id) setDetail(fresh);
+        setNotice(fresh.status === "inactive" ? "Bản tin đã tắt; đã đối chiếu trạng thái mới." : `Chưa xác nhận đã tắt: ${describe(err)}. Đã tải lại trạng thái.`);
+      }
+      catch (readError) {
+        if (handleAuthorization(readError, token) || !guard.current.validEpoch(epoch)) return;
+        setNotice(`Tắt chưa rõ kết quả; không tự gửi lại. ${describe(readError)}`);
+      }
+    } finally { inFlight.current = false; setBusy(false); }
+  }
+  const authError = accessDenied !== null;
+  return <AppShell nav={ADMIN_NAV} brandSub="COMMAND C4I" brandTag="ADMIN" roleLabel="QUẢN TRỊ VIÊN C4I" accent="water" header={<AdminHeader title="Quản lý cảnh báo lũ" />}>
+    <div className="mx-auto max-w-[96rem] space-y-5">
+      <section className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-border bg-card p-6">
+        <div><p className="font-mono text-xs tracking-widest text-water">ADMIN · CẢNH BÁO V2</p><h1 className="mt-2 text-2xl font-bold">Quản lý cảnh báo mưa lớn và nguy cơ ngập</h1>
+          <p className="mt-2 text-sm text-muted">Bản tin áp dụng cho tất cả vùng công bố của hệ thống · Giờ hiển thị GMT+7.</p></div>
+        <div className="flex gap-2"><button className={button} disabled={loading || busy || authError} onClick={() => void refresh()}>Làm mới</button>
+          <button className="rounded-lg bg-water px-4 py-2 text-sm font-semibold text-bg disabled:opacity-50" disabled={busy || !!pending || !!pendingEdit || authError} onClick={() => { setFormError(""); setEditor(null); }}>+ Tạo cảnh báo</button></div>
+      </section>
+      {source.demo && <p className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">TEST ONLY · Mọi bản tin trong chế độ mô phỏng không được gửi tới người dân.</p>}
+      {pending && <section className="space-y-2 rounded-xl border border-warn/40 bg-warn/10 p-4 text-sm" role="alert">
+        <strong>Thao tác tạo chưa xác định kết quả</strong><p>“{pending.body.title}” · Khóa: <code>{pending.key}</code>. Không tạo bản tin mới hoặc thay nội dung khi chưa giải quyết thao tác này.</p>
+        <div className="flex flex-wrap gap-2"><button className={button} disabled={busy || authError} onClick={() => void reconcile()}>Đối chiếu yêu cầu</button>
+          <button className={button} disabled={busy || authError} onClick={() => void save(pending.body, true)}>Thử lại cùng nội dung/khóa</button></div>
+        {formError && <p role="alert" className="text-sos">{formError}</p>}
+      </section>}
+      {pendingEdit && <section role="alert" className="space-y-2 rounded-xl border border-warn/40 bg-warn/10 p-4 text-sm">
+        <strong>Kết quả sửa chưa xác định — đã khóa gửi lại</strong>
+        <p>Bản tin {pendingEdit.warning.id}, revision {pendingEdit.warning.revision}. Draft được giữ: “{pendingEdit.draft.title}”.</p>
+        <p>Phải đọc lại chi tiết thành công trước khi thực hiện một PATCH mới.</p>
+        <button className={button} disabled={busy || authError} onClick={() => void reconcileEdit()}>Đối chiếu sửa</button>
+      </section>}
+      {notice && <p role="status" className="rounded-lg border border-water/30 bg-water/10 p-3 text-sm">{notice}</p>}
+      {error && <section role="alert" className="rounded-lg border border-sos/35 bg-sos/10 p-4 text-sm"><strong>{rows ? "Chưa thể cập nhật — đang giữ dữ liệu lần đọc trước" : "Không tải được dữ liệu"}</strong><p>{error}</p>
+        {authError ? <button className={button} onClick={() => { guard.current.lock(); logout(); navigate("/login", { replace: true }); }}>Đăng nhập lại</button> : <button className={button} disabled={loading} onClick={() => void refresh()}>Thử lại</button>}</section>}
+      {loading && <p role="status" className="text-sm text-muted">{rows ? "Đang cập nhật…" : "Đang tải dữ liệu V2…"}</p>}
+      {summary && <div className="grid gap-3 sm:grid-cols-3"><KpiCard label="Tổng bản tin V2" icon="alert" value={String(summary.total)} tone="text" />
+        <KpiCard label="Đang bật" icon="pulse" value={String(summary.active)} tone="safe" />
+        <KpiCard label="Đã tắt" icon="history" value={String(summary.inactive)} tone="warn" /></div>}
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-4">
+        <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); setQuery(search.trim()); }}>
+          <label className="flex min-w-52 flex-1 flex-col gap-1 text-xs text-muted">Tìm tiêu đề hoặc nội dung<input className={field} maxLength={180} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm cảnh báo…" /></label>
+          <button className={button}>Tìm kiếm</button>
+          <div className="flex gap-1" aria-label="Trạng thái cảnh báo">{([{ value: "", label: "Tất cả" }, { value: "active", label: "Đang bật" }, { value: "inactive", label: "Đã tắt" }] as const).map((tab) =>
+            <button key={tab.value} type="button" aria-pressed={status === tab.value} className={`${button} ${status === tab.value ? "border-water text-water" : ""}`} onClick={() => setStatus(tab.value)}>{tab.label}</button>)}</div>
+        </form>
+        {rows && (rows.length === 0 ? <p className="p-8 text-center text-sm text-muted">Không có bản tin V2 phù hợp.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-left text-sm"><thead className="border-b border-border text-xs text-muted"><tr>
+          <th className="p-3">Bản tin</th><th className="p-3">Trạng thái</th><th className="p-3">Bắt đầu (GMT+7)</th><th className="p-3">Kết thúc (GMT+7)</th><th className="p-3">Thao tác</th></tr></thead>
+          <tbody className="divide-y divide-border">{rows.map((row) => <tr key={row.id}><td className="max-w-xs p-3"><strong>{row.title}</strong><p className="mt-1 line-clamp-2 text-xs text-muted">{row.content}</p></td>
+            <td className="p-3">{row.status === "active" ? <span className="text-safe">Đang bật</span> : <span className="text-muted">Đã tắt</span>}</td>
+            <td className="p-3">{warningTime(row.startAt)}</td><td className="p-3">{warningTime(row.endAt)}</td>
+            <td className="p-3"><button className={button} onClick={() => void openDetail(row.id)} disabled={detailBusy || authError}>Xem chi tiết</button></td></tr>)}</tbody></table></div>)}
+      </section>
+      {detailBusy && <p role="status">Đang tải chi tiết…</p>}
+      {detail && <section className="space-y-3 rounded-2xl border border-border bg-card p-5" aria-label="Chi tiết cảnh báo">
+        <div className="flex justify-between gap-3"><h2 className="text-xl font-bold">Chi tiết bản tin</h2><button className={button} onClick={closeDetail}>Đóng</button></div>
+        <h3 className="font-semibold">{detail.title}</h3><p className="whitespace-pre-wrap text-sm">{detail.content}</p>
+        <dl className="grid gap-2 text-xs text-muted sm:grid-cols-2"><div>Mã: {detail.id}</div><div>Phiên bản nội dung: {detail.revision}</div>
+          <div>Trạng thái: {detail.status === "active" ? "Đang bật" : "Đã tắt"}</div><div>Phạm vi: Tất cả vùng hệ thống công bố</div>
+          <div>Bắt đầu: {warningTime(detail.startAt)}</div><div>Kết thúc: {warningTime(detail.endAt)}</div>
+          <div>Tạo lúc: {warningTime(detail.createdAt)}</div><div>Cập nhật: {warningTime(detail.updatedAt)}</div></dl>
+        {detail.status === "active" && <div className="flex gap-2"><button className={button} disabled={busy || authError || !!pendingEdit || detailBusy} onClick={() => { if (detailSync.current || detailBusy || selectedId.current !== detail.id) return; setFormError(""); setEditor(detail); }}>Chỉnh sửa</button>
+          <button className={`${button} text-sos`} disabled={busy || authError || !!pendingEdit || detailBusy} onClick={() => { if (detailSync.current || detailBusy || selectedId.current !== detail.id) return; setConfirmOff(true); }}>Tắt cảnh báo</button></div>}
+        {detail.status === "inactive" && <p className="text-sm text-muted">Bản tin lịch sử chỉ xem. Đợt mới cần tạo bản tin mới.</p>}
+      </section>}
+      {confirmOff && detail && <section role="alertdialog" aria-modal="true" aria-label="Xác nhận tắt cảnh báo" className="rounded-xl border border-sos/40 bg-card p-5">
+        <p>Bạn chắc chắn muốn tắt “{detail.title}”? Không thể bật lại hoặc sửa bản tin đã tắt.</p><div className="mt-3 flex gap-2">
+          <button className={button} disabled={busy} onClick={() => setConfirmOff(false)}>Hủy</button>
+          <button className={`${button} text-sos`} disabled={busy || authError || detailBusy} onClick={() => void deactivate()}>{busy ? "Đang tắt…" : "Xác nhận tắt"}</button></div></section>}
+      {editor !== undefined && !authError && <FloodWarningForm key={editor?.id ?? "create"} warning={editor} busy={busy} locked={!!pending || !!pendingEdit} error={formError}
+        onClose={() => setEditor(undefined)} onSave={(fields) => void save(fields)} />}
+    </div>
+  </AppShell>;
 }
