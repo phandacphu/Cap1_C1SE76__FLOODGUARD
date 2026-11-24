@@ -16,8 +16,17 @@ test('SOS summary uses server from/to while warning summary has no date query', 
 test('V2 schema validates global counts without converting errors to zero', () => {
   assert.match(api, /data\.schemaVersion !== 2/);
   assert.match(api, /data\.active as number\) \+ \(data\.inactive as number\)/);
-  assert.match(screen, /value\(warning\.data\?\.total\)/);
+  assert.match(screen, /value=\{warning\.data\.total\}/);
   assert.doesNotMatch(screen, /Không có biểu đồ theo ngày/);
+});
+
+test('managed area summary uses existing global Admin API and validates all backend categories', () => {
+  assert.match(api, /"\/admin\/flood-areas\/summary", token/);
+  assert.match(api, /parseManagedAreaSummary/);
+  assert.match(api, /counts\.flood \+ counts\.low_lying \+ counts\.unclassified/);
+  assert.doesNotMatch(api, /\/admin\/flood-areas\/summary\?/);
+  assert.match(screen, /fetchManagedAreaReport\(token\)/);
+  assert.match(screen, /setManagedAreas\(\{ data: null, loading: false/);
 });
 
 test('report removes stale data on range change and blocks late responses and access denial', () => {

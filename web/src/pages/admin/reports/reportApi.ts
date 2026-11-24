@@ -8,6 +8,7 @@ import { fetchHistoricalAreas, fetchHistoricalRadar } from "../flood-area/histor
 export type ReportRange = "7d" | "30d" | "90d";
 export interface WarningSummary { total: number; active: number; inactive: number }
 export interface FloodAreaSummary { total: number; historicalFlood: number; radarCandidates: number }
+export interface ManagedAreaSummary { total: number; flood: number; lowLying: number; unclassified: number }
 export interface SafeLocationSummary { total: number; byType: Record<SafeLocationType | "unclassified", number> }
 const days: Record<ReportRange, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
@@ -49,6 +50,25 @@ export async function fetchFloodAreaReport(): Promise<FloodAreaSummary> {
   const historicalFlood = history.features.length;
   const radarCandidates = radar.features.length;
   return { total: historicalFlood + radarCandidates, historicalFlood, radarCandidates };
+}
+
+export function parseManagedAreaSummary(value: unknown): ManagedAreaSummary {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Thống kê vùng quản lý không hợp lệ.");
+  const summary = value as Record<string, unknown>;
+  const byType = summary.byAreaType;
+  if (typeof byType !== "object" || byType === null || Array.isArray(byType)) throw new Error("Thống kê loại vùng không hợp lệ.");
+  const counts = byType as Record<string, unknown>;
+  const valid = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+  if (!valid(summary.total) || !valid(counts.flood) || !valid(counts.low_lying) || !valid(counts.unclassified) ||
+    summary.total !== counts.flood + counts.low_lying + counts.unclassified) {
+    throw new Error("Thống kê vùng quản lý không khớp.");
+  }
+  return { total: summary.total, flood: counts.flood, lowLying: counts.low_lying, unclassified: counts.unclassified };
+}
+
+/** Admin-managed areas across all dates, separate from public history and radar map layers. */
+export async function fetchManagedAreaReport(token: string): Promise<ManagedAreaSummary> {
+  return parseManagedAreaSummary(await apiGet<unknown>("/admin/flood-areas/summary", token));
 }
 
 export async function fetchSafeLocationReport(token: string): Promise<SafeLocationSummary> {

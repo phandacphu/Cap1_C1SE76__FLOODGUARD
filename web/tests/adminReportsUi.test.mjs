@@ -32,10 +32,20 @@ test('report range chooses a server SOS window, while export stays disabled', ()
 test('reports show verified counts and no fixture or fake time-series values', () => {
   assert.doesNotMatch(screen, /previewReports|current\.trend|requests: 42/);
   assert.match(screen, /sos\.data\?\.rescued/);
-  assert.match(screen, /warning\.data\?\.total/);
+  assert.match(screen, /warning\.data\.total/);
   assert.match(screen, /detail="Toàn hệ thống"/);
   assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
   assert.match(screen, /setLocked\(true\)/);
+});
+
+test('report keeps warning section but removes warning top card and developer explanations', () => {
+  assert.doesNotMatch(screen, /PreviewStat title="Cảnh báo lũ"/);
+  assert.match(screen, /PreviewPanel title="Cảnh báo lũ"/);
+  assert.doesNotMatch(screen, /Giá trị sẽ được lấy từ API quản lý vùng/);
+  assert.doesNotMatch(screen, /Đếm đối tượng trên lớp bản đồ/);
+  assert.match(screen, /Vùng ngập và vùng trũng do Admin quản lý/);
+  assert.match(screen, /managedAreas\.data\.lowLying/);
+  assert.match(screen, /areas\.data\.radarCandidates/);
 });
 
 test('report has four real-data sections with business-facing flood warning name', () => {
