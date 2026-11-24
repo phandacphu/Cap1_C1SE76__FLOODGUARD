@@ -37,3 +37,11 @@ test('reports show verified counts and no fixture or fake time-series values', (
   assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
   assert.match(screen, /setLocked\(true\)/);
 });
+
+test('report has four real-data sections with business-facing flood warning name', () => {
+  for (const name of ['Theo dõi SOS', 'Quản lý cảnh báo lũ', 'Quản lý vùng ngập', 'Quản lý điểm an toàn']) assert.ok(screen.includes(name));
+  for (const path of ['/admin/sos', '/admin/flood-warnings', '/admin/flood-areas', '/admin/safe-locations']) assert.ok(screen.includes(`"${path}"`));
+  assert.doesNotMatch(screen, /Cảnh báo V2|Lịch sử V2|detail="V2"/);
+  assert.match(screen, /areas\.data\.byAreaType\.low_lying/);
+  assert.match(screen, /locations\.data\.total/);
+});

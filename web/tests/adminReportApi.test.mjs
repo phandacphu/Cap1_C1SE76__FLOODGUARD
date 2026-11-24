@@ -21,8 +21,22 @@ test('V2 schema validates global counts without converting errors to zero', () =
 });
 
 test('report removes stale data on range change and blocks late responses and access denial', () => {
-  assert.match(screen, /setRange\(next\); setSos\(empty\(\)\)/);
+  assert.match(screen, /setRange\(next\); setSos\(empty\(\)\); setAreas\(empty\(\)\)/);
   assert.match(screen, /current === generation\.current/);
   assert.match(screen, /cause\.status === 401 \|\| cause\.status === 403/);
   assert.match(screen, /setLocked\(true\)/);
+});
+
+test('flood area report uses the supported server-side date filters and validates category totals', () => {
+  assert.match(api, /\/admin\/flood-areas\/summary\?\$\{query\}/);
+  assert.match(api, /parseFloodAreaSummary/);
+  assert.match(api, /by\.flood \+ by\.low_lying \+ by\.unclassified/);
+  assert.match(screen, /fetchFloodAreaReport\(token, range\)/);
+});
+
+test('safe location counts derive only from authenticated Admin catalogue and known type labels', () => {
+  assert.match(api, /fetchAdminSafeLocations\(token\)/);
+  assert.match(api, /location\.type \?\? "unclassified"/);
+  assert.match(screen, /fetchSafeLocationReport\(token\)/);
+  assert.doesNotMatch(screen, /capacity|availableBeds|onlineTeams/);
 });
