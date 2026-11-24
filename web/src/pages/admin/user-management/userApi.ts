@@ -106,6 +106,14 @@ export async function fetchUsers(token: string): Promise<User[]> {
   return list.map(normalizeUser).filter((u): u is User => u !== null);
 }
 
+/** GET /admin/users/:userId; never substitute a different account on a mismatched response. */
+export async function fetchUserDetail(token: string, id: string): Promise<User> {
+  const json = await call("GET", `/admin/users/${encodeURIComponent(id)}`, token);
+  const user = normalizeUser(json?.data?.user);
+  if (!user || user.id !== id) throw new UserApiError("API chi tiết trả về ID hoặc cấu trúc không hợp lệ.", -1);
+  return user;
+}
+
 /** PATCH /admin/users/:userId. Returns the updated user from `data.user`. */
 export async function patchUser(token: string, id: string, patch: UserPatch): Promise<User> {
   const json = await call("PATCH", `/admin/users/${encodeURIComponent(id)}`, token, patch);

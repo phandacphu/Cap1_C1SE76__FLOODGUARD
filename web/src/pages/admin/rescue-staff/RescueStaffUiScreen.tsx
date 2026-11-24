@@ -1,177 +1,138 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Icon } from "../../../components/ui/Icon";
-import {
-  AdminUiPreview,
-  PreviewBadge,
-  PreviewPanel,
-  PreviewStat,
-  previewInputClass,
-  previewPrimaryButton,
-  previewSecondaryButton,
-} from "../ui-preview/AdminUiPreview";
+import { useAuth } from "../../../context/AuthContext";
+import { AdminUiPreview, PreviewBadge, PreviewPanel, PreviewStat, previewInputClass, previewSecondaryButton } from "../ui-preview/AdminUiPreview";
+import { describeUserError, fetchUserDetail, patchUser, UserApiError, type User } from "../user-management/userApi";
+import { useUserManagement } from "../user-management/useUserManagement";
 
-type StaffStatus = "on-duty" | "ready" | "offline";
+type Filter = "all" | "active" | "inactive";
+const button = "rounded-lg border border-border px-3 py-2 text-sm font-semibold hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50";
+const nameOf = (u: User) => u.fullName || u.email || u.phone || u.id;
+const dateOf = (v: string | null) => v && Number.isFinite(Date.parse(v))
+  ? new Date(v).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "—";
 
-interface StaffPreview {
-  id: string;
-  name: string;
-  area: string;
-  team: string;
-  shift: string;
-  status: StaffStatus;
-}
-
-// UI fixture only. Replace this source with an Admin Rescue Staff API adapter later.
-const previewStaff: StaffPreview[] = [
-  { id: "RS-M01", name: "Nhân sự mẫu 01", area: "Hải Châu", team: "Đội cứu hộ A", shift: "Ca sáng", status: "on-duty" },
-  { id: "RS-M02", name: "Nhân sự mẫu 02", area: "Thanh Khê", team: "Đội cứu hộ A", shift: "Ca sáng", status: "ready" },
-  { id: "RS-M03", name: "Nhân sự mẫu 03", area: "Liên Chiểu", team: "Đội cứu hộ B", shift: "Ca chiều", status: "on-duty" },
-  { id: "RS-M04", name: "Nhân sự mẫu 04", area: "Cẩm Lệ", team: "Đội cứu hộ B", shift: "Ca tối", status: "offline" },
-  { id: "RS-M05", name: "Nhân sự mẫu 05", area: "Sơn Trà", team: "Đội cứu hộ C", shift: "Ca tối", status: "ready" },
-];
-
-const statusLabel: Record<StaffStatus, string> = {
-  "on-duty": "Đang trực",
-  ready: "Sẵn sàng",
-  offline: "Ngoại tuyến",
-};
-
-const statusTone: Record<StaffStatus, "safe" | "water" | "muted"> = {
-  "on-duty": "safe",
-  ready: "water",
-  offline: "muted",
-};
-
+/** Account activation is different from on-duty/online status. */
 export default function RescueStaffUiScreen() {
+  const { token, logout } = useAuth();
+  const { users, error, loading, refresh } = useUserManagement();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<StaffStatus | "all">("all");
-  const [selected, setSelected] = useState<StaffPreview | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-
+  const [filter, setFilter] = useState<Filter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<User | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [notice, setNotice] = useState("");
+  const detailGeneration = useRef(0);
+  const inFlight = useRef(false);
+  const rescue = useMemo(() => (users || []).filter((u) => u.role === "rescue"), [users]);
   const filtered = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("vi-VN");
-    return previewStaff.filter((staff) => {
-      const matchesStatus = filter === "all" || staff.status === filter;
-      const matchesSearch = [staff.id, staff.name, staff.area, staff.team]
-        .some((value) => value.toLocaleLowerCase("vi-VN").includes(query));
-      return matchesStatus && matchesSearch;
-    });
-  }, [filter, search]);
+    const q = search.trim().toLocaleLowerCase("vi-VN");
+    return rescue.filter((u) => (filter === "all" || u.isActive === (filter === "active")) &&
+      (!q || [u.id, u.fullName, u.email, u.phone].some((v) => (v || "").toLocaleLowerCase("vi-VN").includes(q))));
+  }, [rescue, search, filter]);
+  const available = users !== null && !locked;
+  const kpi = (n: number) => available ? String(n) : "—";
 
-  const closeDialog = () => { setSelected(null); setAddOpen(false); };
-
-  return (
-    <AdminUiPreview
-      title="Quản lý Rescue Staff"
-      subtitle="Theo dõi danh sách nhân sự cứu hộ, khu vực phụ trách và ca trực."
-      action={
-        <button type="button" onClick={() => setAddOpen(true)} className={previewPrimaryButton}>
-          + Thêm nhân sự
-        </button>
+  function permission(error: unknown) {
+    if (!(error instanceof UserApiError)) return false;
+    if (error.status === 401) { detailGeneration.current++; logout(); return true; }
+    if (error.status === 403) {
+      detailGeneration.current++; setLocked(true); setSelectedId(null); setDetail(null);
+      setNotice("Không đủ quyền quản lý Rescue Staff. Đã khóa các thao tác.");
+      return true;
+    }
+    return false;
+  }
+  function close() {
+    if (inFlight.current) return;
+    detailGeneration.current++; setSelectedId(null); setDetail(null);
+    setDetailLoading(false); setDetailError(""); setConfirm(false); setUncertain(false);
+  }
+  async function open(id: string) {
+    if (!token || locked || inFlight.current) return;
+    const ticket = ++detailGeneration.current;
+    setSelectedId(id); setDetail(null); setConfirm(false); setDetailError(""); setDetailLoading(true);
+    try {
+      const account = await fetchUserDetail(token, id);
+      if (ticket !== detailGeneration.current) return;
+      if (account.role !== "rescue") throw new UserApiError("Tài khoản không thuộc nhóm Rescue.", -1);
+      setDetail(account);
+    } catch (error) {
+      if (ticket !== detailGeneration.current || permission(error)) return;
+      setDetailError(describeUserError(error, "Không thể tải chi tiết tài khoản."));
+    } finally { if (ticket === detailGeneration.current) setDetailLoading(false); }
+  }
+  async function reconcile() {
+    if (!selectedId || !token || inFlight.current || locked) return;
+    const id = selectedId;
+    inFlight.current = true; setSaving(true); setDetailError("");
+    try {
+      const fresh = await fetchUserDetail(token, id);
+      if (selectedId !== id) return;
+      if (fresh.role !== "rescue") { setDetail(null); setDetailError("Tài khoản không còn thuộc nhóm Rescue."); return; }
+      setDetail(fresh); setUncertain(false); setNotice("Đã đối chiếu trạng thái mới. Vui lòng kiểm tra trước thao tác tiếp theo."); refresh();
+    } catch (error) {
+      if (!permission(error)) setDetailError(`Đối chiếu thất bại: ${describeUserError(error, "Lỗi tải chi tiết.")}`);
+    } finally { inFlight.current = false; setSaving(false); }
+  }
+  async function changeStatus() {
+    if (!token || !detail || !confirm || inFlight.current || loading || error || uncertain || locked) return;
+    const id = detail.id;
+    inFlight.current = true; setSaving(true); setConfirm(false); setDetailError("");
+    try {
+      const current = await fetchUserDetail(token, id);
+      if (current.role !== "rescue" || current.isActive !== detail.isActive) {
+        setDetail(current.role === "rescue" ? current : null);
+        setDetailError("Tài khoản đã thay đổi; kiểm tra trạng thái mới trước khi thao tác."); return;
       }
-    >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <PreviewStat title="Tổng nhân sự" value={previewStaff.length} detail="Dữ liệu minh họa" />
-        <PreviewStat title="Đang trực" value={previewStaff.filter((s) => s.status === "on-duty").length} detail="Dữ liệu minh họa" tone="safe" />
-        <PreviewStat title="Sẵn sàng" value={previewStaff.filter((s) => s.status === "ready").length} detail="Dữ liệu minh họa" />
-        <PreviewStat title="Ngoại tuyến" value={previewStaff.filter((s) => s.status === "offline").length} detail="Dữ liệu minh họa" tone="warn" />
+      const saved = await patchUser(token, id, { isActive: !detail.isActive });
+      if (saved.id !== id || saved.role !== "rescue" || saved.isActive === detail.isActive) throw new UserApiError("Phản hồi cập nhật sai ID/trạng thái.", -1);
+      setDetail(saved); refresh(); setNotice(`Đã cập nhật tài khoản ${nameOf(saved)}.`);
+    } catch (error) {
+      if (permission(error)) return;
+      if (!(error instanceof UserApiError) || error.status === 0 || error.status === -1 || error.status >= 500) {
+        setUncertain(true); setDetailError("Kết quả cập nhật chưa xác định. Phải đối chiếu thành công trước khi thao tác tiếp.");
+      } else setDetailError(describeUserError(error, "Cập nhật thất bại."));
+    } finally { inFlight.current = false; setSaving(false); }
+  }
+
+  return <AdminUiPreview preview={false} title="Quản lý Rescue Staff" subtitle="Tài khoản nhân viên cứu hộ từ hệ thống người dùng FLOODGUARD. Trạng thái tài khoản không phải trạng thái trực tuyến hoặc ca trực."
+    action={<button className={button} disabled={loading || locked} onClick={refresh}>{loading ? "Đang làm mới…" : "Làm mới"}</button>}>
+    {notice && <p role="status" className="rounded-xl border border-water/40 bg-water/10 p-3 text-sm">{notice}</p>}
+    {error && <p role="alert" className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">{available ? "Chưa cập nhật — đang giữ dữ liệu cũ. " : "Không tải được danh sách. "}{error} <button className={button} onClick={refresh}>Thử lại</button></p>}
+    {locked && <p role="alert" className="rounded-xl border border-sos/40 p-3">Không đủ quyền quản lý Rescue Staff.</p>}
+    <div className="grid gap-3 sm:grid-cols-3"><PreviewStat title="Tổng tài khoản Rescue" value={kpi(rescue.length)} detail="role=rescue" />
+      <PreviewStat title="Được kích hoạt" value={kpi(rescue.filter((u) => u.isActive).length)} detail="Trạng thái tài khoản" tone="safe" />
+      <PreviewStat title="Đã vô hiệu hóa" value={kpi(rescue.filter((u) => !u.isActive).length)} detail="Không phải ngoại tuyến" tone="warn" /></div>
+    <PreviewPanel title="Danh sách tài khoản Rescue" extra={<PreviewBadge tone="muted">{available ? filtered.length : "—"} kết quả</PreviewBadge>}>
+      <div className="grid gap-3 p-5 sm:grid-cols-[minmax(0,1fr)_210px]">
+        <label className="relative block"><span className="sr-only">Tìm nhân viên Rescue</span><span className="pointer-events-none absolute left-3 top-3 text-slate-500"><Icon name="search" className="h-4 w-4" /></span>
+          <input className={`${previewInputClass} pl-9`} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm ID, tên, email hoặc điện thoại…" /></label>
+        <select className={previewInputClass} aria-label="Lọc trạng thái tài khoản" value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+          <option value="all">Tất cả trạng thái</option><option value="active">Được kích hoạt</option><option value="inactive">Đã vô hiệu hóa</option></select>
       </div>
-
-      <PreviewPanel title="Danh sách nhân sự" extra={<PreviewBadge tone="muted">{filtered.length} kết quả</PreviewBadge>}>
-        <div className="grid gap-3 p-5 sm:grid-cols-[minmax(0,1fr)_210px]">
-          <label className="relative block">
-            <span className="sr-only">Tìm nhân sự</span>
-            <span className="pointer-events-none absolute left-3 top-3 text-slate-500"><Icon name="search" className="h-4 w-4" /></span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm mã, nhân sự, đội hoặc khu vực..."
-              className={`${previewInputClass} pl-9`}
-            />
-          </label>
-          <select
-            aria-label="Lọc trạng thái nhân sự"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value as StaffStatus | "all")}
-            className={previewInputClass}
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="on-duty">Đang trực</option>
-            <option value="ready">Sẵn sàng</option>
-            <option value="offline">Ngoại tuyến</option>
-          </select>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-bg/60 text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-5 py-3 font-medium">Nhân sự</th>
-                <th className="px-5 py-3 font-medium">Đội</th>
-                <th className="px-5 py-3 font-medium">Khu vực</th>
-                <th className="px-5 py-3 font-medium">Ca trực</th>
-                <th className="px-5 py-3 font-medium">Trạng thái</th>
-                <th className="px-5 py-3 text-right font-medium">Chi tiết</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/80">
-              {filtered.map((staff) => (
-                <tr key={staff.id} className="transition hover:bg-slate-800/35">
-                  <td className="px-5 py-4">
-                    <p className="font-semibold text-slate-100">{staff.name}</p>
-                    <p className="mt-1 font-mono text-xs text-slate-500">{staff.id}</p>
-                  </td>
-                  <td className="px-5 py-4 text-slate-300">{staff.team}</td>
-                  <td className="px-5 py-4 text-slate-300">{staff.area}</td>
-                  <td className="px-5 py-4 text-slate-300">{staff.shift}</td>
-                  <td className="px-5 py-4"><PreviewBadge tone={statusTone[staff.status]}>{statusLabel[staff.status]}</PreviewBadge></td>
-                  <td className="px-5 py-4 text-right">
-                    <button type="button" onClick={() => setSelected(staff)} className="text-sm font-medium text-water hover:underline">Xem</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <p className="px-5 py-12 text-center text-sm text-slate-400">Không tìm thấy nhân sự phù hợp.</p>}
-        </div>
-      </PreviewPanel>
-
-      {(selected || addOpen) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6" role="presentation" onMouseDown={(event) => {
-          if (event.currentTarget === event.target) closeDialog();
-        }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="staff-preview-title" className="w-full max-w-xl rounded-2xl border border-slate-700 bg-card p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-xs uppercase tracking-wider text-water">Quản lý nhân sự</p>
-                <h2 id="staff-preview-title" className="mt-1 text-xl font-bold text-white">{selected ? "Chi tiết nhân sự" : "Thêm nhân sự"}</h2>
-              </div>
-              <button type="button" aria-label="Đóng" onClick={closeDialog} className="rounded-lg p-2 text-slate-400 hover:bg-slate-700 hover:text-white">
-                <Icon name="close" className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              {[
-                ["Mã nhân sự", selected?.id ?? "Tự động cấp khi kết nối API"],
-                ["Họ tên", selected?.name ?? ""],
-                ["Đội cứu hộ", selected?.team ?? ""],
-                ["Khu vực phụ trách", selected?.area ?? ""],
-                ["Ca trực", selected?.shift ?? ""],
-                ["Trạng thái", selected ? statusLabel[selected.status] : ""],
-              ].map(([label, value]) => (
-                <label key={label} className="space-y-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-                  <span>{label}</span>
-                  <input value={value} readOnly placeholder={selected ? undefined : label} className={`${previewInputClass} cursor-default text-slate-300`} />
-                </label>
-              ))}
-            </div>
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
-              <p className="text-xs text-slate-400">Bản xem trước • Chưa kết nối API nhân sự</p>
-              <button type="button" onClick={closeDialog} className={previewSecondaryButton}>Đóng</button>
-            </div>
-          </section>
-        </div>
-      )}
-    </AdminUiPreview>
-  );
+      {loading && <p role="status" className="px-5 pb-3 text-sm text-muted">Đang tải tài khoản Rescue…</p>}
+      {available && <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-bg/60 text-xs uppercase text-slate-400"><tr>
+        <th className="px-5 py-3">Tài khoản</th><th className="px-5 py-3">Email</th><th className="px-5 py-3">Số điện thoại</th><th className="px-5 py-3">Trạng thái</th><th className="px-5 py-3">Thao tác</th>
+      </tr></thead><tbody className="divide-y divide-border/80">{filtered.map((u) => <tr key={u.id}>
+        <td className="px-5 py-4"><strong>{nameOf(u)}</strong><p className="font-mono text-xs text-muted">{u.id}</p></td><td className="px-5 py-4">{u.email || "—"}</td><td className="px-5 py-4">{u.phone || "—"}</td>
+        <td className="px-5 py-4"><PreviewBadge tone={u.isActive ? "safe" : "warn"}>{u.isActive ? "Được kích hoạt" : "Đã vô hiệu hóa"}</PreviewBadge></td>
+        <td className="px-5 py-4"><button className={button} disabled={loading || saving || !!error} onClick={() => void open(u.id)}>Xem chi tiết</button></td>
+      </tr>)}</tbody></table>{filtered.length === 0 && <p className="p-8 text-center text-sm text-muted">Không có tài khoản Rescue phù hợp.</p>}</div>}
+    </PreviewPanel>
+    {selectedId && !locked && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6" role="presentation"><section role="dialog" aria-modal="true" aria-label="Chi tiết tài khoản Rescue" className="w-full max-w-xl space-y-4 rounded-2xl border border-border bg-card p-6">
+      <div className="flex justify-between"><h2 className="text-xl font-bold">Chi tiết nhân viên cứu hộ</h2><button className={previewSecondaryButton} disabled={saving} onClick={close}>Đóng</button></div>
+      {detailLoading && <p role="status">Đang tải chi tiết…</p>}{detailError && <p role="alert" className="rounded border border-sos/40 p-3 text-sm">{detailError}</p>}
+      {!detail && !detailLoading && <button className={button} onClick={() => void open(selectedId)}>Thử lại</button>}
+      {detail && <><dl className="grid gap-3 text-sm sm:grid-cols-2">{[["ID", detail.id], ["Họ tên", detail.fullName || "—"], ["Email", detail.email || "—"], ["Số điện thoại", detail.phone || "—"], ["Vai trò", "Rescue Staff"], ["Trạng thái tài khoản", detail.isActive ? "Được kích hoạt" : "Đã vô hiệu hóa"], ["Ngày tạo", dateOf(detail.createdAt)], ["Cập nhật", dateOf(detail.updatedAt)]].map(([label, value]) => <div key={label}><dt className="text-xs text-muted">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}</dl>
+        {uncertain ? <button className={button} disabled={saving} onClick={() => void reconcile()}>Đối chiếu trạng thái</button> :
+          <button className={button} disabled={saving || loading || !!error || !!detailError} onClick={() => setConfirm(true)}>{detail.isActive ? "Vô hiệu hóa tài khoản" : "Kích hoạt tài khoản"}</button>}</>}
+      {confirm && detail && <div role="alertdialog" aria-label="Xác nhận thay đổi tài khoản" className="rounded-lg border border-warn/40 p-4 text-sm"><p>Xác nhận {detail.isActive ? "vô hiệu hóa" : "kích hoạt"} tài khoản “{nameOf(detail)}”?</p>
+        <div className="mt-3 flex gap-2"><button className={previewSecondaryButton} onClick={() => setConfirm(false)}>Hủy</button><button className={button} disabled={saving} onClick={() => void changeStatus()}>Xác nhận</button></div></div>}
+    </section></div>}
+  </AdminUiPreview>;
 }

@@ -17,11 +17,13 @@ export function AdminUiPreview({
   subtitle,
   children,
   action,
+  preview = true,
 }: {
   title: string;
   subtitle: string;
   children: ReactNode;
   action?: ReactNode;
+  preview?: boolean;
 }) {
   return (
     <AppShell
@@ -34,9 +36,9 @@ export function AdminUiPreview({
       <div className="mx-auto max-w-7xl space-y-6 pb-10">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-water/25 bg-water/10 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-water">
+            {preview && <div className="inline-flex items-center gap-2 rounded-full border border-water/25 bg-water/10 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-water">
               <span className="h-1.5 w-1.5 rounded-full bg-water" /> Giao diện mẫu
-            </div>
+            </div>}
             <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">{title}</h1>
             <p className="max-w-2xl text-sm leading-relaxed text-slate-400">{subtitle}</p>
           </div>
