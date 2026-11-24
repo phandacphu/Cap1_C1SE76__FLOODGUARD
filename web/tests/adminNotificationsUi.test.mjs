@@ -15,21 +15,18 @@ test('notifications route is reachable from the Admin sidebar and remains Admin-
   assert.match(adminRoutes, /path="\/admin\/rescue-staff"/);
 });
 
-test('notifications include search, read filters, local read state and accessible detail selection', () => {
-  assert.match(screen, /useMemo/);
-  assert.match(screen, /setSearch/);
-  assert.match(screen, /setFilter/);
-  assert.match(screen, /setReadIds/);
+test('notifications use the Admin log lookup with cursor and detail selection', () => {
+  assert.match(screen, /fetchNotificationLogs/);
+  assert.match(screen, /notificationId/);
+  assert.match(screen, /correlationId/);
+  assert.match(screen, /eventId/);
+  assert.match(screen, /nextPage/);
   assert.match(screen, /setSelectedId/);
-  assert.match(screen, /aria-pressed=\{filter === value\}/);
-  assert.match(screen, /Đánh dấu tất cả đã đọc/);
-  assert.match(screen, /selected \? \(/);
-  assert.match(screen, /Không có thông báo phù hợp/);
+  assert.match(screen, /Không có nhật ký phù hợp/);
 });
 
-test('notifications remain a frontend-only preview with no backend actions or technical notes in rendered text', () => {
-  assert.match(screen, /const previewNotifications: NotificationPreview\[\]/);
+test('notifications do not render the old read-state fixture or mutate backend', () => {
+  assert.doesNotMatch(screen, /previewNotifications|setReadIds|Đánh dấu tất cả đã đọc/);
   assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
-  assert.doesNotMatch(screen, /<p[^>]*>[^<]*(?:chưa nối|chưa kết nối|API|Firebase)/i);
-  assert.doesNotMatch(screen, /Mục trong bản xem trước|Nội dung minh họa/);
+  assert.match(screen, /preview=\{false\}/);
 });
