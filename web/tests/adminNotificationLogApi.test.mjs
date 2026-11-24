@@ -29,3 +29,15 @@ test('screen retains old data on non-permission refresh failure, exposes paging 
   assert.match(screen, /Asia\/Ho_Chi_Minh/);
   assert.match(screen, /Kết quả chưa xác định/);
 });
+
+test('lookup explains supported IDs and shows real delivery states without claiming recipient delivery', () => {
+  assert.match(screen, /validateLookup\(key, value\)/);
+  assert.match(screen, /notification_ \+ 64 ký tự hex/);
+  assert.match(screen, /sos_status:history_001/);
+  assert.match(screen, /aria-invalid=\{!!lookupError\}/);
+  assert.match(screen, /!!lookupError\}>Tra cứu/);
+  assert.match(screen, /Event ID<\/th>/);
+  assert.match(screen, /statusStyle\[log\.status\]/);
+  assert.match(screen, /log\.outcomeUnknown/);
+  assert.match(screen, /phân trang theo mã nhật ký/);
+});

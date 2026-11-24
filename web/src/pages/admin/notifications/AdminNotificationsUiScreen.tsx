@@ -1,11 +1,21 @@
 import { useRef, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { AdminUiPreview, PreviewBadge, PreviewPanel, previewInputClass, previewSecondaryButton } from "../ui-preview/AdminUiPreview";
-import { fetchNotificationLogs, NotificationLogError, type DeliveryLog, type LookupKey } from "./notificationLogApi";
+import { fetchNotificationLogs, NotificationLogError, validateLookup, type DeliveryLog, type LookupKey } from "./notificationLogApi";
 
 const buttonClass = "rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-bg disabled:cursor-not-allowed disabled:opacity-50";
 const statusText: Record<DeliveryLog["status"], string> = {
   queued: "Đã xếp hàng", sent: "Đã gửi tới nhà cung cấp", failed: "Gửi thất bại",
+};
+const statusStyle: Record<DeliveryLog["status"], string> = {
+  queued: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  sent: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  failed: "border-red-500/30 bg-red-500/10 text-red-300",
+};
+const lookupExample: Record<LookupKey, string> = {
+  notificationId: "Nhập mã thông báo chính xác",
+  correlationId: "notification_ + 64 ký tự hex viết thường",
+  eventId: "Ví dụ: sos_status:history_001",
 };
 const dateOf = (date: string) => new Date(date).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 
@@ -24,6 +34,10 @@ export default function AdminNotificationsUiScreen() {
   const ticket = useRef(0);
   const busy = useRef(false);
   const lookupRef = useRef<{ key: LookupKey; value: string } | null>(null);
+  let lookupError = "";
+  if (value.trim()) {
+    try { validateLookup(key, value); } catch (cause) { lookupError = cause instanceof Error ? cause.message : "Mã không hợp lệ."; }
+  }
 
   function clear(nextKey: LookupKey, nextValue: string) {
     ticket.current++;
@@ -75,8 +89,10 @@ export default function AdminNotificationsUiScreen() {
           <option value="notificationId">Notification ID</option><option value="correlationId">Correlation ID</option><option value="eventId">Event ID</option>
         </select></label>
         <label className="space-y-1 text-sm"><span>Mã cần tra cứu</span><input className={previewInputClass} value={value}
-          disabled={loading || locked} onChange={(event) => clear(key, event.target.value)} placeholder="Nhập chính xác một mã…" /></label>
-        <button type="submit" className={`${buttonClass} self-end`} disabled={loading || locked || !value.trim()}>Tra cứu</button>
+          aria-invalid={!!lookupError} aria-describedby="notification-lookup-hint"
+          disabled={loading || locked} onChange={(event) => clear(key, event.target.value)} placeholder={lookupExample[key]} />
+          <span id="notification-lookup-hint" className={`block text-xs ${lookupError ? "text-red-300" : "text-slate-400"}`}>{lookupError || lookupExample[key]}</span></label>
+        <button type="submit" className={`${buttonClass} self-start sm:mt-6`} disabled={loading || locked || !value.trim() || !!lookupError}>Tra cứu</button>
       </form>
     </PreviewPanel>
 
@@ -87,14 +103,17 @@ export default function AdminNotificationsUiScreen() {
         {loading && <p role="status" className="p-5 text-sm text-slate-400">Đang tải nhật ký…</p>}
         {!loaded && !loading && <p className="p-5 text-sm text-slate-400">Nhập mã và chọn Tra cứu để xem nhật ký.</p>}
         {loaded && records.length === 0 && <p className="p-5 text-sm text-slate-400">Không có nhật ký phù hợp.</p>}
-        {records.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[660px] text-left text-sm">
-          <thead className="bg-bg/50 text-xs uppercase text-slate-400"><tr><th className="px-4 py-3">Thời gian (GMT+7)</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Retry</th><th className="px-4 py-3">Mã phản hồi</th><th className="px-4 py-3">Thao tác</th></tr></thead>
+        {records.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[790px] text-left text-sm">
+          <thead className="bg-bg/50 text-xs uppercase text-slate-400"><tr><th className="px-4 py-3">Thời gian (GMT+7)</th><th className="px-4 py-3">Event ID</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Số lần thử lại</th><th className="px-4 py-3">Thao tác</th></tr></thead>
           <tbody className="divide-y divide-border/80">{records.map((log) => <tr key={log.id} className={selectedId === log.id ? "bg-water/5" : ""}>
-            <td className="px-4 py-3">{dateOf(log.timestamp)}</td><td className="px-4 py-3">{statusText[log.status]}</td>
-            <td className="px-4 py-3">{log.retryCount}</td><td className="break-all px-4 py-3 text-xs">{log.providerResponseCode}</td>
+            <td className="whitespace-nowrap px-4 py-3">{dateOf(log.timestamp)}</td>
+            <td className="max-w-48 break-all px-4 py-3 text-xs">{log.eventId}</td>
+            <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${statusStyle[log.status]}`}>{statusText[log.status]}</span>{log.outcomeUnknown && <span className="mt-1 block text-xs text-amber-300">Chưa rõ kết quả</span>}</td>
+            <td className="px-4 py-3">{log.retryCount}</td>
             <td className="px-4 py-3"><button className={buttonClass} onClick={() => setSelectedId(log.id)}>Chi tiết</button></td>
           </tr>)}</tbody></table></div>}
-        {cursor && <div className="border-t border-border p-4"><button className={buttonClass} disabled={loading || locked} onClick={() => void search(true)}>Xem thêm</button></div>}
+        {cursor && <div className="border-t border-border p-4"><button className={buttonClass} disabled={loading || locked} onClick={() => void search(true)}>Xem thêm nhật ký</button></div>}
+        {loaded && records.length > 0 && <p className="border-t border-border px-4 py-3 text-xs text-slate-400">Kết quả được phân trang theo mã nhật ký; thời gian hiển thị không phải thứ tự sắp xếp.</p>}
       </PreviewPanel>
       <PreviewPanel title="Chi tiết nhật ký">{selected ? <dl className="grid gap-4 p-5 text-sm">{([
         ["Log ID", selected.id], ["Notification ID", selected.notificationId], ["Correlation ID", selected.correlationId],
