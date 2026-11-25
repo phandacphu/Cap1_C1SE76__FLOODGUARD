@@ -40,7 +40,7 @@ export function RescueWarningProvider({
     [source],
   );
   // The summary is unfiltered, separate from list search/status. Leaving these screens aborts it.
-  const needsSummary = pathname === "/rescue/dashboard" || pathname === "/map" || pathname === "/rescue/flood-warnings";
+  const needsSummary = pathname === "/rescue/dashboard";
   const list = useWarningResource(needsSummary ? identity : "", load);
   return (
     <Context.Provider value={{ list, source, identity }}>

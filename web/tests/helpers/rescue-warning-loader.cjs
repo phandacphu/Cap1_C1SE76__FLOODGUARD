@@ -62,9 +62,9 @@ function loader(stubs = {}, globals = {}) {
         setTimeout,
         clearTimeout,
         ...globals,
-        fetch() {
+        fetch: globals.fetch ?? (() => {
           throw new Error("Rescue fixture must not fetch any API");
-        },
+        }),
       },
       { filename: file },
     );

@@ -1,7 +1,11 @@
+import { createRescueWarningApi } from '../rescue/warnings/warningApi';
+import { useWarningResource } from '../rescue/warnings/useWarningResource';
+import { WarningFeedback } from '../rescue/warnings/WarningFeedback';
+import { warningTime } from '../rescue/warnings/warningData';
+import { Link } from 'react-router-dom';
 import { historicalPointIndex, historicalPopupHtml } from './historicalDetails';
 import { AREA_TYPE_COLOR, AREA_TYPE_LABEL } from '../admin/flood-area/floodAreaTypes';
 import { historicalFloodIcon } from './historicalFloodIcon';
-import { formatAreaAlertCount } from './mapAlertStatus';
 import { useHistoricalLayers } from './useHistoricalLayers';
 import type { HistoricalLayerKey } from '../admin/flood-area/historicalMapService';
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -14,7 +18,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { AdminHeader } from '../../components/layout/AdminHeader';
 import { RescueLayout } from '../../components/layout/RescueLayout';
 import { ADMIN_NAV } from '../../components/layout/navConfig';
-import type { FloodArea, FloodAlert } from '../../types/floodArea';
+import type { FloodArea } from '../../types/floodArea';
 
 const AREA_STYLES = {
   flood: { stroke: AREA_TYPE_COLOR.flood, fill: AREA_TYPE_COLOR.flood, label: AREA_TYPE_LABEL.flood, badge: 'bg-yellow-950 text-yellow-300' },
@@ -34,13 +38,17 @@ const escapeHtml = (unsafe?: string | null): string => {
 };
 
 type FilterStatus = 'all' | 'flood' | 'low_lying' | 'unknown';
-const SEVERITY_LABELS = { low: 'Thấp', medium: 'Vừa', high: 'Cao', critical: 'Khẩn cấp' };
-const PRIORITY = { low: 1, medium: 2, high: 3, critical: 4 };
 
 type FloodMapViewProps = { embedded?: boolean };
 
 export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) => {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  // Drop popups and in-flight component state on account/token/role changes.
+  return <FloodMapContent key={JSON.stringify([user?.id, user?.role, token])} embedded={embedded} />;
+};
+
+const FloodMapContent: React.FC<FloodMapViewProps> = ({ embedded = false }) => {
+  const { user, token } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isRescue = user?.role === 'RESCUE_STAFF';
   const [showRegions, setShowRegions] = useState(embedded);
@@ -66,30 +74,13 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
   const [tileErrorCount, setTileErrorCount] = useState<number>(0);
 
-  const [activeAlerts, setActiveAlerts] = useState<FloodAlert[]>([]);
-  const [alertsUpdatedAt, setAlertsUpdatedAt] = useState<Date | null>(null);
-  const [onlyWithAlerts, setOnlyWithAlerts] = useState(false);
-  const adminAlertCount = alertsUpdatedAt ? activeAlerts.length : undefined;
-  const alertsByArea = useMemo(() => {
-    const groups = new Map<string, FloodAlert[]>();
-    activeAlerts.forEach(alert => groups.set(alert.areaId, [...(groups.get(alert.areaId) ?? []), alert]));
-    groups.forEach(items => items.sort((a, b) => PRIORITY[b.severity] - PRIORITY[a.severity]));
-    return groups;
-  }, [activeAlerts]);
-  const [settledAlertRequest, setSettledAlertRequest] = useState<number | null>(null);
-  const alertsLoading = settledAlertRequest !== reloadTrigger;
-  const [alertCountError, setAlertCountError] = useState<string | null>(null);
-  useEffect(() => {
-    let ignore = false;
-    void floodAreaService.getActiveAlertsSnapshot(reloadTrigger > 0).then(({ value: alerts, fetchedAt }) => {
-      if (!ignore) { setActiveAlerts(alerts); setAlertsUpdatedAt(new Date(fetchedAt)); setAlertCountError(null); }
-    }).catch(() => {
-      if (!ignore) setAlertCountError('Không tải được cảnh báo hiệu lực. Trạng thái cảnh báo của từng vùng chưa được xác nhận; thông tin cũ nếu có chỉ để tham khảo.');
-    }).finally(() => {
-      if (!ignore) setSettledAlertRequest(reloadTrigger);
-    });
-    return () => { ignore = true; };
-  }, [reloadTrigger]);
+  const warningSource = useMemo(() => createRescueWarningApi(token), [token]);
+  const loadAlerts = useCallback((signal: AbortSignal) => warningSource.active(signal), [warningSource]);
+  const warningIdentity = token && user && (isAdmin || isRescue)
+    ? JSON.stringify([token, user.id, user.role]) : '';
+  const alerts = useWarningResource(warningIdentity, loadAlerts, reloadTrigger);
+  const alertsLoading = alerts.loading;
+  const adminAlertCount = alerts.data?.length;
 
   // Fetch API vùng ngập và quản lý trạng thái dữ liệu cũ (A.3, A.5)
   useEffect(() => {
@@ -235,8 +226,8 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
   const filteredAreas = useMemo(() => {
     const classified = floodAreas.filter(area => statusFilter === 'all' ||
       (statusFilter === 'unknown' ? area.areaType == null : area.areaType === statusFilter));
-    return onlyWithAlerts && !alertsLoading ? classified.filter(area => alertsByArea.has(area.id)) : classified;
-  }, [floodAreas, statusFilter, onlyWithAlerts, alertsByArea, alertsLoading]);
+    return classified;
+  }, [floodAreas, statusFilter]);
 
   // Vẽ Polygons kiểm tra chặt chẽ geometry (A.2, A.5)
   const renderPolygons = useCallback(() => {
@@ -258,16 +249,6 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
 
         const colorCfg = areaStyle(area);
         const isAreaActive = area.areaType != null;
-        const areaAlerts = alertsByArea.get(area.id) ?? [];
-        const alertMarkup = alertsLoading ? '<p>Đang tải cảnh báo</p>' : areaAlerts.length ? areaAlerts.map(alert => `
-          <hr/><b>${escapeHtml(alert.title)}</b><br/>
-          <b>Mức độ:</b> ${SEVERITY_LABELS[alert.severity]}<br/>
-          <b>Trạng thái:</b> ${alertCountError ? 'Dữ liệu cảnh báo cũ, chưa xác nhận' : 'Có hiệu lực tại lần tải'}<br/>
-          <b>Từ:</b> ${escapeHtml(new Date(alert.startAt).toLocaleString('vi-VN'))}<br/>
-          <b>Đến:</b> ${escapeHtml(new Date(alert.endAt).toLocaleString('vi-VN'))}<br/>
-          <p>${escapeHtml(alert.content)}</p>`).join('') :
-          `<p>${alertCountError ? 'Chưa xác nhận được cảnh báo của vùng.' : 'Không có cảnh báo hiệu lực tại lần tải.'}</p>`;
-
         const polygon = L.polygon(latLngs, {
           color: colorCfg.stroke,
           weight: isAreaActive ? 2.5 : 1.5,
@@ -288,7 +269,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
             <span>Dữ liệu tham khảo, không xác nhận ngập hiện tại.</span><br/>
             <b>Nguồn tin:</b> ${safeSource}<br/>
             <p style="margin: 4px 0 0 0; color: #475569;">${safeDesc}</p>
-            ${alertMarkup}
+            <p>Bản tin cảnh báo áp dụng chung cho toàn bộ vùng công bố, không gắn riêng với vùng này.</p>
           </div>
         `;
 
@@ -303,7 +284,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
       const first = filteredAreas[0];
       if (first) mapInstanceRef.current.fitBounds(first.geometry.points.map(p => [p.latitude, p.longitude] as [number, number]), { padding: [24, 24], maxZoom: 14 });
     }
-  }, [filteredAreas, alertsByArea, alertCountError, alertsLoading, isRescue, showHistory, showRegions]);
+  }, [filteredAreas, isRescue, showHistory, showRegions]);
 
   useEffect(() => {
     if (mapInstanceRef.current) {
@@ -344,7 +325,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
       {isRescue ? (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-[#1E3A5F] bg-[#081B30] px-4 py-3">
           <button type="button" aria-pressed={showRegions}
-            onClick={() => { setShowRegions(value => !value); setStatusFilter('all'); setOnlyWithAlerts(false); }}
+            onClick={() => { setShowRegions(value => !value); setStatusFilter('all'); }}
             className={`rounded-lg border px-4 py-2 text-sm font-semibold ${showRegions ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300' : 'border-slate-600 text-slate-200'}`}>
             Vùng ngập
           </button>
@@ -352,15 +333,27 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
           {showRegions && historyKeys.some(key => !historyLayers[key]?.snapshot && !historyLayers[key]?.error) && <span role="status" className="text-xs text-slate-400">Đang tải lớp lịch sử…</span>}
           {showRegions && historyKeys.filter(key => historyLayers[key]?.error).map(key => <p key={key} role="status" className="text-xs text-amber-300">{({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error}</p>)}
         </div>
-      ) : <>
-        {alertsLoading && <p role="status" className="text-xs text-slate-400">Đang tải cảnh báo</p>}
-        {!alertsLoading && alertsUpdatedAt && <p className="text-xs text-slate-400">Cảnh báo tải lúc: {alertsUpdatedAt.toLocaleString('vi-VN')} — Xem mức độ cảnh báo trong popup của vùng.</p>}
-        {alertCountError && <p role="status" className="text-amber-300 text-xs">{alertCountError}</p>}
-        <label className="flex items-center gap-2 text-xs text-cyan-200">
-          <input type="checkbox" checked={onlyWithAlerts} disabled={alertsLoading} onChange={event => setOnlyWithAlerts(event.target.checked)} />
-          {alertCountError ? 'Chỉ vùng có cảnh báo trong dữ liệu lưu tạm' : 'Chỉ vùng có cảnh báo hiệu lực tại lần tải'}
-        </label>
-      </>}
+      ) : null}
+      <section aria-label="Bản tin cảnh báo trên bản đồ" className="text-xs text-slate-300 space-y-2">
+        <WarningFeedback resource={alerts} noun="bản tin cảnh báo" />
+        {alerts.data !== null && (
+          <details>
+            <summary className="cursor-pointer">
+              {alerts.data.length} bản tin đang bật
+              {(alerts.loading || alerts.error) && ' · Dữ liệu lần tải trước, chưa xác nhận lại'}
+            </summary>
+            <p className="mt-2">Phạm vi chung: toàn bộ vùng công bố. Không có bản tin không đồng nghĩa khu vực an toàn.</p>
+            {alerts.data.map(item => (
+              <article key={item.id} className="mt-2 border-t border-slate-700 pt-2">
+                <p className="font-semibold">{item.title}</p>
+                <p className="whitespace-pre-wrap">{item.content}</p>
+                <p>Bắt đầu {warningTime(item.startAt)} · {warningTime(item.endAt)} · GMT+7</p>
+                {isRescue && <Link className="text-cyan-300 underline" to={`/rescue/flood-warnings/${encodeURIComponent(item.id)}`}>Xem chi tiết bản tin</Link>}
+              </article>
+            ))}
+          </details>
+        )}
+      </section>
       {(isAdmin || isStaleData) && <div className="flex flex-wrap items-center gap-3">
         {isStaleData && <span className="text-xs text-amber-300">Dữ liệu lưu tạm</span>}
           {isAdmin && mapLegend}
@@ -460,7 +453,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
                       </span>
                     </div>
                     <p className="mt-1 text-[10px] text-amber-200">
-                      {formatAreaAlertCount(alertsLoading, alertCountError ? null : (alertsByArea.get(area.id)?.length ?? 0))}
+                      Bản tin áp dụng chung, không gắn riêng với vùng.
                     </p>
                     <div className="text-[10px] font-mono mt-1 flex items-center justify-between">
                       <span className={isAreaActive ? 'text-emerald-400' : 'text-slate-500'}>
@@ -523,7 +516,7 @@ export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) 
       brandTag="ADMIN"
       roleLabel="QUẢN TRỊ VIÊN C4I"
       accent="water"
-      header={<AdminHeader alertCount={alertsLoading || alertCountError ? undefined : adminAlertCount} title="Bản đồ trực quan" />}
+      header={<AdminHeader alertCount={alertsLoading || alerts.error ? undefined : adminAlertCount} title="Bản đồ trực quan" />}
     >
       {mapContent}
     </AppShell>
