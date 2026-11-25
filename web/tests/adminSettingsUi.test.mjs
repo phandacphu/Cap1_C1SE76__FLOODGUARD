@@ -16,10 +16,11 @@ test('settings keeps its Admin-only route and sidebar entry', () => {
 test('settings links from three tabs only to existing Admin routes', () => {
   assert.match(screen, /useState<SettingsTab>\("display"\)/);
   for (const tab of ['display', 'notifications', 'security']) assert.ok(screen.includes(`tab === "${tab}"`));
-  for (const path of ['/admin/sos', '/admin/flood-warnings', '/admin/notifications', '/admin/users']) {
+  for (const path of ['/admin/sos', '/admin/flood-warnings', '/admin/users']) {
     assert.ok(app.includes(`path="${path}"`));
     assert.ok(screen.includes(`to="${path}"`));
   }
+  assert.doesNotMatch(screen, /\/admin\/notifications|Nhật ký gửi thông báo/);
   assert.match(screen, /useAuth\(\)/);
   assert.match(screen, /logoutRequest\(token\)/);
   assert.match(screen, /navigate\("\/login", \{ replace: true \}\)/);

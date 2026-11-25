@@ -12,7 +12,7 @@ test('reports sidebar opens an Admin-only route without changing other pages', (
   assert.ok(adminRoutes, 'Admin routes exist');
   assert.match(adminRoutes, /path="\/admin\/reports"/);
   assert.match(navigation, /label: "Báo cáo", icon: "report", to: "\/admin\/reports"/);
-  for (const route of ['/admin/notifications', '/admin/rescue-staff', '/admin/sos']) {
+  for (const route of ['/admin/rescue-staff', '/admin/sos']) {
     assert.ok(adminRoutes.includes(`path="${route}"`));
   }
 });

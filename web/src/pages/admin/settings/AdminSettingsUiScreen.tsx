@@ -57,7 +57,6 @@ export default function AdminSettingsUiScreen() {
         <div className="divide-y divide-border/80 px-5 sm:px-6">
           <SettingsLink title="Yêu cầu SOS" description="Theo dõi các yêu cầu cứu hộ." to="/admin/sos" action="Xem SOS" />
           <SettingsLink title="Cảnh báo mưa lớn và nguy cơ ngập" description="Quản lý các bản tin cảnh báo." to="/admin/flood-warnings" action="Xem cảnh báo" />
-          <SettingsLink title="Nhật ký gửi thông báo" description="Tra cứu lịch sử gửi thông báo." to="/admin/notifications" action="Tra cứu" />
         </div>
       </PreviewPanel>}
 
