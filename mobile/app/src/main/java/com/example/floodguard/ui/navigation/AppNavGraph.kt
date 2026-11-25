@@ -91,8 +91,10 @@ import com.example.floodguard.data.repository.RescueSafeLocationRepository
 import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-
-
+import com.example.floodguard.data.remote.api.RescueProfileApi
+import com.example.floodguard.data.repository.RescueProfileRepository
+import com.example.floodguard.ui.screens.rescue.profile.RescueProfileScreen
+import com.example.floodguard.ui.screens.rescue.profile.RescueProfileViewModel
 @Composable
 fun AppNavGraph(
     navController: NavHostController,
@@ -305,6 +307,11 @@ fun AppNavGraph(
                 else -> RescueSummaryState.NotReady
             }
             RescueOverviewScreen(
+                onProfileClick = {
+                    navController.navigate(AppRoutes.RESCUE_PROFILE) {
+                        launchSingleTop = true
+                    }
+                },
                 uiState = RescueOverviewUiState(
                     summaries = mapOf(RescueSummaryMetric.NEW_SOS to metric(sos.active),
                         RescueSummaryMetric.RESCUED_SOS to metric(sos.rescued)),
@@ -347,21 +354,74 @@ fun AppNavGraph(
             )
         }
 
+        composable(route = AppRoutes.RESCUE_PROFILE) {
+            val profileRepository = remember(
+                sessionManager,
+                session.accountKey
+            ) {
+                val retrofit =
+                    ApiClient.createAuthenticatedRetrofit(sessionManager)
+
+                RescueProfileRepository(
+                    api = retrofit.create(RescueProfileApi::class.java)
+                )
+            }
+
+            val profileViewModel: RescueProfileViewModel = viewModel(
+                key = "rescue-profile:${session.accountKey}"
+            ) {
+                RescueProfileViewModel(profileRepository)
+            }
+
+            val profileState by
+            profileViewModel.state.collectAsStateWithLifecycle()
+
+            RescueProfileScreen(
+                state = profileState,
+                onRefresh = profileViewModel::refresh,
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(AppRoutes.RESCUE_HOME) {
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onLogout = {
+                    authRepository.logout()
+                },
+                onLoggedOut = {
+                    navController.navigate(AppRoutes.LOGIN) {
+                        popUpTo(navController.graph.id) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
         composable(route = AppRoutes.RESCUE_MAP) {
             rescueLocation?.let { location ->
                 RescueMapScreen(
                     location = location,
-                    onSosTab = { openRescueTab(AppRoutes.RESCUE_SOS) },
-                    onSafeLocationsTab = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) },
+                    onSosTab = {
+                        openRescueTab(AppRoutes.RESCUE_SOS)
+                    },
+                    onSafeLocationsTab = {
+                        openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                    },
                     onBack = {
                         val returnedHome = navController.popBackStack(
                             route = AppRoutes.RESCUE_HOME,
                             inclusive = false,
                             saveState = true
                         )
+
                         if (!returnedHome) {
                             navController.navigate(AppRoutes.RESCUE_HOME) {
-                                popUpTo(navController.graph.id) { inclusive = true }
+                                popUpTo(navController.graph.id) {
+                                    inclusive = true
+                                }
                                 launchSingleTop = true
                             }
                         }
