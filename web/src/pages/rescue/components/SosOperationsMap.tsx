@@ -5,7 +5,7 @@ import { latLngBounds } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../../map/floodMap.css';
 import type { DirectSosRequest } from '../../../types/rescueDirect';
-import { STATE_LABEL, WATER_LABEL, MISSING, sosCode, timeLabel, situationsLabel } from '../sosDirect';
+import { STATE_LABEL, WATER_LABEL, MISSING, sosCode, timeLabel, sourceLabel, situationsLabel } from '../sosDirect';
 import { SOS_MAP_COLORS, directionsUrl, hasMapLocation, groupMapLocations } from '../sosMapData';
 
 function Controls({ items }: { items: DirectSosRequest[] }) {
@@ -29,6 +29,7 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
       <h2 className="text-lg font-bold">Bản đồ cứu hộ</h2>
     </div>
     <p className="text-sm">🔴 Chờ cứu hộ (cần cứu/chưa cứu) · 🟢 Đã cứu · ⚪ Trạng thái cũ/khác</p>
+    {items && items.length > located.length && <p role="status" className="text-sm text-muted">{items.length - located.length} SOS chưa có vị trí hợp lệ; không hiển thị marker.</p>}
     {!key && <p role="status" className="text-amber-300">Chưa cấu hình VITE_MAPTILER_KEY để tải bản đồ nền.</p>}
     {tileError && <p role="status" className="text-amber-300">Chưa tải được một số ô bản đồ. <button className="underline" onClick={() => { setTileError(false); setRound(value => value + 1); }}>Thử lại nền bản đồ</button></p>}
     <div className="relative z-0 overflow-hidden rounded-xl border border-border">
@@ -44,7 +45,7 @@ export function SosOperationsMap({ items }: { items: DirectSosRequest[] | null }
           {group.items.length > 1 && <Tooltip permanent direction="center" className="font-bold">{group.items.length} SOS</Tooltip>}
           <Popup>
             {group.items.length > 1 && <p><strong>{group.items.length} SOS trùng tọa độ</strong> — chọn đúng mã bên dưới.</p>}
-            {group.items.map(item => <div key={item.id} className="border-b border-slate-200 py-2"><strong>{sosCode(item.id)}</strong><p>{item.state ? STATE_LABEL[item.state] : MISSING}</p>
+            {group.items.map(item => <div key={item.id} className="border-b border-slate-200 py-2"><strong>{sosCode(item.id)}</strong><p>{item.state ? STATE_LABEL[item.state] : MISSING}</p><p>{sourceLabel(item.source)}</p>
             <p>{item.numberOfPeople ?? MISSING} người · {situationsLabel(item.situations)}</p>
             <p>Mức nước: {item.waterLevel ? WATER_LABEL[item.waterLevel] ?? MISSING : MISSING}</p>
             <p>Nhận GPS: {timeLabel(item.locationReceivedAt)}</p>

@@ -12,8 +12,9 @@ import { useRescueDetail } from './useRescueDetail';
 
 export function RescueSosDetail() {
   const { id } = useParams<{ id: string }>();
-  // Remount local completion/note state when moving directly to another SOS.
-  return <SosDetail key={id} id={id} />;
+  const { token } = useAuth();
+  // Reset completion/note state on navigation and authentication changes.
+  return <SosDetail key={JSON.stringify([id, token])} id={id} />;
 }
 
 function SosDetail({ id }: { id: string | undefined }) {

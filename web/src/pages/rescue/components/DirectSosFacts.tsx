@@ -1,8 +1,11 @@
 import type { DirectSosRequest } from '../../../types/rescueDirect';
-import { MISSING, WATER_LABEL, coordsLabel, situationsLabel, timeLabel } from '../sosDirect';
+import { MISSING, WATER_LABEL, coordsLabel, situationsLabel, sourceLabel, timeLabel } from '../sosDirect';
 
 export function DirectSosFacts({ item }: { item: DirectSosRequest }) {
   const fields = [
+    ['Nguồn tiếp nhận', sourceLabel(item.source)],
+    ...(item.smsSenderPhone ? [['Số gửi SMS', item.smsSenderPhone]] : []),
+    ...(item.smsReceivedAt ? [['Thời điểm tiếp nhận SMS', timeLabel(item.smsReceivedAt)]] : []),
     ['Mã người gửi', item.residentId ?? MISSING],
     ['Thời điểm gửi', timeLabel(item.createdAt)],
     ['Tình huống', situationsLabel(item.situations)],
@@ -22,7 +25,9 @@ export function DirectSosFacts({ item }: { item: DirectSosRequest }) {
           <dd className="mt-1 break-words whitespace-pre-wrap">{value}</dd>
         </div>
       ))}
-      <p className="text-xs text-muted">Chưa có thông tin liên hệ người gửi trong dữ liệu được cung cấp.</p>
+      <p className="text-xs text-muted">{item.smsSenderPhone
+        ? 'Số gửi SMS là số tiếp nhận từ tin nhắn, không phải số liên hệ trong hồ sơ hoặc số tài khoản đã được xác minh.'
+        : 'Chưa có thông tin liên hệ người gửi trong dữ liệu được cung cấp.'}</p>
     </dl>
   );
 }

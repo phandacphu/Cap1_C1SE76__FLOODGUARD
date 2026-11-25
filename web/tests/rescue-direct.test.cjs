@@ -31,12 +31,14 @@ function loader(fetch, token = 'TEST-TOKEN') {
       source = source.replace(/const RAW_API_URL =[\s\S]*?const API_BASE/, 'const RAW_API_URL = "https://test.invalid/api/";\nconst API_BASE');
     }
     const code = ts.transpileModule(source, { compilerOptions: {
-      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
     }}).outputText;
     vm.runInNewContext(code, {
       exports, URLSearchParams, Date, AbortController, setTimeout, clearTimeout,
       localStorage: { getItem: () => token }, fetch,
-      require: name => load(path.normalize(path.join(path.dirname(filename), name + '.ts'))),
+      require: name => name.startsWith('.')
+        ? load(path.normalize(path.join(path.dirname(filename), name + '.ts')))
+        : require(name),
     }, { filename });
     return exports;
   }
@@ -44,6 +46,7 @@ function loader(fetch, token = 'TEST-TOKEN') {
     service: load('api/rescueService.ts'),
     contract: load('api/rescueDirectContract.ts'),
     labels: load('pages/rescue/sosDirect.ts'),
+    facts: load('pages/rescue/components/DirectSosFacts.tsx'),
   };
 }
 
@@ -386,7 +389,7 @@ function feedbackHarness() {
   const session = { token: 'OLD', user: { role: 'RESCUE_STAFF' } };
   const actions = [];
   const code = ts.transpileModule(fs.readFileSync(path.join(root, 'pages/rescue/components/DirectSosFeedback.tsx'), 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   vm.runInNewContext(code, {
     exports,
@@ -442,7 +445,7 @@ function detailHarness(confirm) {
   const source = fs.readFileSync(path.join(root, 'pages/rescue/RescueSosDetail.tsx'), 'utf8')
     .replace('function SosDetail(', 'export function SosDetail(');
   const code = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   vm.runInNewContext(code, {
     exports, Error,
@@ -603,4 +606,57 @@ test('late PATCH result cannot replace newer GPS already received by detail', as
   await flush();
   assert.equal(h.result.request, fresh);
   assert(h.render().some(item => item.props?.href?.includes('19%2C111')));
+});
+
+test('SMS intake metadata survives list/detail without changing queries or coordinates', async () => {
+  const sms = payload({ source: 'sms', smsSenderPhone: '+84000000000', smsReceivedAt: '2026-11-24T14:04:27.815Z' });
+  const calls = [];
+  const { service, labels } = loader(async (url, init) => {
+    calls.push({ url, init });
+    return body(url.includes('?') ? { rescueRequests: [sms, payload({ id: 'API', source: 'api' }), payload({ id: 'LEGACY' })] } : { rescueRequest: sms });
+  });
+  const rows = await service.rescueService.getRescueRequests({ state: 'active', sort: 'newest' });
+  assert.deepEqual(Array.from(rows, row => labels.sourceLabel(row.source)), ['Qua SMS', 'Qua ứng dụng', 'Không rõ nguồn']);
+  const detail = await service.rescueService.getRescueDetail('TEST-SOS');
+  assert.equal(detail.source, 'sms');
+  assert.equal(detail.smsSenderPhone, sms.smsSenderPhone);
+  assert.equal(detail.smsReceivedAt, sms.smsReceivedAt);
+  assert.equal(detail.location.latitude, 16.0544);
+  assert.equal(detail.location.longitude, 108.2022);
+  assert.equal(detail.initialLocation.latitude, 16.05);
+  assert(calls.every(call => !call.url.includes('source=')));
+  assert(calls.every(call => call.init.headers.Authorization === 'Bearer TEST-TOKEN'));
+});
+
+test('legacy, unknown and malformed SMS metadata never invent a source, phone or timestamp', () => {
+  const { contract, labels } = loader(() => {});
+  for (const extra of [{}, { source: 'gateway', smsSenderPhone: 123, smsReceivedAt: 'invalid' }]) {
+    const item = contract.parseDirectSos(payload(extra));
+    assert.equal(item.source, null);
+    assert.equal(item.smsSenderPhone, null);
+    assert.equal(item.smsReceivedAt, null);
+    assert.equal(labels.sourceLabel(item.source), 'Không rõ nguồn');
+  }
+  assert.equal(labels.sourceLabel('SMS'), 'Không rõ nguồn');
+  assert.equal(contract.parseDirectSos(payload({ smsSenderPhone: '  ' })).smsSenderPhone, null);
+  assert.throws(() => contract.directSosQuery({ source: 'sms' }));
+});
+
+
+test('SMS detail renders escaped sender, intake channel and distinct GPS timestamps; legacy stays readable', () => {
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const { contract, facts } = loader(() => {});
+  const item = contract.parseDirectSos(payload({ source: 'sms', smsSenderPhone: '<script>unsafe</script>', smsReceivedAt: '2026-11-24T14:04:27.815Z' }));
+  const html = renderToStaticMarkup(React.createElement(facts.DirectSosFacts, { item }));
+  for (const label of ['Qua SMS', 'Số gửi SMS', 'Thời điểm tiếp nhận SMS', 'Tọa độ ban đầu', 'Tọa độ mới nhất', 'không phải số liên hệ']) assert(html.includes(label));
+  assert(html.includes('&lt;script&gt;unsafe&lt;/script&gt;'));
+  assert(!html.includes('<script>'));
+  assert(html.includes('16.054400, 108.202200'));
+  assert(html.includes('16.050000, 108.200000'));
+  assert(html.includes('21:04:27'));
+  const legacy = renderToStaticMarkup(React.createElement(facts.DirectSosFacts, { item: contract.parseDirectSos({ id: 'OLD' }) }));
+  assert(legacy.includes('Không rõ nguồn'));
+  assert(!legacy.includes('Số gửi SMS'));
+  assert(!legacy.includes('Thời điểm tiếp nhận SMS'));
 });
