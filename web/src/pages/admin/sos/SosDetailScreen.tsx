@@ -6,7 +6,7 @@ import { fetchSosDetail, SOS_MOCK_ENABLED } from "./sosApi";
 import { useSosResource } from "./useSosResource";
 import { SosFrame } from "./SosFrame";
 import { SosConditionBadge, SosErrorPanel, SosModeNotice } from "./SosFeedback";
-import { formatSosSituations, formatSosTime, formatSosWaterLevel } from "./sosFormat";
+import { formatSosSituations, formatSosSubmissionSource, formatSosTime, formatSosWaterLevel } from "./sosFormat";
 import { SosLocationMap } from "./SosLocationMap";
 import type { SosCoordinates } from "./sosTypes";
 import { SOS_PROGRESS_LABELS, sosProgressIndex } from "./sosUiProgress";
@@ -51,13 +51,18 @@ export function SosDetailScreen() {
               <dl className="mt-4 space-y-4 text-sm">
                 {[
                   ["Mã SOS", item.id],
+                  ["Nguồn yêu cầu", formatSosSubmissionSource(item.submissionSource)],
                   ["Mã Resident", item.residentId],
+                  ["Số điện thoại gửi SMS (chưa xác minh tài khoản)", item.smsSenderPhone],
+                  ["Thời điểm nhận SMS", formatSosTime(item.smsReceivedAt)],
                   ["Trạng thái gốc Backend", item.status],
                   ["Thời gian gửi", formatSosTime(item.createdAt)],
                   ["Tình huống", formatSosSituations(item.situations)],
                   ["Số người", item.numberOfPeople?.toLocaleString("vi-VN")],
                   ["Mức nước", formatSosWaterLevel(item.waterLevel)],
                   ["Ghi chú", item.note],
+                  ["Người xác nhận Đã cứu", item.completedBy],
+                  ["Thời điểm xác nhận Đã cứu", formatSosTime(item.completedAt)],
                   ["Cập nhật hồ sơ SOS", formatSosTime(item.updatedAt)],
                 ].map(([label, value]) => <div key={label}>
                   <dt className="text-xs text-muted">{label}</dt>

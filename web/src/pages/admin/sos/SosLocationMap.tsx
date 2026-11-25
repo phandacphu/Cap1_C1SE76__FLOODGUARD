@@ -8,7 +8,8 @@ export function SosLocationMap({ item }: { item: SosItem }) {
   const [failedMapKey, setFailedMapKey] = useState<string | null>(null);
   const latest = item.location;
   const initial = item.initialLocation;
-  const center = latest ?? initial;
+  // The operational map must show the latest valid GPS, not substitute the initial point.
+  const center = latest;
   if (!center) return <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted">
     Tọa độ chưa được cung cấp hoặc không hợp lệ. Không thể hiển thị vị trí trên bản đồ.
   </p>;

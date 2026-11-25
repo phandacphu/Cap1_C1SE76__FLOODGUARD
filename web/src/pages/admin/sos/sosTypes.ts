@@ -1,6 +1,8 @@
 /** Backend SOS v2 uses a normalized state, including historical legacy records. */
 export type SosCondition = "active" | "rescued" | "legacy_other";
 export type SosSource = "api" | "mock";
+/** Channel used to submit the request, independent of API/mock data provenance. */
+export type SosSubmissionSource = "sms" | "api" | null;
 
 export interface SosFilters {
   condition: "all" | SosCondition;
@@ -54,6 +56,9 @@ export interface SosItem {
   confirmedBy: string | null;
   completedBy?: string | null;
   completedAt: string | null;
+  submissionSource?: SosSubmissionSource;
+  smsSenderPhone?: string | null;
+  smsReceivedAt?: string | null;
   statusHistory?: SosHistoryEvent[];
   source: SosSource;
 }
