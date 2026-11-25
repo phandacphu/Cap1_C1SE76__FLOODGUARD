@@ -16,24 +16,23 @@ test('Rescue Staff menu opens its protected Admin route', () => {
   assert.doesNotMatch(navigation, /Audit Log|Dữ liệu demo\/hệ thống/);
 });
 
-test('Rescue Staff screen is an isolated UI fixture with working local search, filter and detail controls', () => {
-  assert.match(screen, /const previewStaff: StaffPreview\[\]/);
+test('Rescue Staff reuses Admin Users data, search/filter and authenticated detail', () => {
+  assert.match(screen, /useUserManagement\(\)/);
   assert.match(screen, /useMemo/);
   assert.match(screen, /setSearch/);
   assert.match(screen, /setFilter/);
-  assert.match(screen, /setSelected/);
-  assert.match(screen, /setAddOpen/);
+  assert.match(screen, /fetchUserDetail/);
   assert.match(screen, /role="dialog"/);
-  assert.match(screen, /readOnly/);
-  assert.match(screen, /Chưa kết nối API nhân sự/);
-  assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/);
+  assert.match(screen, /role="alertdialog"/);
+  assert.doesNotMatch(screen, /\baxios\b|firebase|localStorage|sessionStorage/);
   assert.doesNotMatch(preview, /\bfetch\s*\(|\baxios\b|firebase/);
 });
 
-test('UI statistics and rows come exclusively from clearly labeled sample data', () => {
-  assert.match(screen, /Nhân sự mẫu 01/);
-  assert.match(screen, /Dữ liệu minh họa/);
-  assert.match(screen, /previewStaff\.length/);
+test('Rescue account statistics and rows are API-backed, not sample shift/area data', () => {
+  assert.match(screen, /u\.role === "rescue"/);
+  assert.match(screen, /rescue\.length/);
   assert.match(screen, /filtered\.map/);
+  assert.match(screen, /preview=\{false\}/);
+  assert.doesNotMatch(screen, /Nhân sự mẫu 01|previewStaff/);
   assert.match(preview, /Giao diện mẫu/);
 });

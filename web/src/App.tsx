@@ -20,7 +20,6 @@ import { safeLocationApi } from './pages/admin/safe-location/safeLocationApi';
 import { SosMonitoringScreen } from './pages/admin/sos/SosMonitoringScreen';
 import { SosDetailScreen } from './pages/admin/sos/SosDetailScreen';
 import RescueStaffUiScreen from './pages/admin/rescue-staff/RescueStaffUiScreen';
-import AdminNotificationsUiScreen from './pages/admin/notifications/AdminNotificationsUiScreen';
 import AdminReportsUiScreen from './pages/admin/reports/AdminReportsUiScreen';
 import AdminSettingsUiScreen from './pages/admin/settings/AdminSettingsUiScreen';
 import { RescueDashboard } from './pages/rescue/RescueDashboard';
@@ -79,7 +78,6 @@ export const App: React.FC = () => {
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
             <Route path="/admin/rescue-staff" element={<RescueStaffUiScreen />} />
-            <Route path="/admin/notifications" element={<AdminNotificationsUiScreen />} />
             <Route path="/admin/reports" element={<AdminReportsUiScreen />} />
             <Route path="/admin/settings" element={<AdminSettingsUiScreen />} />
           </Route>

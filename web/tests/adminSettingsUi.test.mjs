@@ -7,30 +7,28 @@ const app = read('../src/App.tsx');
 const navigation = read('../src/components/layout/navConfig.ts');
 const screen = read('../src/pages/admin/settings/AdminSettingsUiScreen.tsx');
 
-test('settings has its own Admin-only route and all remaining sidebar items remain available', () => {
+test('settings keeps its Admin-only route and sidebar entry', () => {
   const adminRoutes = app.split("<Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>")[1]?.split('</Route>')[0];
-  assert.ok(adminRoutes);
-  for (const path of ['/admin/rescue-staff', '/admin/notifications', '/admin/reports', '/admin/settings']) {
-    assert.ok(adminRoutes.includes(`path="${path}"`));
-  }
+  assert.ok(adminRoutes?.includes('path="/admin/settings"'));
   assert.match(navigation, /label: "Cài đặt hệ thống", icon: "settings", to: "\/admin\/settings"/);
-  assert.doesNotMatch(navigation, /Audit Log|Dữ liệu demo\/hệ thống/);
 });
 
-test('settings UI includes display, notifications and security tabs with local-only controls', () => {
+test('settings links from three tabs only to existing Admin routes', () => {
   assert.match(screen, /useState<SettingsTab>\("display"\)/);
-  assert.match(screen, /setTab\(value\)/);
-  assert.match(screen, /tab === "display"/);
-  assert.match(screen, /tab === "notifications"/);
-  assert.match(screen, /tab === "security"/);
-  assert.match(screen, /role="switch"/);
-  assert.match(screen, /aria-checked=\{checked\}/);
-  assert.match(screen, /Khôi phục mặc định/);
-  assert.match(screen, /disabled[\s\S]*?Lưu thay đổi/);
+  for (const tab of ['display', 'notifications', 'security']) assert.ok(screen.includes(`tab === "${tab}"`));
+  for (const path of ['/admin/sos', '/admin/flood-warnings', '/admin/users']) {
+    assert.ok(app.includes(`path="${path}"`));
+    assert.ok(screen.includes(`to="${path}"`));
+  }
+  assert.doesNotMatch(screen, /\/admin\/notifications|Nhật ký gửi thông báo/);
+  assert.match(screen, /useAuth\(\)/);
+  assert.match(screen, /logoutRequest\(token\)/);
+  assert.match(screen, /navigate\("\/login", \{ replace: true \}\)/);
 });
 
-test('settings page does not mutate backend config or show technical implementation notes', () => {
-  assert.doesNotMatch(screen, /\bfetch\s*\(|\baxios\b|firebase|localStorage|sessionStorage/i);
-  assert.doesNotMatch(screen, /<p[^>]*>[^<]*(?:chưa nối|chưa kết nối|API|Firebase)/i);
-  assert.doesNotMatch(screen, /Chỉ hiển thị mẫu|Chưa kết nối|bản xem trước trang này/);
+test('settings omits preview controls, simulated switches and fake save', () => {
+  assert.match(screen, /preview=\{false\}/);
+  assert.doesNotMatch(screen, /role="switch"|aria-checked|setNotice|setDensity|Khôi phục mặc định|Lưu thay đổi|Giao diện mẫu/);
+  assert.doesNotMatch(screen, /fetch\s*\(|axios|firebase|localStorage|sessionStorage/i);
+  assert.doesNotMatch(screen, /Chưa kết nối|Chỉ hiển thị mẫu|bản xem trước trang này/);
 });
