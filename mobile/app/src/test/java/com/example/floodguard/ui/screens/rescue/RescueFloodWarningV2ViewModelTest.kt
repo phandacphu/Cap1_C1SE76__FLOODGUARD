@@ -545,6 +545,112 @@ class RescueFloodWarningV2ViewModelTest {
     }
 
     @Test
+    fun emptyOverviewRefreshErrorIsVisibleAndRetryRecovers() = withMain {
+        val api = FakeApi()
+        val vm = viewModel(api)
+
+        vm.onOverviewEntered()
+        runCurrent()
+        assertTrue(vm.overviewState.value.hasLoaded)
+        assertTrue(vm.overviewState.value.warnings.isEmpty())
+
+        api.onList = { _, _ -> throw IOException("offline") }
+        vm.refreshOverview()
+        runCurrent()
+        assertTrue(vm.overviewState.value.hasLoaded)
+        assertTrue(vm.overviewState.value.isStale)
+        assertNotNull(vm.overviewState.value.errorMessage)
+
+        api.onList = { _, _ -> listOk(warning("AFTER-RETRY")) }
+        vm.refreshOverview()
+        runCurrent()
+        assertEquals("AFTER-RETRY", vm.overviewState.value.warnings.single().id)
+        assertNull(vm.overviewState.value.errorMessage)
+    }
+
+    @Test
+    fun mapActive401LocksOverviewListAndZonesAndBlocksFutureMapCalls() = withMain {
+        val api = FakeApi()
+        api.onList = { _, _ -> listOk(warning("A")) }
+        val vm = viewModel(api)
+        vm.onOverviewEntered()
+        vm.onListEntered()
+        vm.refreshZones()
+        runCurrent()
+        assertNotNull(vm.mapState.value.snapshot)
+        assertTrue(vm.overviewState.value.hasLoaded)
+
+        api.onList = { status, _ ->
+            if (status == "active") Response.error(401, "{}".toResponseBody(null))
+            else listOk(warning("A"))
+        }
+        vm.onMapEntered(includeZones = true)
+        runCurrent()
+        assertEquals(RescueWarningV2FailureKind.UNAUTHORIZED, vm.accessFailure.value)
+        assertTrue(vm.overviewState.value.warnings.isEmpty())
+        assertTrue(vm.listState.value.warnings.isEmpty())
+        assertNull(vm.mapState.value.snapshot)
+        assertTrue(vm.activeMapState.value.warnings.isEmpty())
+        val count = api.listCalls.size
+        val zoneCount = api.zonesCalls
+        vm.refreshActiveMapWarnings()
+        vm.refreshZones()
+        vm.onListEntered()
+        runCurrent()
+        assertEquals(count, api.listCalls.size)
+        assertEquals(zoneCount, api.zonesCalls)
+    }
+
+    @Test
+    fun list403AlsoBlocksMapActiveAndZonesBothWays() = withMain {
+        val api = FakeApi()
+        val vm = viewModel(api)
+        api.onList = { _, _ -> Response.error(403, "{}".toResponseBody(null)) }
+        vm.onListEntered()
+        runCurrent()
+        assertEquals(RescueWarningV2FailureKind.FORBIDDEN, vm.accessFailure.value)
+        vm.onMapEntered(includeZones = true)
+        runCurrent()
+        assertEquals(1, api.listCalls.size)
+        assertEquals(0, api.zonesCalls)
+    }
+
+    @Test
+    fun mapTriggersActiveAndZonesWithoutLeavingOverview() = withMain {
+        val api = FakeApi()
+        val vm = viewModel(api)
+        vm.onMapEntered(includeZones = true)
+        runCurrent()
+        assertTrue(vm.activeMapState.value.hasLoaded)
+        assertTrue(vm.mapState.value.hasLoaded)
+        assertEquals("active", api.listCalls.single().status)
+        assertEquals(1, api.zonesCalls)
+    }
+
+    @Test
+    fun staleMapActive401StillLocksAfterLater200() = withMain {
+        val api = FakeApi()
+        val old = CompletableDeferred<Response<RescueFloodWarningsV2ListResponse>>()
+        var first = true
+        api.onList = { _, _ ->
+            if (first) {
+                first = false
+                withContext(NonCancellable) { old.await() }
+            } else listOk(warning("NEW"))
+        }
+        val vm = viewModel(api)
+        vm.refreshActiveMapWarnings()
+        runCurrent()
+        vm.refreshActiveMapWarnings()
+        runCurrent()
+        assertEquals("NEW", vm.activeMapState.value.warnings.single().id)
+        old.complete(Response.error(401, "{}".toResponseBody(null)))
+        runCurrent()
+        assertEquals(RescueWarningV2FailureKind.UNAUTHORIZED, vm.accessFailure.value)
+        assertTrue(vm.activeMapState.value.warnings.isEmpty())
+    }
+
+    @Test
     fun staleUnauthorizedResponseStillLocksAccess() = withMain {
         val api = FakeApi()
 

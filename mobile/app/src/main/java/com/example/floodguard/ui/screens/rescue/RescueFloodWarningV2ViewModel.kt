@@ -63,6 +63,15 @@ data class RescueWarningV2MapState(
     val errorMessage: String? = null
 )
 
+/** Active warnings shown by the map use the same access epoch as list/detail/zones. */
+data class RescueWarningV2ActiveMapState(
+    val warnings: List<RescueFloodWarningV2> = emptyList(),
+    val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
+    val isStale: Boolean = false,
+    val errorMessage: String? = null
+)
+
 class RescueFloodWarningV2ViewModel(
     private val repository: RescueFloodWarningV2Repository,
     private val zonesRepository: RescueFloodWarningV2ZonesRepository
@@ -88,6 +97,10 @@ class RescueFloodWarningV2ViewModel(
     val mapState: StateFlow<RescueWarningV2MapState> =
         _mapState.asStateFlow()
 
+    private val _activeMapState = MutableStateFlow(RescueWarningV2ActiveMapState())
+    val activeMapState: StateFlow<RescueWarningV2ActiveMapState> =
+        _activeMapState.asStateFlow()
+
     private val _accessFailure =
         MutableStateFlow<RescueWarningV2FailureKind?>(null)
     val accessFailure: StateFlow<RescueWarningV2FailureKind?> =
@@ -97,11 +110,13 @@ class RescueFloodWarningV2ViewModel(
     private var listJob: Job? = null
     private var detailJob: Job? = null
     private var mapJob: Job? = null
+    private var activeMapJob: Job? = null
 
     private var overviewVersion = 0L
     private var listVersion = 0L
     private var detailVersion = 0L
     private var mapVersion = 0L
+    private var activeMapVersion = 0L
     private var accessEpoch = 0L
 
     private var overviewEntries = 0
@@ -356,9 +371,53 @@ class RescueFloodWarningV2ViewModel(
         _detailState.value = RescueWarningV2DetailState()
     }
 
-    fun onMapEntered() {
+    fun onMapEntered(includeZones: Boolean = true) {
         if (isLocked()) return
-        refreshZones()
+        refreshActiveMapWarnings()
+        if (includeZones) refreshZones()
+    }
+
+    fun refreshActiveMapWarnings() {
+        if (isLocked()) return
+
+        activeMapJob?.cancel()
+        val version = ++activeMapVersion
+        val epoch = accessEpoch
+        val previous = _activeMapState.value
+        _activeMapState.value = previous.copy(
+            isLoading = true,
+            isStale = previous.hasLoaded,
+            errorMessage = null
+        )
+
+        activeMapJob = viewModelScope.launch {
+            val result = repository.getActiveWarnings()
+
+            // Handle 401/403 even from a response superseded by a newer refresh.
+            if (handleAccessFailure(result)) return@launch
+
+            if (
+                version != activeMapVersion ||
+                epoch != accessEpoch ||
+                isLocked()
+            ) return@launch
+
+            when (result) {
+                is RescueWarningV2Result.Success -> {
+                    _activeMapState.value = RescueWarningV2ActiveMapState(
+                        warnings = result.data,
+                        hasLoaded = true
+                    )
+                }
+                is RescueWarningV2Result.Failure -> {
+                    _activeMapState.value = _activeMapState.value.copy(
+                        isLoading = false,
+                        isStale = _activeMapState.value.hasLoaded,
+                        errorMessage = result.message
+                    )
+                }
+            }
+        }
     }
 
     fun refreshZones() {
@@ -431,11 +490,13 @@ class RescueFloodWarningV2ViewModel(
         listJob?.cancel()
         detailJob?.cancel()
         mapJob?.cancel()
+        activeMapJob?.cancel()
 
         ++overviewVersion
         ++listVersion
         ++detailVersion
         ++mapVersion
+        ++activeMapVersion
 
         // Do not retain any previous account data after access is blocked.
         _overviewState.value = RescueWarningV2OverviewState(
@@ -455,6 +516,9 @@ class RescueFloodWarningV2ViewModel(
         _mapState.value = RescueWarningV2MapState(
             errorMessage = "Không thể tiếp tục truy cập cảnh báo."
         )
+        _activeMapState.value = RescueWarningV2ActiveMapState(
+            errorMessage = "Không thể tiếp tục truy cập cảnh báo."
+        )
     }
 
     override fun onCleared() {
@@ -462,6 +526,7 @@ class RescueFloodWarningV2ViewModel(
         listJob?.cancel()
         detailJob?.cancel()
         mapJob?.cancel()
+        activeMapJob?.cancel()
         super.onCleared()
     }
 }

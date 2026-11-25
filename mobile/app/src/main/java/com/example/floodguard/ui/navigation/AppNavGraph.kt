@@ -381,10 +381,15 @@ fun AppNavGraph(
                         warningState.isLoading && !warningState.hasLoaded ->
                             RescueOverviewSectionState.Loading
 
-                        !warningState.hasLoaded &&
-                            warningState.errorMessage != null ->
+                        warningState.errorMessage != null ->
                             RescueOverviewSectionState.Failed(
-                                warningState.errorMessage
+                                if (warningState.hasLoaded) {
+                                    "Chưa thể cập nhật cảnh báo. Dữ liệu " +
+                                        "lần trước: ${warningState.warnings.size} bản tin. " +
+                                        warningState.errorMessage
+                                } else {
+                                    warningState.errorMessage
+                                }
                             )
 
                         !warningState.hasLoaded ->
@@ -457,8 +462,9 @@ fun AppNavGraph(
             rescueLocation?.let { location ->
                 RescueMapScreen(
                     location = location,
-                    sessionManager = sessionManager,
+                    warningViewModel = rescueWarningViewModel ?: return@let,
                     accountKey = session.accountKey ?: return@let,
+                    initiallyShowFloodLayers = true,
                     onSosTab = { openRescueTab(AppRoutes.RESCUE_SOS) },
                     onSafeLocationsTab = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) },
                     onBack = {
@@ -600,6 +606,8 @@ fun AppNavGraph(
                         id = id,
                         ownerKey = entry.id,
                         viewModel = vm,
+                        rescueLocation = rescueLocation ?: return@let,
+                        accountKey = session.accountKey ?: return@let,
                         onBack = {
                             if (!navController.popBackStack()) {
                                 openRescueTab(
@@ -607,13 +615,7 @@ fun AppNavGraph(
                                 )
                             }
                         },
-                        onOpenWarningMap = {
-                            navController.navigate(
-                                AppRoutes.RESCUE_FLOOD_WARNING_MAP
-                            ) {
-                                launchSingleTop = true
-                            }
-                        },
+
                         onOverview = {
                             openRescueTab(AppRoutes.RESCUE_HOME)
                         },
@@ -628,32 +630,6 @@ fun AppNavGraph(
                         }
                     )
                 }
-            }
-        }
-
-        composable(route = AppRoutes.RESCUE_FLOOD_WARNING_MAP) {
-            rescueLocation?.let { location ->
-                RescueMapScreen(
-                    location = location,
-                    sessionManager = sessionManager,
-                    accountKey = session.accountKey ?: return@let,
-                    title = "Bản đồ ngập",
-                    initiallyShowFloodLayers = true,
-                    onBack = {
-                        if (!navController.popBackStack()) {
-                            openRescueTab(AppRoutes.RESCUE_FLOOD_WARNINGS)
-                        }
-                    },
-                    onOverviewTab = {
-                        openRescueTab(AppRoutes.RESCUE_HOME)
-                    },
-                    onSosTab = {
-                        openRescueTab(AppRoutes.RESCUE_SOS)
-                    },
-                    onSafeLocationsTab = {
-                        openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
-                    }
-                )
             }
         }
 

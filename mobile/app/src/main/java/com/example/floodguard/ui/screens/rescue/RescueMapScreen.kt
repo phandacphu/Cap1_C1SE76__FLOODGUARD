@@ -48,10 +48,7 @@ import com.example.floodguard.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.floodguard.core.network.ApiClient
-import com.example.floodguard.data.local.SessionManager
-import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
-import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
-import com.example.floodguard.data.repository.RescueWarningV2Result
+
 import com.example.floodguard.data.repository.FloodAreaRepository
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -84,38 +81,51 @@ private val MapFont = FontFamily(
 internal fun RescueMapScreen(
     onBack: () -> Unit,
     location: RescueMapLocationController,
-    sessionManager: SessionManager,
+    warningViewModel: RescueFloodWarningV2ViewModel,
     accountKey: String,
     onSosTab: (() -> Unit)? = null,
     onSafeLocationsTab: (() -> Unit)? = null,
     onOverviewTab: (() -> Unit)? = null,
     title: String = "Bản đồ cứu hộ",
-    initiallyShowFloodLayers: Boolean = false
+    initiallyShowFloodLayers: Boolean = true,
+    embedded: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(enabled = !embedded, onBack = onBack)
     val context = LocalContext.current
     val dataViewModel: RescueMapDataViewModel = viewModel(
-        key = "rescue-map-data-v2:$accountKey"
+        key = "rescue-map-areas:$accountKey"
     ) {
         val areas = FloodAreaRepository(ApiClient.floodAreaApi)
-        val warnings = RescueFloodWarningV2Repository(
-            ApiClient.createAuthenticatedRetrofit(sessionManager)
-                .create(RescueFloodWarningV2Api::class.java)
-        )
         RescueMapDataViewModel(
-            loadFloodAreas = areas::getFloodAreas,
-            loadActiveWarnings = {
-                when (val result = warnings.getActiveWarnings()) {
-                    is RescueWarningV2Result.Success -> Result.success(result.data)
-                    is RescueWarningV2Result.Failure ->
-                        Result.failure(IllegalStateException(result.message))
-                }
-            }
+            // Legacy flood areas are fallback reference geometry only when V2 fails.
+            loadFloodAreas = { areas.getFloodAreas() },
+            // The shared, account-scoped V2 ViewModel owns protected warning data.
+            loadActiveWarnings = { Result.success(emptyList()) }
         )
     }
-    val dataState by dataViewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(dataViewModel) {
-        dataViewModel.retryActiveWarnings()
+    val legacyState by dataViewModel.uiState.collectAsStateWithLifecycle()
+    val activeMapState by warningViewModel.activeMapState.collectAsStateWithLifecycle()
+    val accessFailure by warningViewModel.accessFailure.collectAsStateWithLifecycle()
+
+    val dataState = legacyState.copy(
+        activeWarnings = when {
+            accessFailure != null -> RescueMapLoadState.Error(
+                "Không thể truy cập cảnh báo. Hãy đăng nhập lại."
+            )
+            activeMapState.isLoading && !activeMapState.hasLoaded ->
+                RescueMapLoadState.Loading
+            activeMapState.errorMessage != null && !activeMapState.hasLoaded ->
+                RescueMapLoadState.Error(activeMapState.errorMessage ?: "Lỗi cảnh báo.")
+            !activeMapState.hasLoaded -> RescueMapLoadState.Loading
+            activeMapState.warnings.isEmpty() -> RescueMapLoadState.Empty
+            else -> RescueMapLoadState.Data(activeMapState.warnings)
+        }
+    )
+
+    // Both navigation entries load the same V2 source on the existing Rescue map.
+    LaunchedEffect(warningViewModel) {
+        warningViewModel.onMapEntered(includeZones = false)
     }
     val historyViewModel: RescueHistoryViewModel = viewModel()
     val historyLayers by historyViewModel.layers.collectAsStateWithLifecycle()
@@ -131,6 +141,15 @@ internal fun RescueMapScreen(
     val polygonPoints = remember(layers) {
         layers.areas.associate { area ->
             area.id to area.vertices.map { LatLng(it.latitude, it.longitude) }
+        }
+    }
+    // One Rescue flood map for both the tab and the warning detail.
+    // Warning V2 does not replace its historical and flood layers.
+    val refreshMapData: () -> Unit = {
+        if (accessFailure == null) {
+            warningViewModel.refreshActiveMapWarnings()
+            dataViewModel.retryFloodAreas()
+            historyViewModel.refresh()
         }
     }
     var showAreas by rememberSaveable { mutableStateOf(false) }
@@ -250,9 +269,16 @@ internal fun RescueMapScreen(
         }
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MapBackground) {
-        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-            Row(
+    Surface(
+        modifier = if (embedded) modifier else modifier.fillMaxSize(),
+        color = MapBackground
+    ) {
+        Column(
+            modifier = if (embedded) Modifier.fillMaxSize()
+                else Modifier.fillMaxSize().safeDrawingPadding()
+        ) {
+            if (!embedded) {
+                Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -265,46 +291,11 @@ internal fun RescueMapScreen(
                     color = MapText
                 )
             }
-
-            // Data notices sit outside the map legend, which contains three area categories.
-            val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
-            val warningLoadFailed = dataState.activeWarnings is RescueMapLoadState.Error
-            val historyLoadFailed = historyLayers.values.any { it.error }
-            val activeV2Warnings =
-                (dataState.activeWarnings as? RescueMapLoadState.Data)?.items.orEmpty()
-            if (activeV2Warnings.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    color = MapSurface,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            MapLabel("${activeV2Warnings.size} cảnh báo lũ V2 đang hoạt động.", MapText)
-                            MapLabel("Áp dụng chung cho các vùng được hệ thống công bố.")
-                        }
-                        TextButton(onClick = {
-                            selectedAreaId = null
-                            showAreas = true
-                        }) { MapLabel("Xem cảnh báo", MapCyan) }
-                    }
-                }
-            } else if (showFloodLayers && dataState.activeWarnings is RescueMapLoadState.Empty) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    MapLabel("Hiện không có cảnh báo lũ đang hoạt động.")
-                    TextButton(onClick = dataViewModel::retryActiveWarnings) {
-                        MapLabel("Tải lại", MapCyan)
-                    }
-                }
             }
-            if (showFloodLayers && (layers.skippedCount > 0 ||
-                    areaLoadFailed || warningLoadFailed || historyLoadFailed)) {
+
+            val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
+            val historyLoadFailed = historyLayers.values.any { it.error }
+            if (showFloodLayers && (historyLoadFailed || layers.skippedCount > 0 || areaLoadFailed)) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     color = MapSurface,
@@ -318,8 +309,7 @@ internal fun RescueMapScreen(
                             if (layers.skippedCount > 0) {
                                 MapLabel("${layers.skippedCount} vùng có thông tin hoặc ranh giới không hợp lệ.")
                             }
-                            if (areaLoadFailed) MapLabel("Chưa tải được vùng Admin.")
-                            if (warningLoadFailed) MapLabel("Chưa tải được cảnh báo.")
+                            if (areaLoadFailed) MapLabel("Chưa tải được đa giác tham khảo cũ.")
                             if (historyLoadFailed) {
                                 MapLabel("Một phần dữ liệu lịch sử chưa tải được.")
                                 if (historyLayers.values.any { it.error &&
@@ -328,15 +318,15 @@ internal fun RescueMapScreen(
                                 }
                             }
                         }
-                        TextButton(onClick = {
-                            dataViewModel.refresh()
-                            historyViewModel.refresh()
-                        }) { MapLabel("Tải lại", MapCyan) }
+                        TextButton(onClick = refreshMapData, enabled = accessFailure == null) {
+                            MapLabel("Tải lại", MapCyan)
+                        }
                     }
                 }
             }
 
-            Row(
+            if (!embedded) {
+                Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -372,6 +362,7 @@ internal fun RescueMapScreen(
                 ) {
                     Text(location.state.actionLabel, fontFamily = MapFont)
                 }
+            }
             }
 
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -411,43 +402,45 @@ internal fun RescueMapScreen(
                                 BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
                             }
                             // Historical polygons drawn by Web Admin.
-                            // Reference only, never a current flood alert.
-                            historyLayers["areas"]?.polygons.orEmpty()
-                                .forEachIndexed { index, polygon ->
-                                    key("historical-admin-area", polygon.id ?: index, index) {
-                                        Polygon(
-                                            points = polygon.outer,
-                                            holes = polygon.holes,
-                                            visible = showFloodLayers,
-                                            clickable = showFloodLayers,
-                                            fillColor = Color(0xFFC62828).copy(alpha = 0.22f),
-                                            strokeColor = Color(0xFFC62828),
-                                            strokeWidth = 4f,
-                                            zIndex = 4f,
-                                            onClick = {
-                                                showAreas = false
-                                                selectedAreaId = null
-                                                selectedHistoryPoint = null
-                                                selectedHistoryPolygon = polygon
-                                            }
-                                        )
+                                // Reference only, never a current flood alert.
+                                historyLayers["areas"]?.polygons.orEmpty()
+                                    .forEachIndexed { index, polygon ->
+                                        key("historical-admin-area", polygon.id ?: index, index) {
+                                            Polygon(
+                                                points = polygon.outer,
+                                                holes = polygon.holes,
+                                                visible = showFloodLayers,
+                                                clickable = showFloodLayers,
+                                                fillColor = Color(0xFFC62828).copy(alpha = 0.22f),
+                                                strokeColor = Color(0xFFC62828),
+                                                strokeWidth = 4f,
+                                                zIndex = 4f,
+                                                onClick = {
+                                                    showAreas = false
+                                                    selectedAreaId = null
+                                                    selectedHistoryPoint = null
+                                                    selectedHistoryPolygon = polygon
+                                                }
+                                            )
+                                        }
+                                    }
+                                listOf("radar", "buffers").forEach { name ->
+                                    historyLayers[name]?.polygons.orEmpty().forEachIndexed { index, polygon ->
+                                        key("history-polygon", name, index) {
+                                            Polygon(
+                                                points = polygon.outer,
+                                                holes = polygon.holes,
+                                                visible = showFloodLayers,
+                                                fillColor = Color(0xFFE53935).copy(alpha = if (name == "radar") 0.32f else 0.16f),
+                                                strokeColor = Color(0xFFE53935).copy(alpha = 0.7f),
+                                                strokeWidth = if (name == "radar") 1f else 2f,
+                                                zIndex = if (name == "radar") 2f else 3f
+                                            )
+                                        }
                                     }
                                 }
-                            listOf("radar", "buffers").forEach { name ->
-                                historyLayers[name]?.polygons.orEmpty().forEachIndexed { index, polygon ->
-                                    key("history-polygon", name, index) {
-                                        Polygon(
-                                            points = polygon.outer,
-                                            holes = polygon.holes,
-                                            visible = showFloodLayers,
-                                            fillColor = Color(0xFFE53935).copy(alpha = if (name == "radar") 0.32f else 0.16f),
-                                            strokeColor = Color(0xFFE53935).copy(alpha = 0.7f),
-                                            strokeWidth = if (name == "radar") 1f else 2f,
-                                            zIndex = if (name == "radar") 2f else 3f
-                                        )
-                                    }
-                                }
-                            }
+                            // The old Rescue reference markers and their detail sheets stay
+                            // available on both entry paths, independently of V2 polygons.
                             historyPoints.forEachIndexed { index, point ->
                                 key("history-point", point.id ?: index) {
                                     Marker(
@@ -467,26 +460,26 @@ internal fun RescueMapScreen(
                                 }
                             }
                             layers.areas.forEach { area ->
-                                key("system-area", area.id) {
-                                    val color = rescueAreaColor(area)
-                                    Polygon(
-                                        points = polygonPoints.getValue(area.id),
-                                        visible = showFloodLayers,
-                                        clickable = true,
-                                        fillColor = color.copy(alpha = area.areaType.fillAlpha),
-                                        strokeColor = if (area.areaType == RescueAreaType.LOW_LYING)
-                                            color.copy(alpha = 0.7f) else color,
-                                        strokeWidth = if (selectedAreaId == area.id) 7f else 3f,
-                                        zIndex = if (area.areaType == RescueAreaType.FLOOD) 10f else 5f,
-                                        onClick = {
-                                            selectedHistoryPoint = null
-                                            selectedHistoryPolygon = null
-                                            selectedAreaId = area.id
-                                            showAreas = true
-                                        }
-                                    )
+                                    key("system-area", area.id) {
+                                        val color = rescueAreaColor(area)
+                                        Polygon(
+                                            points = polygonPoints.getValue(area.id),
+                                            visible = showFloodLayers,
+                                            clickable = true,
+                                            fillColor = color.copy(alpha = area.areaType.fillAlpha),
+                                            strokeColor = if (area.areaType == RescueAreaType.LOW_LYING)
+                                                color.copy(alpha = 0.7f) else color,
+                                            strokeWidth = if (selectedAreaId == area.id) 7f else 3f,
+                                            zIndex = if (area.areaType == RescueAreaType.FLOOD) 10f else 5f,
+                                            onClick = {
+                                                selectedHistoryPoint = null
+                                                selectedHistoryPolygon = null
+                                                selectedAreaId = area.id
+                                                showAreas = true
+                                            }
+                                        )
+                                    }
                                 }
-                            }
                             val freshFix = location.state.fix
                             (freshFix ?: location.state.lastKnownFix)?.let { fix ->
                                 val point = LatLng(fix.latitude, fix.longitude)
@@ -534,6 +527,8 @@ internal fun RescueMapScreen(
                             if (showFloodLayers) {
                                 Surface(color = MapSurface, shape = MaterialTheme.shapes.small) {
                                     Column(modifier = Modifier.padding(8.dp)) {
+
+                                        // Exactly the old Rescue map legend and polygon layers.
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(
                                                 modifier = Modifier.size(14.dp)
@@ -557,6 +552,8 @@ internal fun RescueMapScreen(
                                             )
                                             MapLabel("  Vùng trũng", MapText)
                                         }
+
+
                                     }
                                 }
                             }
@@ -599,12 +596,14 @@ internal fun RescueMapScreen(
                 }
             }
 
-            RescueBottomBar(
+            if (!embedded) {
+                RescueBottomBar(
                 selectedTab = RescueMainTab.MAP,
                 onSos = onSosTab,
                 onOverview = onOverviewTab ?: onBack,
                 onSafeLocations = onSafeLocationsTab
             )
+            }
         }
     }
 
@@ -643,7 +642,7 @@ internal fun RescueMapScreen(
                 showAreas = false
             },
             onRetryAreas = dataViewModel::retryFloodAreas,
-            onRetryWarnings = dataViewModel::retryActiveWarnings,
+            onRetryWarnings = warningViewModel::refreshActiveMapWarnings,
             onDismiss = { showAreas = false }
         )
     }

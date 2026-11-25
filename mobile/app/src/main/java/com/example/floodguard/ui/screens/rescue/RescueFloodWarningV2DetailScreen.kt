@@ -38,7 +38,8 @@ internal fun RescueFloodWarningV2DetailScreen(
     ownerKey: String,
     viewModel: RescueFloodWarningV2ViewModel,
     onBack: () -> Unit,
-    onOpenWarningMap: () -> Unit,
+    rescueLocation: RescueMapLocationController,
+    accountKey: String,
     onOverview: () -> Unit,
     onFloodMap: () -> Unit,
     onSos: () -> Unit,
@@ -281,17 +282,23 @@ internal fun RescueFloodWarningV2DetailScreen(
                                 )
                             }
 
-                            Button(
-                                onClick = onOpenWarningMap,
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !state.isLoading &&
-                                    accessFailure == null
-                            ) {
-                                Text(
-                                    "Xem bản đồ ngập",
-                                    fontFamily = DetailWarningFont
-                                )
-                            }
+                            Text(
+                                text = "Bản đồ cứu hộ hiện tại",
+                                color = DetailWarningCyan,
+                                fontFamily = DetailWarningFont,
+                                fontWeight = FontWeight.Bold
+                            )
+                            // Reuse the same Rescue map Composable, map layers and marker UI.
+                            // Embedded mode hides only the tab header, GPS controls and bottom bar.
+                            RescueMapScreen(
+                                onBack = {},
+                                location = rescueLocation,
+                                warningViewModel = viewModel,
+                                accountKey = accountKey,
+                                initiallyShowFloodLayers = true,
+                                embedded = true,
+                                modifier = Modifier.fillMaxWidth().height(360.dp)
+                            )
                         }
                     }
 
