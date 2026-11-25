@@ -161,7 +161,7 @@ export default function HistoricalMapScreen() {
             brandTag="ADMIN"
             roleLabel="QUẢN TRỊ VIÊN C4I"
             accent="water"
-            header={<AdminHeader alertCount={0} />}
+            header={<AdminHeader alertCount={0} title="Bản đồ trực quan" />}
         >
             <div className="mx-auto max-w-[1500px] space-y-5">
                 {/* Each invalid/unavailable historical layer has its own error and retry action. */}

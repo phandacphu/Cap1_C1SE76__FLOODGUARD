@@ -20,14 +20,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -57,7 +54,9 @@ import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.IconButton
 private val OverviewBackground = Color(0xFF051424)
 private val OverviewSurface = Color(0xFF122131)
 private val OverviewAlternate = Color(0xFF1C2B3C)
@@ -127,11 +126,11 @@ fun RescueOverviewScreen(
     uiState: RescueOverviewUiState = RescueOverviewUiState(),
     availableDestinations: Set<RescueOverviewDestination> = emptySet(),
     onOpenDestination: ((RescueOverviewDestination) -> Unit)? = null,
-    onRetry: ((RescueOverviewSection) -> Unit)? = null
+    onRetry: ((RescueOverviewSection) -> Unit)? = null,
+    onProfileClick: (() -> Unit)? = null
 ) {
     var isLoggingOut by remember { mutableStateOf(false) }
     var logoutError by remember { mutableStateOf<String?>(null) }
-    var menuExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -186,34 +185,54 @@ fun RescueOverviewScreen(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 topBar = {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Image(
-                            painter = painterResource(R.drawable.rescue_overview_logo),
+                            painter = painterResource(
+                                R.drawable.rescue_overview_logo
+                            ),
                             contentDescription = null,
                             modifier = Modifier.size(28.dp)
                         )
+
                         Column(modifier = Modifier.weight(1f)) {
-                            OverviewLabel("FLOODGUARD", 15.sp, OverviewCyan, FontWeight.Bold)
-                            OverviewLabel("KHU VỰC CỨU HỘ", 10.sp, OverviewGreen, FontWeight.SemiBold)
+                            OverviewLabel(
+                                "FLOODGUARD",
+                                15.sp,
+                                OverviewCyan,
+                                FontWeight.Bold
+                            )
+                            OverviewLabel(
+                                "KHU VỰC CỨU HỘ",
+                                10.sp,
+                                OverviewGreen,
+                                FontWeight.SemiBold
+                            )
                         }
-                        Box {
-                            TextButton(
-                                onClick = { menuExpanded = true },
-                                enabled = !isLoggingOut
-                            ) { Icon(Icons.Outlined.Menu, contentDescription = "Mở menu", tint = OverviewCyan) }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { OverviewLabel("Đăng xuất") },
-                                    enabled = !isLoggingOut,
-                                    onClick = { menuExpanded = false; logout() }
+
+                        IconButton(
+                            onClick = {
+                                onProfileClick?.invoke()
+                            },
+                            enabled = !isLoggingOut &&
+                                    onProfileClick != null,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    color = OverviewSurface,
+                                    shape = CircleShape
                                 )
-                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Mở hồ sơ cứu hộ",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
                 },

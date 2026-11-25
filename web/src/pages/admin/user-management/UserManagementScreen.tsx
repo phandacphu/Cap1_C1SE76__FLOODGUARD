@@ -130,14 +130,6 @@ export default function UserManagementScreen() {
             <h1 className="text-2xl font-bold text-white uppercase tracking-wide">
               Quản lý người dùng toàn hệ thống
             </h1>
-            <div className="mt-1 flex items-center gap-3 text-xs font-mono">
-              <span className="rounded bg-emerald-500/20 px-2 py-1 text-emerald-400">
-                ● KẾT NỐI API CHÍNH THỨC (RENDER)
-              </span>
-              <span className="rounded bg-amber-500/20 px-2 py-1 text-amber-400">
-                ADMIN PANEL / CCF-123
-              </span>
-            </div>
             <p className="mt-2 text-sm text-slate-400 max-w-2xl">
               Quản trị hồ sơ cư dân địa phương, phân quyền lực lượng cứu hộ và kiểm soát trạng thái hoạt động theo thời gian thực.
             </p>

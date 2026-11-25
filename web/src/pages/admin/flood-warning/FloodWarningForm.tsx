@@ -1,121 +1,46 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { severityLabels, toIctInput, type FloodWarning, type WarningArea, type WarningFields } from "./floodWarningTypes";
+import type { FloodWarning, WarningFields } from "./floodWarningTypes";
 
 const input = "w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text focus:border-water focus:outline-none";
-const secondary = "rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-bg disabled:opacity-50";
-const primary = "rounded-lg bg-water px-4 py-2 text-sm font-bold text-bg hover:bg-water/85 disabled:opacity-50";
-
+const button = "rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-50";
 interface Props {
-  warning: FloodWarning | null;
-  areas: WarningArea[];
-  demo: boolean;
-  busy: boolean;
-  error: { message: string; correctable: boolean } | null;
-  onReview: () => void;
-  onClose: () => void;
-  onSave: (fields: WarningFields) => void;
+  warning: FloodWarning | null; initial?: WarningFields; busy: boolean; locked?: boolean; error: string;
+  onClose(): void; onSave(fields: WarningFields): void;
 }
-
-export function FloodWarningForm({ warning, areas, demo, busy, error, onReview, onClose, onSave }: Props) {
+export function FloodWarningForm({ warning, initial, busy, locked, error, onClose, onSave }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [draft, setDraft] = useState<WarningFields>(() => ({
-    title: warning?.title ?? "",
-    content: warning?.content ?? "",
-    severity: warning?.severity ?? "low",
-    status: warning?.status ?? "inactive",
-    areaId: warning?.areaId ?? "",
-    startAt: toIctInput(warning?.startAt ?? ""),
-    endAt: toIctInput(warning?.endAt ?? ""),
-  }));
+  const [draft, setDraft] = useState<WarningFields>(initial ?? { title: warning?.title ?? "", content: warning?.content ?? "" });
   const [validation, setValidation] = useState("");
-  const [confirmedFields, setConfirmedFields] = useState<WarningFields | null>(null);
-
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
-
-  function change<K extends keyof WarningFields>(key: K, value: WarningFields[K]) {
-    setDraft((previous) => ({ ...previous, [key]: value }));
-    setValidation("");
-  }
-
-  function confirm(event: FormEvent<HTMLFormElement>) {
+  const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => { const el = dialog.current; el?.showModal(); return () => el?.close(); }, []);
+  const submit = (event: FormEvent) => {
     event.preventDefault();
-    const start = new Date(`${draft.startAt}+07:00`);
-    const end = new Date(`${draft.endAt}+07:00`);
-    const title = draft.title.trim();
-    const content = draft.content.trim();
-    if (!title || !content || !areas.some((area) => area.id === draft.areaId)) {
-      setValidation("Nhập tiêu đề, nội dung và chọn một vùng ngập trong danh sách.");
-      return;
+    const title = draft.title.trim(), content = draft.content.trim();
+    if (![...title].length || [...title].length > 180 || ![...content].length || [...content].length > 4000) {
+      setValidation("Tiêu đề cần 1–180 ký tự, nội dung cần 1–4000 ký tự sau khi bỏ khoảng trắng đầu/cuối."); return;
     }
-    if (!Number.isFinite(+start) || !Number.isFinite(+end) || +start >= +end) {
-      setValidation("Thời gian bắt đầu phải trước thời gian kết thúc.");
-      return;
-    }
-    setConfirmedFields({ ...draft, title, content, startAt: start.toISOString(), endAt: end.toISOString() });
-  }
-
-  return (
-    <dialog ref={dialog} aria-labelledby="warning-form-title"
-      className="m-auto max-h-[90dvh] w-[min(94vw,44rem)] overflow-y-auto rounded-2xl border border-border bg-card p-0 text-text backdrop:bg-black/65"
-      onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }}>
-      <div className="border-b border-border px-5 py-4">
-        <p className="text-xs font-semibold tracking-wide text-water">THÔNG TIN CẢNH BÁO {demo && "· TEST ONLY"}</p>
-        <h2 id="warning-form-title" className="mt-1 text-xl font-bold">{warning ? "Chỉnh sửa cảnh báo lũ" : "Tạo cảnh báo lũ"}</h2>
+    setDraft({ title, content }); setValidation(""); setConfirmed(true);
+  };
+  return <dialog ref={dialog} className="m-auto max-h-[90dvh] w-[min(94vw,44rem)] overflow-y-auto rounded-2xl border border-border bg-card p-0 text-text backdrop:bg-black/70"
+    onCancel={(e) => { e.preventDefault(); if (!busy) onClose(); }} aria-labelledby="warning-dialog-title">
+    <div className="border-b border-border p-5"><p className="text-xs tracking-widest text-water">CẢNH BÁO V2</p>
+      <h2 id="warning-dialog-title" className="mt-1 text-xl font-bold">{warning ? "Chỉnh sửa bản tin đang bật" : "Tạo bản tin cảnh báo"}</h2></div>
+    <form className="space-y-4 p-5" onSubmit={submit}>
+      <fieldset disabled={busy || locked || confirmed} className="space-y-4 disabled:opacity-70">
+        <label className="block space-y-1 text-sm">Tiêu đề * <input className={input} required value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
+        <label className="block space-y-1 text-sm">Nội dung cảnh báo và hướng dẫn * <textarea className={input} rows={6} required value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} /></label>
+      </fieldset>
+      <p className="rounded-lg border border-water/30 bg-water/10 p-3 text-xs text-muted">Phạm vi: tất cả vùng hệ thống công bố. Bản tin mới tự bật ngay; thời gian do Backend ghi nhận (GMT+7 khi hiển thị).</p>
+      {confirmed && <p role="status" className="rounded-lg border border-water/30 p-3 text-sm">Xác nhận {warning ? "sửa" : "tạo"} bản tin “{draft.title}”?</p>}
+      {validation && <p role="alert" className="text-sm text-sos">{validation}</p>}
+      {error && <p role="alert" className="rounded-lg border border-sos/40 bg-sos/10 p-3 text-sm text-sos">{error}</p>}
+      {locked && <p role="alert" className="text-sm text-warn">Thao tác tạo trước chưa xác định kết quả. Phải đối chiếu hoặc thử lại đúng nội dung và khóa cũ.</p>}
+      <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+        <button type="button" className={button} disabled={busy} onClick={onClose}>Đóng</button>
+        {confirmed && !locked && <button type="button" className={button} disabled={busy} onClick={() => setConfirmed(false)}>Sửa lại</button>}
+        {confirmed ? <button type="button" className="rounded-lg bg-water px-4 py-2 text-sm font-bold text-bg disabled:opacity-50" disabled={busy || locked} onClick={() => onSave(draft)}>{busy ? "Đang gửi…" : "Xác nhận lưu"}</button>
+          : <button className="rounded-lg bg-water px-4 py-2 text-sm font-bold text-bg disabled:opacity-50" disabled={busy || locked}>Tiếp tục</button>}
       </div>
-      <form onSubmit={confirm} className="space-y-4 p-5">
-        <fieldset disabled={busy || !!confirmedFields} className="space-y-4 disabled:opacity-65">
-          <label className="block space-y-1 text-sm"><span>Tiêu đề</span>
-            <input className={input} required value={draft.title} onChange={(e) => change("title", e.target.value)} />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm"><span id="ccf120-form-severity">Mức độ</span>
-              <select aria-labelledby="ccf120-form-severity" className={input} value={draft.severity} onChange={(e) => change("severity", e.target.value as WarningFields["severity"])}>
-                {Object.entries(severityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-            <label className="space-y-1 text-sm"><span id="ccf120-form-state">Trạng thái lưu</span>
-              <select aria-labelledby="ccf120-form-state" className={input} value={draft.status} onChange={(e) => change("status", e.target.value as WarningFields["status"])}>
-                <option value="inactive">Đã tắt</option><option value="active">Đã bật</option>
-              </select>
-            </label>
-          </div>
-          <label className="block space-y-1 text-sm"><span id="ccf120-form-area">Vùng ngập</span>
-            <select aria-labelledby="ccf120-form-area" className={input} required value={areas.some((area) => area.id === draft.areaId) ? draft.areaId : ""} onChange={(e) => change("areaId", e.target.value)}>
-              <option value="">Chọn vùng ngập có sẵn</option>
-              {areas.map((area) => <option key={area.id} value={area.id}>{area.name} · {area.id}</option>)}
-            </select>
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm"><span>Bắt đầu (ICT)</span>
-              <input className={input} type="datetime-local" step="0.001" required value={draft.startAt} onChange={(e) => change("startAt", e.target.value)} />
-            </label>
-            <label className="space-y-1 text-sm"><span>Kết thúc (ICT)</span>
-              <input className={input} type="datetime-local" step="0.001" required value={draft.endAt} onChange={(e) => change("endAt", e.target.value)} />
-            </label>
-          </div>
-          <label className="block space-y-1 text-sm"><span>Nội dung và hướng dẫn</span>
-            <textarea className={input} rows={4} required value={draft.content} onChange={(e) => change("content", e.target.value)} />
-          </label>
-        </fieldset>
-        {validation && <p role="alert" className="text-sm text-sos">{validation}</p>}
-        {error && <p role="alert" className="rounded-lg border border-sos/40 bg-sos/10 p-3 text-sm text-sos">{error.message}</p>}
-        {confirmedFields && <p role="status" className="rounded-lg border border-water/35 bg-water/10 p-3 text-sm">
-          Xác nhận {warning ? "cập nhật" : "tạo"} cảnh báo <strong>{confirmedFields.title}</strong>{demo ? " trong dữ liệu thử?" : "?"}
-        </p>}
-        <footer className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-          <button type="button" className={secondary} onClick={onClose} disabled={busy}>Hủy</button>
-          {confirmedFields ? <>
-            <button type="button" className={secondary} disabled={busy || (error !== null && !error.correctable)} onClick={() => { onReview(); setConfirmedFields(null); }}>Sửa lại</button>
-            <button type="button" className={primary} disabled={busy || !!error} onClick={() => onSave(confirmedFields)}>
-              {busy ? "Đang lưu…" : "Xác nhận lưu"}
-            </button>
-          </> : <button type="submit" className={primary}>Tiếp tục</button>}
-        </footer>
-      </form>
-    </dialog>
-  );
+    </form>
+  </dialog>;
 }

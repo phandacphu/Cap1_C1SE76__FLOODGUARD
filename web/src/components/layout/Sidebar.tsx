@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import floodguardLogo from "../../assets/floodguard-logo.png";
 import { logoutRequest } from "../../api/authApi";
 import { useAuth } from "../../context/AuthContext";
@@ -77,10 +77,9 @@ export function Sidebar({
               to={item.to}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${
-                  isActive
-                    ? ACCENT_ACTIVE[accent]
-                    : "text-text/85 hover:bg-card hover:text-text"
+                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition ${isActive
+                  ? ACCENT_ACTIVE[accent]
+                  : "text-text/85 hover:bg-card hover:text-text"
                 }`
               }
             >
@@ -119,13 +118,30 @@ export function Sidebar({
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between text-xs text-muted">
-          <span
-            aria-disabled="true"
-            title="Sắp ra mắt"
-            className="flex cursor-not-allowed items-center gap-1.5"
-          >
-            <Icon name="user" className="h-3.5 w-3.5" /> Hồ sơ
-          </span>
+          {user?.role === "ADMIN" || user?.role === "RESCUE_STAFF" ? (
+            <Link
+              to={
+                user?.role === "ADMIN"
+                  ? "/admin/profile"
+                  : "/rescue/profile"
+              }
+              onClick={onNavigate}
+              className={`flex items-center gap-1.5 transition ${accent === "safe"
+                  ? "hover:text-safe"
+                  : "hover:text-water"
+                }`}
+            >
+              <Icon name="user" className="h-3.5 w-3.5" /> Hồ sơ
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              title="Sắp ra mắt"
+              className="flex cursor-not-allowed items-center gap-1.5"
+            >
+              <Icon name="user" className="h-3.5 w-3.5" /> Hồ sơ
+            </span>
+          )}
           <button
             type="button"
             onClick={handleLogout}

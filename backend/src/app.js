@@ -44,6 +44,7 @@ app.use("/api/notification-devices", require("./routes/notification-device.route
 app.use("/api/flood-forecast", floodForecastRoutes);
 app.use("/api/safe-locations", safeLocationRoutes);
 app.use("/api/rescue-requests", rescueRequestRoutes);
+app.use("/api/sos-sms", require("./routes/sos-sms.routes"));
 app.use("/api/rescue-route-distance", rescueRouteDistanceRoutes);
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/flood-areas", adminFloodAreaRoutes);

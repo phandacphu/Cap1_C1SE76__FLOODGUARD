@@ -1,3 +1,4 @@
+const { createHash } = require("node:crypto");
 const { db } = require("../config/firebase");
 const { FieldValue } = require("firebase-admin/firestore");
 const {
@@ -27,7 +28,7 @@ async function findActiveSosByResidentId(residentId) {
   return doc ? { ...doc.data(), id: doc.id } : null;
 }
 
-async function createSosWithHistory(residentId, input) {
+async function createSosWithHistory(residentId, input, sms = null) {
   const data = normalizeSosInput(residentId, input);
   const requestRef = db.collection(RESCUE_REQUESTS_COLLECTION).doc();
   const historyRef = db
@@ -38,6 +39,12 @@ async function createSosWithHistory(residentId, input) {
     .doc(activeSosLockId(data.residentId));
   const userRef = db.collection("users").doc(data.residentId);
 
+  const submissionRef = data.clientRequestId ? db.collection("sos_submissions").doc(
+    createHash("sha256").update(`${data.residentId}:${data.clientRequestId}`).digest("hex"),
+  ) : null;
+  const { clientRequestId, ...payload } = data;
+  const payloadHash = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  let resultId = requestRef.id;
   await db.runTransaction(async (transaction) => {
     const userDoc = await transaction.get(userRef);
     if (!userDoc.exists)
@@ -56,6 +63,7 @@ async function createSosWithHistory(residentId, input) {
         403,
       );
     }
+    resultId = requestRef.id;
     // Every new writer reads/writes this per-Resident lock. The query also
     // catches pre-migration active requests which have no lock document.
     await transaction.get(lockRef);
@@ -64,6 +72,15 @@ async function createSosWithHistory(residentId, input) {
         .collection(RESCUE_REQUESTS_COLLECTION)
         .where("residentId", "==", data.residentId),
     );
+    if (submissionRef) {
+      const prior = await transaction.get(submissionRef);
+      if (prior.exists) {
+        if (prior.data().payloadHash !== payloadHash)
+          throw sosError("SOS_SUBMISSION_CONFLICT", "Same SOS reference has different content", 409);
+        resultId = prior.data().requestId;
+        return;
+      }
+    }
     const active = existing.docs.find((doc) =>
       ACTIVE_SOS_STATUSES.includes(doc.data().status),
     );
@@ -86,10 +103,12 @@ async function createSosWithHistory(residentId, input) {
     transaction.create(requestRef, {
       ...data,
       schemaVersion: 2,
+      source: sms ? "sms" : "api",
+      ...(sms ? { smsSenderPhone: sms.senderPhone, smsReceivedAt: sms.receivedAt } : {}),
       status: "submitted",
       initialLocation: data.location,
       // The form does not provide a capture timestamp. Do not invent one.
-      locationCapturedAt: null,
+      locationCapturedAt: sms?.capturedAt ?? null,
       locationReceivedAt: FieldValue.serverTimestamp(),
       completedBy: null,
       completedAt: null,
@@ -100,12 +119,13 @@ async function createSosWithHistory(residentId, input) {
       ...history,
       changedAt: FieldValue.serverTimestamp(),
     });
+    if (submissionRef) transaction.create(submissionRef, { requestId: requestRef.id, payloadHash });
     transaction.set(lockRef, {
       requestId: requestRef.id,
       residentId: data.residentId,
     });
   });
-  return getRescueRequestById(requestRef.id);
+  return getRescueRequestById(resultId);
 }
 
 module.exports = {

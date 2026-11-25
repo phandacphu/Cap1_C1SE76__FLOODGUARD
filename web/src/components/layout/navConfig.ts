@@ -10,19 +10,15 @@ export interface NavItem {
 /** Admin sidebar (Figma: Admin Command C4I). Only finished screens have a route. */
 export const ADMIN_NAV: NavItem[] = [
   { label: "Tổng quan", icon: "dashboard", to: "/admin/dashboard" },
-  { label: "Bản đồ trực quan", icon: "map", to: "/admin/map" },
-  { label: "Bản đồ lịch sử", icon: "map", to: "/admin/historical-map" },
+  { label: "Bản đồ trực quan", icon: "map", to: "/admin/historical-map" },
   { label: "Theo dõi SOS", icon: "sos", to: "/admin/sos" },
   { label: "Quản lý cảnh báo lũ", icon: "alert", to: "/admin/flood-warnings" },
   { label: "Quản lý vùng ngập", icon: "flood", to: "/admin/flood-areas" },
   { label: "Quản lý điểm an toàn", icon: "shield", to: "/admin/safe-locations" },
   { label: "Quản lý người dùng", icon: "users", to: "/admin/users" },
-  { label: "Quản lý Rescue Staff", icon: "staff" },
-  { label: "Thông báo", icon: "bell" },
-  { label: "Báo cáo", icon: "report" },
-  { label: "Audit Log", icon: "audit" },
-  { label: "Cài đặt hệ thống", icon: "settings" },
-  { label: "Dữ liệu demo/hệ thống", icon: "database" },
+  { label: "Quản lý Rescue Staff", icon: "staff", to: "/admin/rescue-staff" },
+  { label: "Báo cáo", icon: "report", to: "/admin/reports" },
+  { label: "Cài đặt hệ thống", icon: "settings", to: "/admin/settings" },
 ];
 
 /** Rescue sidebar (Figma: Rescue Staff). Used by the Rescue screens. */

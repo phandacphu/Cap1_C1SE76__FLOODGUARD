@@ -74,6 +74,9 @@ export function parseApiSos(value: unknown): SosItem {
     confirmedBy: null,
     completedBy: optionalText(item.completedBy),
     completedAt: optionalDate(item.completedAt),
+    submissionSource: item.source === "sms" || item.source === "api" ? item.source : null,
+    smsSenderPhone: optionalText(item.smsSenderPhone),
+    smsReceivedAt: optionalDate(item.smsReceivedAt),
     source: "api",
   };
 }

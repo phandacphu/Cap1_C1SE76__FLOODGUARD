@@ -10,6 +10,8 @@ object AppRoutes {
 
     const val RESCUE_HOME = "rescue_home"
 
+    const val RESCUE_PROFILE = "rescue_profile"
+
     const val RESCUE_MAP = "rescue_map"
 
     const val RESCUE_SOS = "rescue_sos"
