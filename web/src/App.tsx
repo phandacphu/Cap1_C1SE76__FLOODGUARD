@@ -58,15 +58,6 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/admin/map"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN']}>
-                <FloodMapView />
-              </ProtectedRoute>
-            }
-          />
-
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard />} />
             <Route path="/admin/profile" element={<AdminProfile />} />
@@ -75,6 +66,7 @@ export const App: React.FC = () => {
             <Route path="/admin/flood-warnings" element={<FloodWarningManagementScreen source={warningSource} />} />
             <Route path="/admin/safe-locations" element={<SafeLocationManagementScreen source={safeLocationApi} />} />
             <Route path="/admin/historical-map" element={<HistoricalMapScreen />} />
+            <Route path="/admin/map" element={<Navigate to="/admin/historical-map" replace />} />
             <Route path="/admin/sos" element={<SosMonitoringScreen />} />
             <Route path="/admin/sos/:id" element={<SosDetailScreen />} />
             <Route path="/admin/rescue-staff" element={<RescueStaffUiScreen />} />
