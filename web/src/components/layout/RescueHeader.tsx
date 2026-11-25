@@ -1,6 +1,7 @@
 import { useAuth } from "../../context/AuthContext";
 import { Icon } from "../ui/Icon";
 import { formatClock, useClock } from "./useClock";
+import { Link } from "react-router-dom";
 
 interface RescueHeaderProps {
   loading: boolean;
@@ -58,9 +59,14 @@ export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount, sync
           </p>
           <p className="font-mono text-[10px] tracking-widest text-safe">NHÂN VIÊN CỨU HỘ</p>
         </div>
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-safe/20 text-safe">
+        <Link
+          to="/rescue/profile"
+          title="Hồ sơ nhân viên cứu hộ"
+          aria-label="Mở hồ sơ nhân viên cứu hộ"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-safe/20 text-safe transition hover:bg-safe/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safe"
+        >
           <Icon name="user" className="h-5 w-5" />
-        </div>
+        </Link>
       </div>
     </>
   );
