@@ -1,5 +1,6 @@
 import { Icon } from "../ui/Icon";
 import { formatClock, useClock } from "./useClock";
+import { Link } from "react-router-dom";
 
 interface AdminHeaderProps {
   /** Number of currently active flood alerts (shown on the bell). */
@@ -58,12 +59,14 @@ export function AdminHeader({ alertCount, title = "Tổng quan" }: AdminHeaderPr
             </span>
           )}
         </div>
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-water/20 text-water"
-          title="Tài khoản quản trị"
+        <Link
+          to="/admin/profile"
+          title="Hồ sơ quản trị viên"
+          aria-label="Mở hồ sơ quản trị viên"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-water/20 text-water transition hover:bg-water/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-water"
         >
           <Icon name="user" className="h-5 w-5" />
-        </div>
+        </Link>
       </div>
     </>
   );
