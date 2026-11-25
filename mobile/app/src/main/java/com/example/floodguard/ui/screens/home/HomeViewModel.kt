@@ -94,10 +94,6 @@ class HomeViewModel : ViewModel() {
 
     val uiState: State<HomeUiState> = _uiState
 
-    init {
-        loadWarnings()
-    }
-
     fun loadWarnings() {
         if (_uiState.value.isLoadingWarnings) return
 

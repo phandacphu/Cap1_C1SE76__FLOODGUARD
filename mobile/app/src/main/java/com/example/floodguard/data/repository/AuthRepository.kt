@@ -6,13 +6,17 @@ import com.example.floodguard.data.local.SessionUser
 import com.example.floodguard.data.remote.api.AuthApi
 import com.example.floodguard.data.remote.dto.auth.LoginRequest
 import com.example.floodguard.data.remote.dto.auth.RegisterRequest
+import com.example.floodguard.core.notifications.NotificationDeviceRuntime
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 
 class AuthRepository(
     private val authApi: AuthApi,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val notificationDeviceRuntime: NotificationDeviceRuntime? = null
 ) {
 
     suspend fun login(
@@ -21,6 +25,8 @@ class AuthRepository(
     ): Result<Unit> {
 
         return try {
+
+            val requestGeneration = sessionManager.getGeneration()
 
             val response = authApi.login(
                 LoginRequest(
@@ -61,19 +67,25 @@ class AuthRepository(
                 // Lấy thông tin người dùng từ API đăng nhập
                 val user = body.data?.user
 
-                // Lưu token
-                sessionManager.saveToken(token)
-
-                // Lưu thông tin tài khoản
-                sessionManager.saveUser(
-                    SessionUser(
+                val saved = sessionManager.saveAuthenticatedSession(
+                    token = token,
+                    user = SessionUser(
                         id = user?.id,
                         fullName = user?.fullName,
                         email = user?.email,
                         phone = user?.phone,
                         role = user?.role
-                    )
+                    ),
+                    expectedGeneration = requestGeneration
                 )
+
+                if (!saved) {
+                    return Result.failure(
+                        Exception(
+                            "Phiên đăng nhập đã thay đổi. Vui lòng thử lại."
+                        )
+                    )
+                }
 
                 Result.success(Unit)
 
@@ -110,6 +122,9 @@ class AuthRepository(
 
                 Result.failure(Exception(message))
             }
+
+        } catch (error: CancellationException) {
+            throw error
 
         } catch (e: UnknownHostException) {
 
@@ -203,6 +218,9 @@ class AuthRepository(
                 Result.failure(Exception(message))
             }
 
+        } catch (error: CancellationException) {
+            throw error
+
         } catch (e: UnknownHostException) {
 
             Result.failure(
@@ -232,19 +250,43 @@ class AuthRepository(
     }
 
     suspend fun logout(): Result<Unit> {
-
         return try {
+            val generation = sessionManager.getGeneration()
+            val snapshot = sessionManager.authenticatedSessionFlow.first()
 
-            sessionManager.clearSession()
-
-            Result.success(Unit)
-
-        } catch (e: Exception) {
-
-            Result.failure(
-                Exception(
-                    e.message ?: "Không thể đăng xuất."
+            if (
+                snapshot != null &&
+                snapshot.generation != generation
+            ) {
+                return Result.failure(
+                    Exception("Phiên hiện tại đã thay đổi.")
                 )
+            }
+
+            if (
+                snapshot != null &&
+                snapshot.user.role == "resident" &&
+                notificationDeviceRuntime != null
+            ) {
+                return notificationDeviceRuntime.logout(snapshot)
+            }
+
+            val cleared = sessionManager.clearSession(
+                expectedGeneration = generation
+            )
+
+            if (cleared) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception("Phiên hiện tại đã thay đổi.")
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            Result.failure(
+                Exception("Không thể đăng xuất.")
             )
         }
     }

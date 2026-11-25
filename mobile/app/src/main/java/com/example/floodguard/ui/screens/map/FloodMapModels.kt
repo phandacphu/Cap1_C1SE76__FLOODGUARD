@@ -3,6 +3,7 @@ package com.example.floodguard.ui.screens.map
 import com.example.floodguard.data.model.FloodAreaDto
 import com.example.floodguard.data.model.FloodAlertDto
 import com.example.floodguard.data.model.SafeLocationDto
+import com.example.floodguard.data.repository.WarningZoneCollection
 import com.google.android.gms.maps.model.LatLng
 
 
@@ -42,6 +43,9 @@ enum class HistoricalLoadStatus {
 
 data class FloodMapUiState(
     val title: String = "Bản đồ ngập & vị trí",
+    val warningZones: WarningZoneCollection? = null,
+    val isLoadingWarningZones: Boolean = false,
+    val warningZonesError: String? = null,
     val realtimeStatus: String = "TRỰC TUYẾN • GIS REAL-TIME",
 
     val currentLocation: String = "Hòa Khương, Hòa Vang, Đà Nẵng",
@@ -89,6 +93,8 @@ data class FloodMapUiState(
     val isLoadingFloodAreas: Boolean = false,
     val floodAreasError: String? = null,
     val floodAlerts: List<FloodAlertDto> = emptyList(),
+    val floodWarningV2Alerts:
+    List<com.example.floodguard.data.repository.FloodWarningV2>? = null,
     val isLoadingFloodAlerts: Boolean = false,
     val floodAlertsError: String? = null,
 
