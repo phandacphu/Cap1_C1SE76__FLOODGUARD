@@ -21,6 +21,12 @@ function gpsBody(body, now = Date.now()) {
   const match = typeof body.capturedAt === "string" && /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/.exec(body.capturedAt);
   if (!match) invalid();
   const canonical = `${match[1]}.${(match[2] || "").padEnd(3, "0")}Z`, parsed = new Date(canonical);
+  if (Number.isFinite(parsed.getTime()) && parsed.getTime() > now) {
+    console.warn("[WarningV2GPS]", {
+      reason: "future_captured_at",
+      aheadMs: parsed.getTime() - now
+    });
+  }
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== canonical || parsed.getTime() > now) invalid();
   return { sequence: body.sequence, availability: "available", reason: null,
     location: { latitude: p.latitude, longitude: p.longitude }, capturedAt: canonical, accuracyM: body.accuracyM };
