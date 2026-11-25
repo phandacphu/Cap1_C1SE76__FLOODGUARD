@@ -12,13 +12,17 @@ test('Admin sidebar removes only Audit Log and demo/system data entries', () => 
   assert.doesNotMatch(adminNavigation, /Audit Log|Dữ liệu demo\/hệ thống/);
 
   for (const label of [
-    'Tổng quan', 'Bản đồ trực quan', 'Bản đồ lịch sử', 'Theo dõi SOS',
+    'Tổng quan', 'Bản đồ trực quan', 'Theo dõi SOS',
     'Quản lý cảnh báo lũ', 'Quản lý vùng ngập', 'Quản lý điểm an toàn',
     'Quản lý người dùng', 'Quản lý Rescue Staff', 'Báo cáo', 'Cài đặt hệ thống',
   ]) {
     assert.ok(adminNavigation.includes(`label: "${label}"`), `${label} must be retained`);
   }
   assert.doesNotMatch(adminNavigation, /label: "Thông báo"|\/admin\/notifications/);
+  assert.doesNotMatch(adminNavigation, /Bản đồ lịch sử|\/admin\/map"/);
+  assert.match(adminNavigation, /label: "Bản đồ trực quan", icon: "map", to: "\/admin\/historical-map"/);
+  assert.match(app, /path="\/admin\/map" element=\{<Navigate to="\/admin\/historical-map" replace \/>\}/);
+  assert.match(app, /path="\/map"[\s\S]*?<FloodMapView \/>/);
   assert.doesNotMatch(app, /\/admin\/notifications|AdminNotificationsUiScreen/);
 });
 
