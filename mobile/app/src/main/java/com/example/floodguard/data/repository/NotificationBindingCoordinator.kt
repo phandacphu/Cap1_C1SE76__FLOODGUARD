@@ -170,11 +170,16 @@ class NotificationBindingCoordinator(
 
     suspend fun logout(
         session: AuthenticatedSessionSnapshot,
-        identity: NotificationInstallationIdentity?
+        identity: NotificationInstallationIdentity?,
+        onLocalSessionEnded: () -> Unit = {}
     ): Result<NotificationLogoutResult> {
         return try {
             val ended = bindingStore.endSession(session)
                 ?: throw ObsoleteNotificationSessionException()
+
+            // DataStore đã lưu việc vô hiệu hóa phiên.
+            // Post của worker phiên cũ không thể vượt kiểm tra phiên nữa.
+            onLocalSessionEnded()
 
             val binding = ended.binding
 

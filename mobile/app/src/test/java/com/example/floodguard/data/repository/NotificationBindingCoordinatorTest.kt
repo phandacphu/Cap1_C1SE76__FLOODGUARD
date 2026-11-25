@@ -6,11 +6,18 @@ import com.example.floodguard.data.local.NotificationInstallationIdentity
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.local.SessionUser
 import com.example.floodguard.data.remote.api.NotificationDeviceApi
+import com.example.floodguard.core.notifications.FloodWarningPushDecision
+import com.example.floodguard.core.notifications.FloodWarningPushReceiptStore
+import com.example.floodguard.core.notifications.FloodWarningV2Push
 import com.google.gson.JsonObject
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -299,6 +306,112 @@ class NotificationBindingCoordinatorTest {
         assertEquals(0, api.getCalls)
         assertEquals(0, api.sentBodies.size)
     }
+
+    @Test
+    fun lateWorkerCannotPostAfterLogoutCancellationAndNewAccountSurvives() =
+        runBlocking {
+            val manager = manager()
+            manager.clearSession()
+
+            val accountA = login(manager, "logout-race-a")
+            val identity = identity()
+            val api = FakeDeviceApi(identity.installationId)
+            val bindings = NotificationBindingStore(manager)
+            val coordinator = NotificationBindingCoordinator(
+                manager,
+                bindings,
+                NotificationDeviceRepository(api)
+            )
+
+            assertTrue(
+                coordinator.synchronize(
+                    accountA, identity, null, "denied"
+                ).isSuccess
+            )
+
+            val binding = requireNotNull(bindings.getConfirmed(accountA))
+            val receiptStore = FloodWarningPushReceiptStore(manager)
+
+            val push = FloodWarningV2Push.parse(
+                mapOf(
+                    "schemaVersion" to "2",
+                    "eventId" to UUID.randomUUID().toString(),
+                    "alertId" to "logout-race-alert",
+                    "kind" to "general",
+                    "title" to "TEST ONLY",
+                    "body" to "Logout race regression",
+                    "createdAt" to "2026-11-25T13:00:00Z",
+                    "installationId" to binding.installationId,
+                    "bindingId" to binding.bindingId
+                )
+            ).getOrThrow()
+
+            // Worker đã claim khi tài khoản A còn hợp lệ.
+            assertEquals(
+                FloodWarningPushDecision.CLAIMED,
+                receiptStore.claimForDisplay(accountA, push)
+            )
+
+            var cancellationCount = 0
+            var postCount = 0
+            var latePost: Deferred<Boolean>? = null
+            var accountB: AuthenticatedSessionSnapshot? = null
+
+            api.onDelete = {
+                // Hủy local phải xảy ra trước request DELETE.
+                assertEquals(1, cancellationCount)
+                assertFalse(manager.isCurrentSession(accountA))
+
+                assertFalse(requireNotNull(latePost).await())
+                assertEquals(0, postCount)
+
+                // Phiên mới xuất hiện trong khi logout cũ còn chờ Backend.
+                accountB = login(manager, "logout-race-b")
+            }
+
+            val result = coordinator.logout(
+                session = accountA,
+                identity = identity,
+                onLocalSessionEnded = {
+                    cancellationCount++
+
+                    // Worker tới bước post ngay sau khi hủy thông báo.
+                    latePost = async(start = CoroutineStart.UNDISPATCHED) {
+                        receiptStore.postClaimedIfCurrent(
+                            session = accountA,
+                            push = push,
+                            canPost = { true },
+                            post = {
+                                postCount++
+                                true
+                            }
+                        )
+                    }
+                }
+            )
+
+            assertTrue(result.isSuccess)
+            assertEquals(1, cancellationCount)
+            assertEquals(0, postCount)
+            assertTrue(manager.isCurrentSession(requireNotNull(accountB)))
+
+            // Logout phiên cũ không được gọi lại callback hủy.
+            var staleCancellation = false
+            val staleResult = coordinator.logout(
+                accountA,
+                identity,
+                onLocalSessionEnded = {
+                    staleCancellation = true
+                }
+            )
+
+            assertTrue(
+                staleResult.exceptionOrNull() is
+                        ObsoleteNotificationSessionException
+            )
+            assertFalse(staleCancellation)
+            assertTrue(manager.isCurrentSession(requireNotNull(accountB)))
+        }
 
     private class FakeDeviceApi(
         private val installationId: String

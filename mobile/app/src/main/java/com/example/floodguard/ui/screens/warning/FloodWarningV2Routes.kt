@@ -6,12 +6,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.padding
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.floodguard.core.network.ApiClient
 import com.example.floodguard.core.notifications.NotificationDeviceRuntime
-import com.example.floodguard.core.notifications.FloodWarningRefreshSignal
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.remote.api.FloodWarningV2Api
 import com.example.floodguard.data.repository.FloodWarningV2Repository
@@ -44,9 +42,8 @@ fun FloodWarningV2ListRoute(
     }
     val state = model.list.collectAsStateWithLifecycle().value
 
-    LifecycleResumeEffect(model) {
+    FloodWarningV2Updates(model, sessionManager) {
         model.refreshList()
-        onPauseOrDispose { }
     }
 
     Scaffold(
@@ -85,9 +82,8 @@ fun FloodWarningV2DetailRoute(
     }
     val state = model.detail.collectAsStateWithLifecycle().value
 
-    LifecycleResumeEffect(model, warningId) {
+    FloodWarningV2Updates(model, sessionManager) {
         model.openDetail(warningId)
-        onPauseOrDispose { }
     }
 
     Scaffold(
@@ -131,14 +127,9 @@ fun FloodWarningV2OverviewRoute(
 
     val state = model.overview.collectAsStateWithLifecycle().value
 
-    val pushRefreshRevision =
-        FloodWarningRefreshSignal.revision
-            .collectAsStateWithLifecycle().value
-
-    LifecycleResumeEffect(model, runtime, pushRefreshRevision) {
+    FloodWarningV2Updates(model, sessionManager) {
         model.refreshOverview()
         runtime.refreshLocation()
-        onPauseOrDispose { }
     }
 
     FloodWarningV2Overview(

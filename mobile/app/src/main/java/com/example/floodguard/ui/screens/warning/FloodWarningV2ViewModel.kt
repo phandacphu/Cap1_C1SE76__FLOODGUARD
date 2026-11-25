@@ -72,6 +72,8 @@ class FloodWarningV2ViewModel(
     private var overviewRequest = 0L
     private var detailRequest = 0L
 
+    private var accountEpoch = 0L
+
     fun selectFilter(filter: FloodWarningV2Filter) {
         if (_list.value.filter == filter && _list.value.loaded) return
         loadList(filter)
@@ -80,6 +82,7 @@ class FloodWarningV2ViewModel(
     fun refreshList() = loadList(_list.value.filter)
 
     private fun loadList(filter: FloodWarningV2Filter) {
+        val epoch = accountEpoch
         val request = ++listRequest
         listJob?.cancel()
 
@@ -92,6 +95,10 @@ class FloodWarningV2ViewModel(
 
         listJob = viewModelScope.launch {
             val result = repository.getAlerts(status = filter.apiValue)
+            if (epoch != accountEpoch) return@launch
+            if (result.exceptionOrNull()?.let(::handleAccountError) == true) {
+                return@launch
+            }
             if (request != listRequest) return@launch
 
             result.fold(
@@ -103,7 +110,6 @@ class FloodWarningV2ViewModel(
                     )
                 },
                 onFailure = { error ->
-                    if (handleAccountError(error)) return@fold
                     val state = _list.value
                     _list.value = state.copy(
                         loading = false,
@@ -116,6 +122,7 @@ class FloodWarningV2ViewModel(
     }
 
     fun refreshOverview() {
+        val epoch = accountEpoch
         val request = ++overviewRequest
         overviewJob?.cancel()
         _overview.value = _overview.value.copy(
@@ -125,6 +132,10 @@ class FloodWarningV2ViewModel(
 
         overviewJob = viewModelScope.launch {
             val result = repository.getActiveAlerts()
+            if (epoch != accountEpoch) return@launch
+            if (result.exceptionOrNull()?.let(::handleAccountError) == true) {
+                return@launch
+            }
             if (request != overviewRequest) return@launch
 
             result.fold(
@@ -135,7 +146,6 @@ class FloodWarningV2ViewModel(
                     )
                 },
                 onFailure = { error ->
-                    if (handleAccountError(error)) return@fold
                     val state = _overview.value
                     _overview.value = state.copy(
                         loading = false,
@@ -148,6 +158,7 @@ class FloodWarningV2ViewModel(
     }
 
     fun openDetail(id: String) {
+        val epoch = accountEpoch
         val request = ++detailRequest
         detailJob?.cancel()
 
@@ -167,6 +178,10 @@ class FloodWarningV2ViewModel(
 
         detailJob = viewModelScope.launch {
             val result = repository.getAlert(id)
+            if (epoch != accountEpoch) return@launch
+            if (result.exceptionOrNull()?.let(::handleAccountError) == true) {
+                return@launch
+            }
             if (request != detailRequest) return@launch
 
             result.fold(
@@ -177,7 +192,6 @@ class FloodWarningV2ViewModel(
                     )
                 },
                 onFailure = { error ->
-                    if (handleAccountError(error)) return@fold
 
                     if ((error as? HttpException)?.code() == 404) {
                         _detail.value = FloodWarningV2DetailState(
@@ -206,6 +220,7 @@ class FloodWarningV2ViewModel(
 
     // Gọi khi logout/đổi tài khoản trước khi dùng phiên mới.
     fun clearAccount() {
+        ++accountEpoch
         ++listRequest
         ++overviewRequest
         ++detailRequest

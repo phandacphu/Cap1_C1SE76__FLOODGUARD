@@ -424,7 +424,6 @@ class NotificationDeviceRuntime private constructor(context: Context) {
         loggingOut.add(session.generation)
         warningLocation.stop()
         FloodWarningOpenInbox.discardGeneration(session.generation)
-        FloodWarningLocalNotifications(appContext).cancelAccount(session)
         successfulPermission = null
         successfulToken = null
         localRetry = null
@@ -439,7 +438,14 @@ class NotificationDeviceRuntime private constructor(context: Context) {
                 null
             }
 
-            val result = coordinator.logout(session, identity)
+            val result = coordinator.logout(
+                session = session,
+                identity = identity,
+                onLocalSessionEnded = {
+                    FloodWarningLocalNotifications(appContext)
+                        .cancelAccount(session)
+                }
+            )
 
             result.fold(
                 onSuccess = { outcome ->
