@@ -37,11 +37,13 @@ type FilterStatus = 'all' | 'flood' | 'low_lying' | 'unknown';
 const SEVERITY_LABELS = { low: 'Thấp', medium: 'Vừa', high: 'Cao', critical: 'Khẩn cấp' };
 const PRIORITY = { low: 1, medium: 2, high: 3, critical: 4 };
 
-export const FloodMapView: React.FC = () => {
+type FloodMapViewProps = { embedded?: boolean };
+
+export const FloodMapView: React.FC<FloodMapViewProps> = ({ embedded = false }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isRescue = user?.role === 'RESCUE_STAFF';
-  const [showRegions, setShowRegions] = useState(false);
+  const [showRegions, setShowRegions] = useState(embedded);
   const showHistory = isRescue && showRegions;
   const mapTilerKey = (import.meta.env.VITE_MAPTILER_KEY ?? '').trim();
 
@@ -413,7 +415,7 @@ export const FloodMapView: React.FC = () => {
               <span>Đang tải dữ liệu vùng ngập và khởi tạo bản đồ MapTiler...</span>
             </div>
           )}
-          <div ref={mapContainerRef} className="floodguard-map w-full z-0" style={{ height: isRescue ? "clamp(360px, calc(100dvh - 270px), 900px)" : 560 }} />
+          <div ref={mapContainerRef} className="floodguard-map w-full z-0" style={{ height: embedded ? "clamp(360px, 52vh, 560px)" : isRescue ? "clamp(360px, calc(100dvh - 270px), 900px)" : 560 }} />
         </div>
 
         {isAdmin && (
@@ -488,6 +490,20 @@ export const FloodMapView: React.FC = () => {
       </div>
     </div>
   );
+
+  if (embedded && isRescue) {
+    return (
+      <div className="rw-embedded-map">
+        <div className="rw-embedded-actions">
+          <button type="button" onClick={handleRetry} disabled={dataLoading || alertsLoading}>
+            Làm mới bản đồ
+          </button>
+          <a href="/map" className="rw-open-full-map">Mở bản đồ lớn ↗</a>
+        </div>
+        {mapContent}
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
