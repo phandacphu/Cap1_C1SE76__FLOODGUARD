@@ -1,0 +1,178 @@
+{
+  "list": {
+    "success": true,
+    "message": "Fixture response; không phải phản hồi server",
+    "data": {
+      "schemaVersion": 2,
+      "floodAlerts": [
+        {
+          "id": "TEST-WARN-V2-002",
+          "schemaVersion": 2,
+          "title": "TEST ONLY - Bản tin đang bật thứ hai",
+          "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+          "status": "active",
+          "scope": "all_published_zones",
+          "startAt": "2026-11-22T01:00:10.000Z",
+          "endAt": null,
+          "createdAt": "2026-11-22T01:00:10.000Z",
+          "updatedAt": "2026-11-22T01:00:10.000Z",
+          "revision": 1
+        },
+        {
+          "id": "TEST-WARN-V2-001",
+          "schemaVersion": 2,
+          "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+          "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+          "status": "active",
+          "scope": "all_published_zones",
+          "startAt": "2026-11-22T01:00:00.000Z",
+          "endAt": null,
+          "createdAt": "2026-11-22T01:00:00.000Z",
+          "updatedAt": "2026-11-22T01:00:00.000Z",
+          "revision": 1
+        },
+        {
+          "id": "TEST-WARN-V2-OLD",
+          "schemaVersion": 2,
+          "title": "TEST ONLY - Mưa lớn và nguy cơ ngập",
+          "content": "Dữ liệu kiểm thử giao diện FLOODGUARD, không phải bản tin thực tế.",
+          "status": "inactive",
+          "scope": "all_published_zones",
+          "startAt": "2026-11-21T01:00:00.000Z",
+          "endAt": "2026-11-21T02:00:00.000Z",
+          "createdAt": "2026-11-21T01:00:00.000Z",
+          "updatedAt": "2026-11-21T02:00:00.000Z",
+          "revision": 2
+        }
+      ],
+      "serverTime": "2026-11-22T01:00:30.000Z"
+    }
+  },
+  "zones": {
+    "success": true,
+    "message": "Fixture response; không phải phản hồi server",
+    "data": {
+      "zonesRevision": "TEST-ZONES-REV-01",
+      "generatedAt": "2026-11-22T01:00:30.000Z",
+      "coverage": {
+        "status": "complete",
+        "totalZones": 4,
+        "evaluableZones": 4,
+        "unassessableZones": []
+      },
+      "geojson": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [108.2, 16.05],
+                  [108.21000000000001, 16.05],
+                  [108.21000000000001, 16.060000000000002],
+                  [108.2, 16.060000000000002],
+                  [108.2, 16.05]
+                ]
+              ]
+            },
+            "properties": {
+              "zoneId": "admin:TEST-FLOOD-01",
+              "group": "current_flood",
+              "name": "Vùng ngập TEST",
+              "sourceKind": "admin_area",
+              "sourceId": "TEST-FLOOD-01",
+              "source": "TEST ONLY - nguồn minh họa",
+              "recordedAt": "2026-11-22T01:00:00.000Z",
+              "dataUpdatedAt": null,
+              "datasetVersion": null,
+              "geometryStatus": "valid"
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [108.20407163533599, 16.05],
+                  [108.214071635336, 16.05],
+                  [108.214071635336, 16.060000000000002],
+                  [108.20407163533599, 16.060000000000002],
+                  [108.20407163533599, 16.05]
+                ]
+              ]
+            },
+            "properties": {
+              "zoneId": "admin:TEST-LOW-01",
+              "group": "low_lying",
+              "name": "Vùng trũng Admin TEST",
+              "sourceKind": "admin_area",
+              "sourceId": "TEST-LOW-01",
+              "source": "TEST ONLY - nguồn minh họa",
+              "recordedAt": null,
+              "dataUpdatedAt": null,
+              "datasetVersion": null,
+              "geometryStatus": "valid"
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [108.20500745300399, 16.05],
+                  [108.21500745300399, 16.05],
+                  [108.21500745300399, 16.060000000000002],
+                  [108.20500745300399, 16.060000000000002],
+                  [108.20500745300399, 16.05]
+                ]
+              ]
+            },
+            "properties": {
+              "zoneId": "radar:TEST-STABLE-HASH-01",
+              "group": "low_lying",
+              "name": "Vùng trũng radar TEST",
+              "sourceKind": "radar",
+              "sourceId": "TEST-STABLE-HASH-01",
+              "source": "TEST ONLY - nguồn minh họa",
+              "recordedAt": null,
+              "dataUpdatedAt": null,
+              "datasetVersion": "TEST-DATASET-V1",
+              "geometryStatus": "valid"
+            }
+          },
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [108.205943270672, 16.05],
+                  [108.215943270672, 16.05],
+                  [108.215943270672, 16.060000000000002],
+                  [108.205943270672, 16.060000000000002],
+                  [108.205943270672, 16.05]
+                ]
+              ]
+            },
+            "properties": {
+              "zoneId": "history:HIST-TEST-01",
+              "group": "historical_flood",
+              "name": "Vùng ngập lịch sử TEST",
+              "sourceKind": "historical_area",
+              "sourceId": "HIST-TEST-01",
+              "source": "TEST ONLY - nguồn minh họa",
+              "recordedAt": null,
+              "dataUpdatedAt": null,
+              "datasetVersion": null,
+              "geometryStatus": "valid"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
