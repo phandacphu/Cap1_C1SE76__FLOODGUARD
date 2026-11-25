@@ -8,7 +8,7 @@ import { useSosResource } from "./useSosResource";
 import { SosFrame } from "./SosFrame";
 import { SosConditionBadge, SosErrorPanel, SosModeNotice } from "./SosFeedback";
 import { SosSummaryCards } from "./SosSummaryCards";
-import { formatSosSituations, formatSosTime, formatSosWaterLevel } from "./sosFormat";
+import { formatSosSituations, formatSosSubmissionSource, formatSosTime, formatSosWaterLevel } from "./sosFormat";
 import { newestSosFirst } from "./sosUiProgress";
 
 const INPUT = "mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text [color-scheme:dark] disabled:cursor-not-allowed disabled:opacity-50";
@@ -115,11 +115,12 @@ export function SosMonitoringScreen() {
         {data && visible.length > 0 && <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="bg-bg/60 text-xs text-muted"><tr>
-              {["Mã SOS", "Mã Resident", "Thời gian gửi", "Tình huống", "Số người", "Mức nước", "Tình trạng", "Backend nhận GPS", "Thao tác"]
+              {["Mã SOS", "Nguồn", "Mã Resident", "Thời gian gửi", "Tình huống", "Số người", "Mức nước", "Tình trạng", "Backend nhận GPS", "Thao tác"]
                 .map(label => <th key={label} scope="col" className="px-4 py-3 font-medium">{label}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-border">{visible.map(item => <tr key={item.id} className="align-top even:bg-bg/25">
               <td className="max-w-48 break-words px-4 py-4 font-mono text-xs text-water">{item.id}</td>
+              <td className="px-4 py-4 text-xs">{formatSosSubmissionSource(item.submissionSource)}</td>
               <td className="max-w-44 break-words px-4 py-4 font-mono text-xs">{item.residentId ?? "Chưa được cung cấp"}</td>
               <td className="min-w-40 px-4 py-4 text-xs text-muted">{formatSosTime(item.createdAt)}</td>
               <td className="max-w-56 px-4 py-4 text-xs">{formatSosSituations(item.situations)}</td>

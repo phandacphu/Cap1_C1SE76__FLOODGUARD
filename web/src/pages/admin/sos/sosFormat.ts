@@ -1,3 +1,9 @@
+import type { SosSubmissionSource } from "./sosTypes";
+
+export function formatSosSubmissionSource(source: SosSubmissionSource | undefined): string {
+  return source === "sms" ? "SMS" : source === "api" ? "Ứng dụng" : "Chưa rõ nguồn";
+}
+
 export function formatSosTime(value: string | Date | null | undefined): string {
   if (!value || !Number.isFinite(new Date(value).getTime())) return "Chưa được cung cấp";
   return new Intl.DateTimeFormat("vi-VN", {
