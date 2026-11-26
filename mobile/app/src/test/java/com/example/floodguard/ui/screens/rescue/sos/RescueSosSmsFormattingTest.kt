@@ -7,8 +7,9 @@ class RescueSosSmsFormattingTest {
     @Test fun sourceLabelsDoNotGuessSms() {
         assertEquals("SMS", sosSourceLabel("sms"))
         assertEquals("Ứng dụng", sosSourceLabel("api"))
-        assertEquals("Không rõ", sosSourceLabel(null))
-        assertEquals("Không rõ", sosSourceLabel(""))
+        assertEquals("Ứng dụng", sosSourceLabel(null))
+        assertEquals("Ứng dụng", sosSourceLabel(""))
+        assertEquals("Ứng dụng", sosSourceLabel("   "))
         assertEquals("Không rõ", sosSourceLabel("unknown"))
     }
 
