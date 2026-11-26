@@ -22,6 +22,12 @@ object AppRoutes {
 
     const val RESCUE_SAFE_LOCATION_DETAIL = "rescue_safe_location_detail"
 
+    const val RESCUE_FLOOD_WARNINGS = "rescue_flood_warnings"
+
+    const val RESCUE_FLOOD_WARNING_DETAIL = "rescue_flood_warning_detail"
+
+    const val RESCUE_FLOOD_WARNING_MAP = "rescue_flood_warning_map"
+
     const val ACCESS_DENIED = "access_denied"
 
     const val MAP = "map"

@@ -69,7 +69,7 @@ internal class RescueHistoryViewModel : ViewModel() {
 
     fun refresh() {
         listOf("points", "areas", "buffers", "radar").forEach { layer ->
-            jobs[layer]?.cancel()
+            if (jobs[layer]?.isActive == true) return@forEach
             // Keep the previous successful layer visible while refreshing.
             mutableLayers.update { it + (layer to it.getValue(layer).copy(loading = true, error = false)) }
             jobs[layer] = viewModelScope.launch {

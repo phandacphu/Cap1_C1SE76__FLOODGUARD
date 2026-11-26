@@ -1,6 +1,12 @@
 package com.example.floodguard.ui.screens.rescue
 
 import com.example.floodguard.data.model.FloodAlertDto
+import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
+import com.example.floodguard.data.repository.RescueFloodWarningV2
+import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
+import com.example.floodguard.data.repository.RescueWarningV2Result
+import java.time.Instant
+import okhttp3.OkHttpClient
 import com.example.floodguard.data.model.FloodAreaDto
 import com.example.floodguard.data.model.FloodGeometryDto
 import com.example.floodguard.data.model.FloodPointDto
@@ -38,10 +44,22 @@ class RescueMapDataViewModelTest {
             FloodPointDto(16.0, 108.0), FloodPointDto(16.01, 108.0), FloodPointDto(16.0, 108.01)
         )), severity = "high", status = "active", source = "unit-test"
     )
-    private val warning = FloodAlertDto(
+    private val legacyWarning = FloodAlertDto(
         id = "warning-1", title = "Cảnh báo thử nghiệm", content = "Nội dung thử nghiệm",
         severity = "high", status = "active", areaId = "area-1",
         startAt = "2026-11-04T00:00:00.000Z", endAt = "2026-11-05T00:00:00.000Z"
+    )
+    private val warning = RescueFloodWarningV2(
+        id = "warning-1",
+        title = "Cảnh báo thử nghiệm",
+        content = "Nội dung thử nghiệm",
+        status = "active",
+        scope = "all_published_zones",
+        startAt = Instant.parse("2026-11-04T00:00:00.000Z"),
+        endAt = null,
+        createdAt = Instant.parse("2026-11-04T00:00:00.000Z"),
+        updatedAt = Instant.parse("2026-11-04T00:00:00.000Z"),
+        revision = 1
     )
 
     @Before
@@ -123,7 +141,7 @@ class RescueMapDataViewModelTest {
     @Test
     fun repeatedRefreshDoesNotDuplicateInFlightRequests() = runTest(dispatcher) {
         val areas = CompletableDeferred<Result<List<FloodAreaDto>>>()
-        val warnings = CompletableDeferred<Result<List<FloodAlertDto>>>()
+        val warnings = CompletableDeferred<Result<List<RescueFloodWarningV2>>>()
         var areaCalls = 0
         var warningCalls = 0
         val vm = RescueMapDataViewModel(
@@ -185,7 +203,7 @@ class RescueMapDataViewModelTest {
             val warnings = FloodAlertRepository(retrofit.create(FloodAlertApi::class.java))
                 .getActiveFloodAlerts().getOrThrow()
             assertEquals(listOf(area), areas)
-            assertEquals(listOf(warning), warnings)
+            assertEquals(listOf(legacyWarning), warnings)
             assertEquals("/api/flood-areas", server.takeRequest().path)
             assertEquals("/api/flood-alerts/active", server.takeRequest().path)
         } finally {
@@ -193,6 +211,245 @@ class RescueMapDataViewModelTest {
         }
     }
 
+    @Test
+    fun authenticatedV2ActiveListAndEmptyListUseCorrectEndpoint() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(
+                MockResponse().setHeader("Content-Type", "application/json").setBody("""
+                    {"success":true,"message":"OK","data":{"schemaVersion":2,
+                     "serverTime":"2026-11-22T04:00:00.000Z","floodAlerts":[{
+                      "id":"warning-1","schemaVersion":2,"title":"Cảnh báo thử nghiệm",
+                      "content":"Nội dung thử nghiệm","status":"active",
+                      "scope":"all_published_zones","startAt":"2026-11-22T01:00:00.000Z",
+                      "endAt":null,"createdAt":"2026-11-22T01:00:00.000Z",
+                      "updatedAt":"2026-11-22T01:00:00.000Z","revision":1}]}}
+                """.trimIndent())
+            )
+            server.enqueue(
+                MockResponse().setHeader("Content-Type", "application/json").setBody("""
+                    {"success":true,"message":"OK","data":{"schemaVersion":2,
+                     "serverTime":"2026-11-22T04:00:00.000Z","floodAlerts":[]}}
+                """.trimIndent())
+            )
+            val client = OkHttpClient.Builder().addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("Authorization", "Bearer mock-rescue-token").build()
+                )
+            }.build()
+            val api = Retrofit.Builder().baseUrl(server.url("/"))
+                .client(client).addConverterFactory(GsonConverterFactory.create())
+                .build().create(RescueFloodWarningV2Api::class.java)
+            val repository = RescueFloodWarningV2Repository(api)
+            val active = when (val result = repository.getActiveWarnings()) {
+                is RescueWarningV2Result.Success -> result.data
+                is RescueWarningV2Result.Failure -> error(result.message)
+            }
+            assertEquals(1, active.size)
+            assertEquals("warning-1", active.single().id)
+            val empty = when (val result = repository.getActiveWarnings()) {
+                is RescueWarningV2Result.Success -> result.data
+                is RescueWarningV2Result.Failure -> error(result.message)
+            }
+            assertTrue(empty.isEmpty())
+            repeat(2) {
+                val request = server.takeRequest()
+                assertEquals("/api/flood-alerts/active", request.path)
+                assertEquals("Bearer mock-rescue-token", request.getHeader("Authorization"))
+            }
+        } finally {
+            server.shutdown()
+        }
+    }
+    @Test
+    fun failedRefreshKeepsWarningsButShowsStaleNotice() {
+        val presentation = presentRescueMapWarnings(
+            state = RescueWarningV2ActiveMapState(
+                warnings = listOf(warning),
+                hasLoaded = true,
+                isStale = true,
+                errorMessage = "HTTP 500"
+            ),
+            accessBlocked = false
+        )
+
+        assertEquals(listOf(warning), data(presentation.loadState))
+        assertTrue(presentation.staleNotice?.contains("lần tải trước") == true)
+        assertTrue(presentation.staleNotice?.contains("HTTP 500") == true)
+    }
+
+    @Test
+    fun refreshingExistingWarningsMarksThemAsPreviousData() {
+        val presentation = presentRescueMapWarnings(
+            state = RescueWarningV2ActiveMapState(
+                warnings = listOf(warning),
+                hasLoaded = true,
+                isLoading = true,
+                isStale = true
+            ),
+            accessBlocked = false
+        )
+
+        assertEquals(listOf(warning), data(presentation.loadState))
+        assertTrue(presentation.staleNotice?.contains("Đang làm mới") == true)
+    }
+
+    @Test
+    fun successfulRefreshClearsStalePresentation() {
+        val presentation = presentRescueMapWarnings(
+            state = RescueWarningV2ActiveMapState(
+                warnings = listOf(warning),
+                hasLoaded = true
+            ),
+            accessBlocked = false
+        )
+
+        assertEquals(listOf(warning), data(presentation.loadState))
+        assertTrue(presentation.staleNotice == null)
+    }
+
+    @Test
+    fun accessFailureDoesNotExposePreviousWarnings() {
+        val presentation = presentRescueMapWarnings(
+            state = RescueWarningV2ActiveMapState(
+                warnings = listOf(warning),
+                hasLoaded = true,
+                isStale = true
+            ),
+            accessBlocked = true
+        )
+
+        assertTrue(presentation.loadState is RescueMapLoadState.Error)
+        assertTrue(presentation.staleNotice == null)
+    }
+    @Test
+    fun manualRefreshUpdatesAllSourcesWhenAuthorized() {
+        var areaCalls = 0
+        var historyCalls = 0
+        var warningCalls = 0
+
+        refreshRescueMapSources(
+            accessBlocked = false,
+            refreshAreas = { areaCalls++ },
+            refreshHistory = { historyCalls++ },
+            refreshWarningsIfIdle = { warningCalls++ }
+        )
+
+        assertEquals(1, areaCalls)
+        assertEquals(1, historyCalls)
+        assertEquals(1, warningCalls)
+    }
+
+    @Test
+    fun warningAccessFailureDoesNotBlockPublicMapRefresh() {
+        var areaCalls = 0
+        var historyCalls = 0
+        var warningCalls = 0
+
+        refreshRescueMapSources(
+            accessBlocked = true,
+            refreshAreas = { areaCalls++ },
+            refreshHistory = { historyCalls++ },
+            refreshWarningsIfIdle = { warningCalls++ }
+        )
+
+        assertEquals(1, areaCalls)
+        assertEquals(1, historyCalls)
+        assertEquals(0, warningCalls)
+    }
+
+    @Test
+    fun publicRefreshIsIndependentOfWarningRefresh() {
+        var areaCalls = 0
+        var historyCalls = 0
+        var warningCalls = 0
+
+        refreshRescueMapSources(
+            accessBlocked = false,
+            refreshAreas = { areaCalls++ },
+            refreshHistory = { historyCalls++ },
+            refreshWarningsIfIdle = {
+                // Simulates an active request that is coalesced.
+                warningCalls++
+            }
+        )
+
+        assertEquals(1, areaCalls)
+        assertEquals(1, historyCalls)
+        assertEquals(1, warningCalls)
+    }
+    @Test
+    fun embeddedGpsShowsLastKnownAsStale() {
+        val last = RescueMapLocationFix(
+            latitude = 16.0,
+            longitude = 108.0,
+            accuracyMeters = 12f,
+            isApproximate = false
+        )
+
+        val result = presentRescueEmbeddedGps(
+            RescueMapLocationState(lastKnownFix = last),
+            hasMapConfiguration = true
+        )
+
+        assertTrue(result.status.contains("chưa cập nhật"))
+        assertTrue(result.canLocate)
+        assertFalse(result.showChangePermission)
+    }
+
+    @Test
+    fun embeddedGpsOffersApproximatePermissionSettings() {
+        val fix = RescueMapLocationFix(
+            latitude = 16.0,
+            longitude = 108.0,
+            accuracyMeters = 35f,
+            isApproximate = true
+        )
+
+        val result = presentRescueEmbeddedGps(
+            RescueMapLocationState(fix = fix),
+            hasMapConfiguration = true
+        )
+
+        assertTrue(result.status.contains("gần đúng"))
+        assertTrue(result.showChangePermission)
+        assertTrue(result.canLocate)
+    }
+
+    @Test
+    fun embeddedGpsKeepsPermissionBlockedRecoveryAction() {
+        val failure = RescueGpsFailure.PERMISSION_BLOCKED
+
+        val result = presentRescueEmbeddedGps(
+            RescueMapLocationState(
+                failure = failure,
+                message = failure.message
+            ),
+            hasMapConfiguration = true
+        )
+
+        assertEquals("Mở cài đặt", result.actionLabel)
+        assertTrue(result.canLocate)
+        assertFalse(result.showChangePermission)
+    }
+
+    @Test
+    fun embeddedGpsDisablesConcurrentLocationRequests() {
+        val loading = presentRescueEmbeddedGps(
+            RescueMapLocationState(isLoading = true),
+            hasMapConfiguration = true
+        )
+
+        val noMapKey = presentRescueEmbeddedGps(
+            RescueMapLocationState(),
+            hasMapConfiguration = false
+        )
+
+        assertFalse(loading.canLocate)
+        assertFalse(noMapKey.canLocate)
+    }
     private fun <T> data(state: RescueMapLoadState<T>): List<T> =
         (state as RescueMapLoadState.Data<T>).items
 }
