@@ -105,7 +105,8 @@ fun HomeScreen(
     onSosClick: () -> Unit = {},
     onMapClick: () -> Unit = {},
     onSafeLocationClick: () -> Unit = {},
-    onBottomNavigate: (String) -> Unit = {}
+    onBottomNavigate: (String) -> Unit = {},
+    warningContent: (@Composable () -> Unit)? = null
 ) {
     val state by viewModel.uiState
 
@@ -145,90 +146,8 @@ fun HomeScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                SectionTitle(
-                    title = "CẢNH BÁO TRÊN HỆ THỐNG",
-                    subtitle =
-                        "Thông tin chưa được đối chiếu với vị trí của bạn"
-                )
 
-                when {
-                    state.isLoadingWarnings -> {
-                        Text(
-                            text = "Đang tải cảnh báo...",
-                            color = GrayText
-                        )
-                    }
-
-                    state.warningError != null -> {
-                        Text(
-                            text = state.warningError.orEmpty(),
-                            color = RedColor
-                        )
-                    }
-
-                    state.hasActiveWarning -> {
-                        FloodWarningCard(
-                            state = state,
-                            onClick = onWarningClick
-                        )
-                    }
-
-                    else -> {
-                        Column(
-                            verticalArrangement =
-                                Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = state.warningTitle,
-                                color = WhiteText,
-                                fontWeight = FontWeight.SemiBold
-                            )
-
-                            Text(
-                                text = state.warningDescription,
-                                color = GrayText,
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp
-                            )
-
-                            if (state.warningTime.isNotBlank()) {
-                                Text(
-                                    text = state.warningTime,
-                                    color = GrayText,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = onWarningClick,
-                        colors = homeActionColors,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Danh sách cảnh báo")
-                    }
-
-                    OutlinedButton(
-                        onClick = viewModel::loadWarnings,
-                        enabled = !state.isLoadingWarnings,
-                        colors = homeActionColors,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            when {
-                                state.isLoadingWarnings -> "Đang tải..."
-                                state.warningError != null -> "Thử lại"
-                                else -> "Tải lại"
-                            }
-                        )
-                    }
-                }
+                warningContent?.invoke()
 
                 SectionTitle(
                     title = "BẢN ĐỒ & VỊ TRÍ",

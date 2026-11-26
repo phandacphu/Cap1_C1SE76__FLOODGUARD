@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import com.example.floodguard.core.network.ApiClient
+import com.example.floodguard.core.notifications.NotificationDeviceRuntime
 import com.example.floodguard.data.local.SessionManager
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.ui.navigation.AppNavGraph
@@ -31,7 +32,9 @@ fun FloodGuardApp() {
     val authRepository = remember(sessionManager) {
         AuthRepository(
             authApi = ApiClient.authApi,
-            sessionManager = sessionManager
+            sessionManager = sessionManager,
+            notificationDeviceRuntime =
+                NotificationDeviceRuntime.get(context)
         )
     }
 

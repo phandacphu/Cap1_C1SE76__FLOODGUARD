@@ -7,6 +7,8 @@ import com.example.floodguard.data.repository.FloodAreaRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodHistoryRepository
 import com.example.floodguard.data.repository.SafeLocationRepository
+import com.example.floodguard.data.repository.FloodWarningV2ZonesRepository
+import com.example.floodguard.data.repository.FloodWarningV2Repository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineDispatcher
 import java.io.IOException
 import java.net.SocketTimeoutException
+import retrofit2.HttpException
 
 
 class FloodMapViewModel(
@@ -25,7 +28,9 @@ class FloodMapViewModel(
     private val floodAlertRepository: FloodAlertRepository,
     private val safeLocationRepository: SafeLocationRepository,
     private val floodHistoryRepository: FloodHistoryRepository,
-    private val parsingDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val parsingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val warningZonesRepository: FloodWarningV2ZonesRepository? = null,
+    private val floodWarningV2Repository: FloodWarningV2Repository? = null
 ) : ViewModel() {
 
 
@@ -113,6 +118,11 @@ class FloodMapViewModel(
     }
 
     fun loadFloodAlerts() {
+        if (floodWarningV2Repository != null) {
+            loadFloodWarningV2Alerts()
+            return
+        }
+
         if (_uiState.value.isLoadingFloodAlerts) return
 
         _uiState.update {
@@ -151,6 +161,74 @@ class FloodMapViewModel(
                             loadedAt = state.floodAlertsLoadedAt,
                             error = error
                         )
+                    )
+                }
+            }
+        )
+    }
+
+    private fun loadFloodWarningV2Alerts() {
+        val repository = floodWarningV2Repository ?: return
+        if (_uiState.value.isLoadingFloodAlerts) return
+
+        _uiState.update { state ->
+            state.copy(
+                isLoadingFloodAlerts = true,
+                floodAlertsError = null,
+
+                // Không ghép bản tin V2 vào areaId/severity của V1.
+                floodAlerts = emptyList(),
+                selectedFloodAlertId = null,
+                floodWarningV2Alerts =
+                    state.floodWarningV2Alerts ?: emptyList()
+            )
+        }
+
+        launchMapRequest(
+            request = {
+                repository.getActiveAlerts().getOrThrow()
+            },
+            onSuccess = { alerts ->
+                _uiState.update { state ->
+                    state.copy(
+                        floodWarningV2Alerts = alerts,
+                        floodAlerts = emptyList(),
+                        selectedFloodAlertId = null,
+                        floodAlertsLoadedAt = System.currentTimeMillis(),
+                        isLoadingFloodAlerts = false,
+                        floodAlertsError = null
+                    )
+                }
+            },
+            onFailure = { error ->
+                val accessDenied =
+                    error is HttpException &&
+                            error.code() in setOf(401, 403)
+
+                _uiState.update { state ->
+                    val loadedAt =
+                        if (accessDenied) null
+                        else state.floodAlertsLoadedAt
+
+                    state.copy(
+                        floodWarningV2Alerts =
+                            if (accessDenied) emptyList()
+                            else state.floodWarningV2Alerts,
+
+                        floodAlerts = emptyList(),
+                        selectedFloodAlertId = null,
+                        floodAlertsLoadedAt = loadedAt,
+                        isLoadingFloodAlerts = false,
+                        floodAlertsError =
+                            if (accessDenied) {
+                                "Phiên đăng nhập hết hạn hoặc không có quyền đọc bản tin."
+                            } else {
+                                mapLoadError(
+                                    sourceName = "bản tin cảnh báo",
+                                    loadedAt = loadedAt,
+                                    error = error
+                                )
+                            }
                     )
                 }
             }
@@ -587,7 +665,65 @@ class FloodMapViewModel(
             )
         }
     }
+
+    fun loadWarningZones() {
+        val repository = warningZonesRepository ?: return
+        if (_uiState.value.isLoadingWarningZones) return
+
+        _uiState.update {
+            it.copy(
+                isLoadingWarningZones = true,
+                warningZonesError = null
+            )
+        }
+
+        viewModelScope.launch {
+            repository.getZones().fold(
+                onSuccess = { collection ->
+                    _uiState.update {
+                        it.copy(
+                            warningZones = collection,
+                            isLoadingWarningZones = false,
+                            warningZonesError = null
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    val authorizationFailed =
+                        error is HttpException &&
+                                error.code() in setOf(401, 403)
+
+                    _uiState.update { state ->
+                        val message = when {
+                            authorizationFailed ->
+                                "Không thể đọc bộ vùng bằng phiên hiện tại. " +
+                                        "Vui lòng kiểm tra đăng nhập và quyền tài khoản."
+
+                            state.warningZones != null ->
+                                "Không thể cập nhật bộ vùng. " +
+                                        "Đang hiển thị dữ liệu từ lần tải trước."
+
+                            else ->
+                                "Không thể tải bộ vùng cảnh báo. " +
+                                        "Vui lòng thử lại."
+                        }
+
+                        state.copy(
+                            warningZones =
+                                if (authorizationFailed) null
+                                else state.warningZones,
+                            isLoadingWarningZones = false,
+                            warningZonesError = message
+                        )
+                    }
+                }
+            )
+        }
+    }
     fun refreshMapData() {
+        if (warningZonesRepository != null) {
+            loadWarningZones()
+        }
         val state = _uiState.value
 
         if (
