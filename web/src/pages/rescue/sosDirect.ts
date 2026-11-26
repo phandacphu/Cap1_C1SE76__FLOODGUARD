@@ -24,3 +24,8 @@ export function dateBoundary(value: string, end: boolean): string | undefined {
   return value ? new Date(value + (end ? 'T23:59:59.999+07:00' : 'T00:00:00.000+07:00')).toISOString() : undefined;
 }
 export const sosCode = (id: string) => 'SOS-' + id.slice(0, 8).toUpperCase();
+
+/** Never infer the intake channel from phone, resident or location fields. */
+export function sourceLabel(source: unknown): string {
+  return source === 'sms' ? 'Qua SMS' : source === 'api' ? 'Qua ứng dụng' : 'Không rõ nguồn';
+}

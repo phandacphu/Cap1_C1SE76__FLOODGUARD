@@ -9,6 +9,9 @@ export interface SosLocation {
 export interface DirectSosRequest {
   id: string;
   residentId: string | null;
+  source?: 'sms' | 'api' | null;
+  smsSenderPhone?: string | null;
+  smsReceivedAt?: string | null;
   status: string | null;
   state: SosState | null;
   situations: string[] | null;
