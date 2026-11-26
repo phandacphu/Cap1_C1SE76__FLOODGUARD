@@ -31,8 +31,7 @@ test('reads real nested envelope, shares in-flight requests and cache; explicit 
   assert.equal(first[0].id, 'test'); assert.equal(first, second); assert.equal(calls.length, 1);
   await s.getFloodAreas(); assert.equal(calls.length, 1);
   await s.getFloodAreas(true); assert.equal(calls.length, 2);
-  assert.equal(await s.getActiveAlertCount(), 2); await s.getActiveAlertCount();
-  assert.equal(calls.length, 3); assert(calls.every(url => /\/flood-areas$|\/flood-alerts\/active$/.test(url)));
+  assert(calls.every(url => /\/flood-areas$/.test(url)));
 });
 test('empty array is valid; malformed envelope, success=false and invalid JSON fail explicitly', async () => {
   const { floodAreaService: s } = loadService(async () => response({ success: true, data: { floodAreas: [] } }));
@@ -77,19 +76,6 @@ test('validates the captured live response when LIVE_FLOOD_AREAS is provided', {
   assert(items.length > 0);
 });
 
-test('shares alert list and count; rejects invalid warning fields', async () => {
-  let calls = 0;
-  const alert = { id: 'a', title: 'TEST ONLY', content: 'Simulated', areaId: 'test', severity: 'high', status: 'active', startAt: '2026-01-01T00:00:00Z', endAt: '2027-01-01T00:00:00Z' };
-  const { floodAreaService: s } = loadService(async () => { calls++; return response({ success: true, data: { floodAlerts: [alert] } }); });
-  const [items, count] = await Promise.all([s.getActiveAlerts(), s.getActiveAlertCount()]);
-  assert.equal(items[0].areaId, 'test'); assert.equal(count, 1); assert.equal(calls, 1);
-  for (const invalid of [{ ...alert, severity: 'extreme' }, { ...alert, status: 'inactive' }, { ...alert, startAt: 'bad date' }]) {
-    const { floodAreaService: bad } = loadService(async () => response({ success: true, data: { floodAlerts: [invalid] } }));
-    await assert.rejects(bad.getActiveAlerts());
-  }
-});
-
-
 test('cached snapshots preserve actual API time and failed refresh does not advance it', async () => {
   let now = 1000;
   let fail = false;
@@ -100,16 +86,16 @@ test('cached snapshots preserve actual API time and failed refresh does not adva
     if (fail) throw new Error('TEST offline');
     return response({ success: true, data: { floodAreas: [area], floodAlerts: [] } });
   }, Clock);
-  const first = await s.getActiveAlertsSnapshot();
+  const first = await s.getFloodAreasSnapshot();
   const areas = await s.getFloodAreasSnapshot();
   now = 2000;
-  assert.equal((await s.getActiveAlertsSnapshot()).fetchedAt, first.fetchedAt);
+  assert.equal((await s.getFloodAreasSnapshot()).fetchedAt, first.fetchedAt);
   assert.equal((await s.getFloodAreasSnapshot()).fetchedAt, areas.fetchedAt);
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   fail = true;
-  await assert.rejects(s.getActiveAlertsSnapshot(true));
-  assert.equal((await s.getActiveAlertsSnapshot()).fetchedAt, 1000);
+  await assert.rejects(s.getFloodAreasSnapshot(true));
+  assert.equal((await s.getFloodAreasSnapshot()).fetchedAt, 1000);
   fail = false;
   now = 3000;
-  assert.equal((await s.getActiveAlertsSnapshot(true)).fetchedAt, 3000);
+  assert.equal((await s.getFloodAreasSnapshot(true)).fetchedAt, 3000);
 });

@@ -106,4 +106,93 @@ class RescueSosRepositoryTest {
             assertEquals(409, conflict.httpStatus); assertEquals("STATUS_TRANSITION_CONFLICT", conflict.code)
         } finally { server.shutdown() }
     }
+
+    @Test fun smsFieldsAndDifferentLocationsArePreserved() = runBlocking {
+        val wire = SosWire(
+            id = "A",
+            residentId = "RESIDENT",
+            state = "active",
+            status = "submitted",
+            source = "sms",
+            clientRequestId = "a3fc3569-12e5-42c6-85cd-22060fd18e10",
+            smsSenderPhone = "+84901234567",
+            smsReceivedAt = "2026-11-24T14:00:00.000Z",
+            initialLocation = SosPoint(16.0544, 108.2022),
+            location = SosPoint(16.055, 108.203),
+            locationCapturedAt = "2026-11-24T14:01:00.000Z",
+            locationReceivedAt = "2026-11-24T14:01:02.000Z"
+        )
+        val decoded = Gson().fromJson(Gson().toJson(wire), SosWire::class.java)
+        val api = FakeApi().apply {
+            row = decoded
+            rows = listOf(decoded)
+        }
+        val repo = RescueSosRepository(api)
+        val listItem = repo.list(SosFilter.ACTIVE).single()
+        val detail = repo.detail("A")
+
+        assertEquals(listItem, detail)
+        assertEquals("sms", detail.source)
+        assertEquals(wire.clientRequestId, detail.clientRequestId)
+        assertEquals(wire.smsSenderPhone, detail.smsSenderPhone)
+        assertEquals(wire.smsReceivedAt, detail.smsReceivedAt)
+        assertEquals(wire.initialLocation, detail.initialLocation)
+        assertEquals(wire.location, detail.location)
+        assertNotEquals(detail.initialLocation, detail.location)
+        assertEquals(wire.locationCapturedAt, detail.locationCapturedAt)
+        assertEquals(wire.locationReceivedAt, detail.locationReceivedAt)
+    }
+
+    @Test fun missingSmsFieldsDoNotInventPhoneOrGpsTime() = runBlocking {
+        val api = FakeApi().apply {
+            row = SosWire(
+                id = "A", state = "active", status = "submitted",
+                source = "sms",
+                smsReceivedAt = "2026-11-24T14:00:00.000Z"
+            )
+            rows = listOf(row)
+        }
+        val detail = RescueSosRepository(api).detail("A")
+        assertEquals("sms", detail.source)
+        assertNull(detail.smsSenderPhone)
+        assertNull(detail.clientRequestId)
+        assertNull(detail.locationCapturedAt)
+        assertNull(detail.location)
+        assertNull(detail.initialLocation)
+    }
+
+    @Test fun smsApiAndLegacySourcesRemainDistinct() = runBlocking {
+        val api = FakeApi().apply {
+            rows = listOf(
+                point("SMS").copy(source = "sms"),
+                point("API").copy(source = "api"),
+                point("LEGACY"),
+                point("UNKNOWN").copy(source = "other")
+            )
+        }
+        val rows = RescueSosRepository(api).list(SosFilter.ACTIVE)
+        assertEquals(listOf("sms", "api", null, "other"), rows.map { it.source })
+        assertEquals(4, rows.map { it.id }.distinct().size)
+    }
+
+    @Test fun rescuedSmsKeepsOriginalCompletionAndContact() = runBlocking {
+        val wire = point("A", "rescued", "assisted").copy(
+            source = "sms",
+            smsSenderPhone = "+84901234567",
+            smsReceivedAt = "2026-11-08T23:50:00.000Z",
+            initialLocation = SosPoint(16.0, 108.0),
+            location = SosPoint(16.1, 108.1)
+        )
+        val api = FakeApi().apply {
+            row = wire
+            rows = listOf(wire)
+        }
+        val repo = RescueSosRepository(api)
+        val detail = repo.detail("A")
+        assertEquals("sms", detail.source)
+        assertEquals("RESCUE_B", detail.completedBy)
+        assertEquals(wire.completedAt, detail.completedAt)
+        assertEquals(wire.smsSenderPhone, detail.smsSenderPhone)
+        assertEquals(detail, repo.list(SosFilter.RESCUED).single())
+    }
 }

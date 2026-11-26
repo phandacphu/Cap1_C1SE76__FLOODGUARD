@@ -1,7 +1,4 @@
-import { useEffect, useState } from 'react';
-import { apiGet } from '../../api/http';
-import type { FloodAlert } from '../../types/admin';
-import { SEVERITY_WEIGHT } from '../admin/adminStats';
+import { useWarnings } from './warnings/WarningContext';
 import { FloodAlertBanner } from './components/FloodAlertBanner';
 import { Link } from 'react-router-dom';
 import { RescueLayout } from '../../components/layout/RescueLayout';
@@ -13,25 +10,14 @@ import { useRescueRequests } from './useRescue';
 import { sosCode, situationsLabel, timeLabel } from './sosDirect';
 
 export function RescueDashboard() {
-  const [alerts, setAlerts] = useState<FloodAlert[] | null>(null);
-  const [alertError, setAlertError] = useState(false);
-  useEffect(() => {
-    let ignore = false;
-    void apiGet<{ floodAlerts: FloodAlert[] }>('/flood-alerts/active').then(data => {
-      if (!Array.isArray(data.floodAlerts)) throw new Error('Dữ liệu cảnh báo sai cấu trúc.');
-      if (!ignore) setAlerts(data.floodAlerts);
-    }).catch(() => { if (!ignore) setAlertError(true); });
-    return () => { ignore = true; };
-  }, []);
-  const orderedAlerts = [...(alerts ?? [])].sort((a, b) => SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity]);
+  const { list: warnings } = useWarnings();
   const result = useRescueRequests({ state: 'active', sort: 'newest' });
   return (
-    <RescueLayout loading={result.loading} onRefresh={result.refresh} updatedAt={result.updatedAt}
+    <RescueLayout loading={result.loading} onRefresh={() => { result.refresh(); warnings.refresh(); }} updatedAt={result.updatedAt}
       waitingCount={result.requests?.length}>
       <div className="mx-auto max-w-7xl space-y-5">
         <h1 className="text-2xl font-bold">Tổng quan cứu hộ</h1>
-        {alertError ? <p role="status" className="text-amber-300">Chưa tải được cảnh báo lũ.</p> :
-          <FloodAlertBanner alert={orderedAlerts[0] ?? null} otherCount={Math.max(orderedAlerts.length - 1, 0)} loading={alerts === null} />}
+        <FloodAlertBanner />
         <DirectSosFeedback {...result} stale={Boolean(result.requests)} retry={result.refresh} />
         <div className="grid gap-4 sm:grid-cols-2">
           <KpiCard label="Chờ cứu hộ" icon="sos" tone="sos"

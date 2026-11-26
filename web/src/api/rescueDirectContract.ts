@@ -25,6 +25,9 @@ export function parseDirectSos(value: unknown): DirectSosRequest {
   return {
     id: value.id as string,
     residentId: text(value.residentId),
+    source: value.source === 'sms' || value.source === 'api' ? value.source : null,
+    smsSenderPhone: text(value.smsSenderPhone),
+    smsReceivedAt: date(value.smsReceivedAt),
     status: text(value.status),
     state: ['active', 'rescued', 'legacy_other'].includes(String(value.state))
       ? value.state as DirectSosRequest['state'] : null,

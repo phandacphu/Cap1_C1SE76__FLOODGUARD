@@ -47,6 +47,8 @@ import com.example.floodguard.data.repository.FloodAreaRepository
 import com.example.floodguard.data.repository.FloodHistoryRepository
 import com.example.floodguard.data.repository.SafeLocationRepository
 import com.example.floodguard.data.repository.RescueRequestRepository
+import com.example.floodguard.data.repository.FloodWarningV2ZonesApi
+import com.example.floodguard.data.repository.FloodWarningV2ZonesRepository
 import com.example.floodguard.ui.screens.auth.login.LoginScreen
 import com.example.floodguard.ui.screens.auth.login.LoginViewModel
 import com.example.floodguard.ui.screens.auth.register.RegisterScreen
@@ -61,6 +63,10 @@ import com.example.floodguard.ui.screens.warning.WarningDetailRoute
 import com.example.floodguard.ui.screens.warning.WarningDetailViewModel
 import com.example.floodguard.ui.screens.warning.WarningListScreen
 import com.example.floodguard.ui.screens.warning.WarningViewModel
+import com.example.floodguard.ui.screens.warning.FloodWarningV2ListRoute
+import com.example.floodguard.ui.screens.warning.FloodWarningV2DetailRoute
+import com.example.floodguard.ui.screens.warning.FloodWarningV2OverviewRoute
+import com.example.floodguard.ui.screens.warning.FloodWarningNotificationOpenHost
 import kotlinx.coroutines.launch
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailScreen
 import com.example.floodguard.ui.screens.safe_location.SafeLocationDetailViewModel
@@ -89,6 +95,12 @@ import com.example.floodguard.ui.screens.rescue.RescueSafeLocationsScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationDetailScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationViewModel
 import com.example.floodguard.data.repository.RescueSafeLocationRepository
+import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
+import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
+import com.example.floodguard.data.repository.RescueFloodWarningV2ZonesRepository
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningV2ViewModel
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningsV2ListScreen
+import com.example.floodguard.ui.screens.rescue.RescueFloodWarningV2DetailScreen
 import com.example.floodguard.ui.screens.rescue.rememberRescueMapLocation
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -273,6 +285,48 @@ fun AppNavGraph(
         } else {
             null
         }
+    // Dedicated warning state, separate from Resident and SOS.
+    val rescueWarningViewModel: RescueFloodWarningV2ViewModel? =
+        if (
+            session.isLoggedIn &&
+            session.role == "rescue" &&
+            isRescueRoute(currentRoute)
+        ) {
+            val warningStore = remember(session.accountKey) {
+                ViewModelStore()
+            }
+
+            DisposableEffect(warningStore) {
+                onDispose {
+                    warningStore.clear()
+                }
+            }
+
+            val warningOwner = remember(warningStore) {
+                object : ViewModelStoreOwner {
+                    override val viewModelStore: ViewModelStore =
+                        warningStore
+                }
+            }
+
+            viewModel(
+                viewModelStoreOwner = warningOwner,
+                key = "rescue-flood-warning-v2:${session.accountKey}"
+            ) {
+                val api = ApiClient
+                    .createAuthenticatedRetrofit(sessionManager)
+                    .create(RescueFloodWarningV2Api::class.java)
+
+                RescueFloodWarningV2ViewModel(
+                    repository = RescueFloodWarningV2Repository(api),
+                    zonesRepository =
+                        RescueFloodWarningV2ZonesRepository(api)
+                )
+            }
+        } else {
+            null
+        }
+
     var rescueFilter by rememberSaveable(session.accountKey) { mutableStateOf(SosFilter.ACTIVE) }
     fun openRescueTab(route: String) {
         navController.navigate(route) {
@@ -293,11 +347,39 @@ fun AppNavGraph(
         )
     }
 
+    FloodWarningNotificationOpenHost(
+        sessionManager = sessionManager,
+        ready = session.isLoggedIn &&
+                session.role == "resident" &&
+                !isPublicRoute &&
+                backStackEntry != null,
+        onOpen = { alertId ->
+            navController.navigate(
+                "${AppRoutes.WARNING_DETAIL}/${android.net.Uri.encode(alertId)}"
+            ) {
+                launchSingleTop = true
+            }
+        }
+    )
+
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
         composable(route = AppRoutes.RESCUE_HOME) {
+            val warningState = rescueWarningViewModel
+                ?.overviewState
+                ?.collectAsStateWithLifecycle()
+                ?.value
+
+            val warningAccess = rescueWarningViewModel
+                ?.accessFailure
+                ?.collectAsStateWithLifecycle()
+                ?.value
+
+            LaunchedEffect(rescueWarningViewModel) {
+                rescueWarningViewModel?.onOverviewEntered()
+            }
             val sos = rescueSos?.state?.collectAsStateWithLifecycle()?.value ?: RescueSosState()
             rescueSos?.let { store ->
                 RescueSosRefresh(store)
@@ -319,6 +401,51 @@ fun AppNavGraph(
                 uiState = RescueOverviewUiState(
                     summaries = mapOf(RescueSummaryMetric.NEW_SOS to metric(sos.active),
                         RescueSummaryMetric.RESCUED_SOS to metric(sos.rescued)),
+                    warnings = when {
+                        warningAccess != null ->
+                            RescueOverviewSectionState.Failed(
+                                "Không thể truy cập cảnh báo. Kiểm tra phiên đăng nhập."
+                            )
+
+                        warningState == null ->
+                            RescueOverviewSectionState.NotReady
+
+                        warningState.isLoading && !warningState.hasLoaded ->
+                            RescueOverviewSectionState.Loading
+
+                        warningState.errorMessage != null ->
+                            RescueOverviewSectionState.Failed(
+                                if (warningState.hasLoaded) {
+                                    "Chưa thể cập nhật cảnh báo. Dữ liệu " +
+                                        "lần trước: ${warningState.warnings.size} bản tin. " +
+                                        warningState.errorMessage
+                                } else {
+                                    warningState.errorMessage
+                                }
+                            )
+
+                        !warningState.hasLoaded ->
+                            RescueOverviewSectionState.NotReady
+
+                        warningState.warnings.isEmpty() ->
+                            RescueOverviewSectionState.Empty(
+                                "Chưa có bản tin cảnh báo lũ."
+                            )
+
+                        else ->
+                            RescueOverviewSectionState.Ready(
+                                "${warningState.activeCount} đang bật / " +
+                                    "${warningState.warnings.size} bản tin. " +
+                                    "Gần nhất: " +
+                                    (warningState.latestWarning?.title
+                                        ?: "Không có") +
+                                    if (warningState.isStale) {
+                                        " · Chưa thể cập nhật dữ liệu mới."
+                                    } else {
+                                        ""
+                                    }
+                            )
+                    },
                     prioritySos = when {
                         sos.accessError != null -> RescueOverviewSectionState.Failed(sos.accessError!!)
                         sos.active.error != null -> RescueOverviewSectionState.Failed(sos.active.error!!)
@@ -327,13 +454,16 @@ fun AppNavGraph(
                         else -> RescueOverviewSectionState.NotReady
                     }),
                 onRetry = { section ->
+                    if (section == RescueOverviewSection.WARNINGS) {
+                        rescueWarningViewModel?.refreshOverview()
+                    }
                     if (section == RescueOverviewSection.SUMMARY || section == RescueOverviewSection.PRIORITY_SOS) {
                         rescueSos?.refresh(SosFilter.ACTIVE)
                         rescueSos?.refresh(SosFilter.RESCUED)
                     }
                 },
                 availableDestinations = setOf(RescueOverviewDestination.MAP,
-                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED, RescueOverviewDestination.SAFE_LOCATIONS),
+                    RescueOverviewDestination.SOS_LIST, RescueOverviewDestination.SOS_NEW, RescueOverviewDestination.SOS_RESCUED, RescueOverviewDestination.SAFE_LOCATIONS, RescueOverviewDestination.WARNINGS),
                 onOpenDestination = { destination ->
                     when (destination) {
                         RescueOverviewDestination.MAP -> openRescueTab(AppRoutes.RESCUE_MAP)
@@ -341,6 +471,7 @@ fun AppNavGraph(
                         RescueOverviewDestination.SOS_RESCUED -> { rescueFilter = SosFilter.RESCUED; openRescueTab(AppRoutes.RESCUE_SOS) }
                         RescueOverviewDestination.SOS_LIST -> openRescueTab(AppRoutes.RESCUE_SOS)
                         RescueOverviewDestination.SAFE_LOCATIONS -> openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                        RescueOverviewDestination.WARNINGS -> openRescueTab(AppRoutes.RESCUE_FLOOD_WARNINGS)
                         else -> Unit
                     }
                 },
@@ -408,6 +539,9 @@ fun AppNavGraph(
             rescueLocation?.let { location ->
                 RescueMapScreen(
                     location = location,
+                    warningViewModel = rescueWarningViewModel ?: return@let,
+                    accountKey = session.accountKey ?: return@let,
+                    initiallyShowFloodLayers = true,
                     onSosTab = {
                         openRescueTab(AppRoutes.RESCUE_SOS)
                     },
@@ -512,6 +646,77 @@ fun AppNavGraph(
                 }
             }
         }
+        // Rescue warning V2 is separate from Resident warning V1.
+        composable(route = AppRoutes.RESCUE_FLOOD_WARNINGS) {
+            rescueWarningViewModel?.let { vm ->
+                RescueFloodWarningsV2ListScreen(
+                    viewModel = vm,
+                    onBack = {
+                        if (!navController.popBackStack()) {
+                            openRescueTab(AppRoutes.RESCUE_HOME)
+                        }
+                    },
+                    onOpenDetail = { id ->
+                        navController.navigate(
+                            "${AppRoutes.RESCUE_FLOOD_WARNING_DETAIL}/${Uri.encode(id)}"
+                        ) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onOverview = {
+                        openRescueTab(AppRoutes.RESCUE_HOME)
+                    },
+                    onFloodMap = {
+                        openRescueTab(AppRoutes.RESCUE_MAP)
+                    },
+                    onSos = {
+                        openRescueTab(AppRoutes.RESCUE_SOS)
+                    },
+                    onSafeLocations = {
+                        openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                    }
+                )
+            }
+        }
+
+        composable(
+            route = "${AppRoutes.RESCUE_FLOOD_WARNING_DETAIL}/{alertId}"
+        ) { entry ->
+            val id = entry.arguments?.getString("alertId")
+
+            if (!id.isNullOrBlank()) {
+                rescueWarningViewModel?.let { vm ->
+                    RescueFloodWarningV2DetailScreen(
+                        id = id,
+                        ownerKey = entry.id,
+                        viewModel = vm,
+                        rescueLocation = rescueLocation ?: return@let,
+                        accountKey = session.accountKey ?: return@let,
+                        onBack = {
+                            if (!navController.popBackStack()) {
+                                openRescueTab(
+                                    AppRoutes.RESCUE_FLOOD_WARNINGS
+                                )
+                            }
+                        },
+
+                        onOverview = {
+                            openRescueTab(AppRoutes.RESCUE_HOME)
+                        },
+                        onFloodMap = {
+                            openRescueTab(AppRoutes.RESCUE_MAP)
+                        },
+                        onSos = {
+                            openRescueTab(AppRoutes.RESCUE_SOS)
+                        },
+                        onSafeLocations = {
+                            openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS)
+                        }
+                    )
+                }
+            }
+        }
+
         composable(route = AppRoutes.ACCESS_DENIED) {
             RescueEntryScreen(
                 accessDenied = true,
@@ -701,6 +906,21 @@ fun AppNavGraph(
         // HOME
         composable(route = AppRoutes.HOME) {
             HomeScreen(
+                warningContent = {
+                    FloodWarningV2OverviewRoute(
+                        sessionManager = sessionManager,
+                        onOpen = { warningId ->
+                            navController.navigate(
+                                "${AppRoutes.WARNING_DETAIL}/${android.net.Uri.encode(warningId)}"
+                            )
+                        },
+                        onViewAll = {
+                            navController.navigate(AppRoutes.WARNING_LIST) {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                },
                 onWarningClick = {
                     navController.navigate(AppRoutes.WARNING_LIST)
                 },
@@ -827,155 +1047,46 @@ fun AppNavGraph(
 
         // WARNING LIST
         composable(route = AppRoutes.WARNING_LIST) {
-            val warningViewModel: WarningViewModel = viewModel {
-                WarningViewModel(
-                    floodAlertRepository = FloodAlertRepository(
-                        floodAlertApi = ApiClient.floodAlertApi
-                    ),
-                    floodAreaRepository = FloodAreaRepository(
-                        floodAreaApi = ApiClient.floodAreaApi
-                    )
-                )
-            }
-
-            WarningListScreen(
-                viewModel = warningViewModel,
-                onBackClick = {
+            FloodWarningV2ListRoute(
+                sessionManager = sessionManager,
+                onBack = {
                     navController.popBackStack()
                 },
-                onWarningClick = { warningId ->
+                onOpen = { warningId ->
                     navController.navigate(
-                        "${AppRoutes.WARNING_DETAIL}/$warningId"
+                        "${AppRoutes.WARNING_DETAIL}/${android.net.Uri.encode(warningId)}"
                     )
                 },
-                onNotificationClick = {
-                    Toast.makeText(
-                        context,
-                        "Thông báo chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                onProfileClick = {
-                    navController.navigate(AppRoutes.PROFILE) {
-                        launchSingleTop = true
-                    }
-                },
                 onBottomNavigate = { route ->
-                    when (route) {
-                        AppRoutes.HOME -> {
-                            navController.navigate(AppRoutes.HOME) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.MAP -> {
-                            navController.navigate(AppRoutes.MAP) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.SEND_SOS -> {
-                            navController.navigate(AppRoutes.SEND_SOS) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.SAFE_LOCATION -> {
-                            navController.navigate(AppRoutes.SAFE_LOCATION) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.PROFILE -> {
-                            navController.navigate(AppRoutes.PROFILE) {
-                                launchSingleTop = true
-                            }
-                        }
+                    navController.navigate(route) {
+                        launchSingleTop = true
                     }
                 }
             )
         }
 
-        // WARNING DETAIL
+// WARNING DETAIL
         composable(
             route = "${AppRoutes.WARNING_DETAIL}/{warningId}"
         ) { backStackEntry ->
-            val warningDetailViewModel: WarningDetailViewModel =
-                viewModel(
-                    viewModelStoreOwner = backStackEntry
-                ) {
-                    WarningDetailViewModel(
-                        savedStateHandle = createSavedStateHandle(),
-                        floodAlertRepository = FloodAlertRepository(
-                            floodAlertApi = ApiClient.floodAlertApi
-                        ),
-                        floodAreaRepository = FloodAreaRepository(
-                            floodAreaApi = ApiClient.floodAreaApi
-                        )
-                    )
-                }
+            val warningId = backStackEntry.arguments
+                ?.getString("warningId")
+                .orEmpty()
 
-            WarningDetailRoute(
-                viewModel = warningDetailViewModel,
+            FloodWarningV2DetailRoute(
+                warningId = warningId,
+                sessionManager = sessionManager,
                 onBack = {
                     navController.popBackStack()
                 },
-                onNotificationClick = {
-                    Toast.makeText(
-                        context,
-                        "Thông báo chưa được triển khai",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                },
-                onProfileClick = {
-                    navController.navigate(AppRoutes.PROFILE) {
-                        launchSingleTop = true
-                    }
-                },
-                onFloodMapClick = {
-                    navController.navigate(AppRoutes.MAP)
-                },
-                onSafeLocationClick = {
-                    navController.navigate(AppRoutes.SAFE_LOCATION) {
-                        launchSingleTop = true
-                    }
-                },
-                onSosClick = {
-                    navController.navigate(AppRoutes.SEND_SOS) {
+                onMap = {
+                    navController.navigate(AppRoutes.MAP) {
                         launchSingleTop = true
                     }
                 },
                 onBottomNavigate = { route ->
-                    when (route) {
-                        AppRoutes.HOME -> {
-                            navController.navigate(AppRoutes.HOME) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.MAP -> {
-                            navController.navigate(AppRoutes.MAP) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.SEND_SOS -> {
-                            navController.navigate(AppRoutes.SEND_SOS) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.SAFE_LOCATION -> {
-                            navController.navigate(AppRoutes.SAFE_LOCATION) {
-                                launchSingleTop = true
-                            }
-                        }
-
-                        AppRoutes.PROFILE -> {
-                            navController.navigate(AppRoutes.PROFILE) {
-                                launchSingleTop = true
-                            }
-                        }
+                    navController.navigate(route) {
+                        launchSingleTop = true
                     }
                 }
             )
@@ -1228,7 +1339,21 @@ fun AppNavGraph(
                     ),
                     floodHistoryRepository = FloodHistoryRepository(
                         api = ApiClient.floodHistoryApi
-                    )
+                    ),
+                    warningZonesRepository = FloodWarningV2ZonesRepository(
+                        api = ApiClient
+                            .createAuthenticatedRetrofit(sessionManager)
+                            .create(FloodWarningV2ZonesApi::class.java)
+                    ),
+                    floodWarningV2Repository =
+                        com.example.floodguard.data.repository.FloodWarningV2Repository(
+                            api = ApiClient
+                                .createAuthenticatedRetrofit(sessionManager)
+                                .create(
+                                    com.example.floodguard.data.remote.api
+                                        .FloodWarningV2Api::class.java
+                                )
+                        )
 
                 )
             }

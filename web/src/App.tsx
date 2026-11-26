@@ -1,6 +1,8 @@
 import { RescueHistory } from './pages/rescue/history/RescueHistory';
 import { RescueSafeLocations } from './pages/rescue/safe-locations/RescueSafeLocations';
 import React from 'react';
+import { RescueWarningProvider } from './pages/rescue/warnings/WarningContext';
+import { RescueWarnings } from './pages/rescue/warnings/RescueWarnings';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
@@ -44,6 +46,7 @@ export const App: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <RescueWarningProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
@@ -76,6 +79,8 @@ export const App: React.FC = () => {
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route element={<ProtectedRoute allowedRoles={['RESCUE_STAFF']} />}>
             <Route path="/rescue/safe-locations" element={<RescueSafeLocations />} />
+            <Route path="/rescue/flood-warnings" element={<RescueWarnings />} />
+            <Route path="/rescue/flood-warnings/:id" element={<RescueWarnings />} />
             <Route path="/rescue/dashboard" element={<RescueDashboard />} />
             <Route path="/rescue/profile" element={<RescueProfile />} />
             <Route path="/rescue/sos" element={<RescueSosList />} />
@@ -86,6 +91,7 @@ export const App: React.FC = () => {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </RescueWarningProvider>
       </AuthProvider>
     </BrowserRouter>
   );

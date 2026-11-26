@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import '../../map/floodMap.css';
 import type { DirectSosRequest } from '../../../types/rescueDirect';
-import { sosCode, timeLabel } from '../sosDirect';
+import { sosCode, sourceLabel, timeLabel } from '../sosDirect';
 
 function MapControls({ focus }: { focus: [number, number] }) {
   const map = useMap();
@@ -53,6 +53,7 @@ export function DirectSosMap({ items, detail = false }: { items: DirectSosReques
               radius={9} pathOptions={{ color: '#fff', weight: 2, fillColor: item.state === 'rescued' ? '#16a34a' : '#ef4444', fillOpacity: 1 }}>
               <Popup>
                 <strong>{sosCode(item.id)}</strong>
+                <p>{sourceLabel(item.source)}</p>
                 <p>Backend nhận vị trí lúc: {timeLabel(item.locationReceivedAt)}</p>
                 <Link to={`/rescue/sos/${encodeURIComponent(item.id)}`}>Xem chi tiết</Link>
               </Popup>

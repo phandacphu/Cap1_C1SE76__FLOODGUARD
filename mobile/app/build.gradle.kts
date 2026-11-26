@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.secrets.gradle.plugin)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -179,6 +180,12 @@ dependencies {
     implementation(
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2"
     )
+
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+
+    implementation("com.google.firebase:firebase-messaging")
+
+    implementation("androidx.work:work-runtime:2.12.0")
 
 
     // =========================

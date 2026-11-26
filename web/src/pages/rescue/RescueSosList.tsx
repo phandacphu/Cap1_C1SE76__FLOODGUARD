@@ -4,7 +4,7 @@ import { RescueLayout } from '../../components/layout/RescueLayout';
 import type { SosState } from '../../types/rescueDirect';
 import { DirectSosFeedback } from './components/DirectSosFeedback';
 import { useRescueRequests } from './useRescue';
-import { MISSING, STATE_LABEL, WATER_LABEL, situationsLabel, sosCode, timeLabel } from './sosDirect';
+import { MISSING, STATE_LABEL, WATER_LABEL, situationsLabel, sosCode, sourceLabel, timeLabel } from './sosDirect';
 
 export function RescueSosList() {
   const [query, setQuery] = useSearchParams();
@@ -35,7 +35,7 @@ export function RescueSosList() {
                 .map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
               <tbody>{rows.map(item => (
                 <tr key={item.id} className="border-t border-border">
-                  <td className="p-3"><span className="font-mono">{sosCode(item.id)}</span><p className="text-xs text-muted">{timeLabel(item.createdAt)}</p></td>
+                  <td className="p-3"><span className="font-mono">{sosCode(item.id)}</span><p className="mt-1 text-xs text-water">{sourceLabel(item.source)}</p><p className="text-xs text-muted">{timeLabel(item.createdAt)}</p></td>
                   <td className="p-3">{item.numberOfPeople ?? MISSING}</td>
                   <td className="max-w-xs p-3">{situationsLabel(item.situations)}</td>
                   <td className="p-3">{item.waterLevel ? WATER_LABEL[item.waterLevel] ?? MISSING : MISSING}</td>

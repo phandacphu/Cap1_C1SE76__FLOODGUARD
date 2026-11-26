@@ -445,4 +445,141 @@ class SosSubmissionPersistenceTest {
             }.isFailure
         )
     }
+    @Test
+    fun atomicLoginStartsNewSosSessionAndClearsOldState() =
+        runTest {
+            val oldKey = key
+            val oldSnapshot = sessions.getSessionSnapshot()!!
+
+            sessions.saveSosSmsCredential(oldKey, credential)
+            prepare()
+
+            sessions.saveSosLastLocation(
+                oldKey,
+                SosCachedLocation(16.0, 108.0, 1_000L)
+            )
+
+            val generation = sessions.getGeneration()
+
+            assertTrue(
+                sessions.saveAuthenticatedSession(
+                    token = "TEST_ONLY_NEW_ATOMIC_LOGIN",
+                    user = SessionUser(
+                        id = "A",
+                        role = "resident"
+                    ),
+                    expectedGeneration = generation
+                )
+            )
+
+            val newKey = sessions.getSosSmsSessionKey()!!
+            val newSnapshot = sessions.getSessionSnapshot()!!
+
+            assertNotEquals(oldKey, newKey)
+            assertEquals(
+                generation + 1L,
+                sessions.getGeneration()
+            )
+
+            assertFalse(sessions.isCurrentSession(oldSnapshot))
+            assertTrue(sessions.isCurrentSession(newSnapshot))
+
+            assertNull(sessions.getSosSmsCredential(newKey))
+            assertNull(sessions.getSosSubmission(newKey))
+            assertNull(sessions.getSosLastLocation(newKey))
+
+            assertTrue(
+                runCatching {
+                    sessions.getSosSubmission(oldKey)
+                }.isFailure
+            )
+        }
+
+    @Test
+    fun staleLoginAndLogoutCannotClearCurrentSosSubmission() =
+        runTest {
+            val oldSnapshot = sessions.getSessionSnapshot()!!
+            val oldGeneration = oldSnapshot.generation
+
+            assertTrue(
+                sessions.saveAuthenticatedSession(
+                    token = "TEST_ONLY_ACCOUNT_B",
+                    user = SessionUser(
+                        id = "B",
+                        role = "resident"
+                    ),
+                    expectedGeneration = oldGeneration
+                )
+            )
+
+            key = sessions.getSosSmsSessionKey()!!
+
+            sessions.saveSosSmsCredential(key, credential)
+            val pending = prepare()
+
+            sessions.saveSosLastLocation(
+                key,
+                SosCachedLocation(16.0, 108.0, 1_000L)
+            )
+
+            assertFalse(
+                sessions.saveAuthenticatedSession(
+                    token = "TEST_ONLY_LATE_ACCOUNT_A",
+                    user = SessionUser(
+                        id = "A",
+                        role = "resident"
+                    ),
+                    expectedGeneration = oldGeneration
+                )
+            )
+
+            assertFalse(
+                sessions.clearSession(
+                    expectedGeneration = oldGeneration
+                )
+            )
+
+            assertNull(
+                sessions.endCurrentSession(oldSnapshot) {
+                    true
+                }
+            )
+
+            assertEquals(key, sessions.getSosSmsSessionKey())
+            assertEquals(
+                pending.request.clientRequestId,
+                sessions.getSosSubmission(key)!!
+                    .request.clientRequestId
+            )
+
+            val currentSnapshot =
+                sessions.getSessionSnapshot()!!
+
+            assertTrue(
+                sessions.endCurrentSession(currentSnapshot) {
+                    true
+                } == true
+            )
+
+            assertNull(sessions.getSosSmsSessionKey())
+            assertNull(sessions.getSessionSnapshot())
+
+            assertTrue(
+                sessions.saveAuthenticatedSession(
+                    token = "TEST_ONLY_RELOGIN_B",
+                    user = SessionUser(
+                        id = "B",
+                        role = "resident"
+                    ),
+                    expectedGeneration =
+                        sessions.getGeneration()
+                )
+            )
+
+            val newKey = sessions.getSosSmsSessionKey()!!
+
+            assertNull(sessions.getSosSmsCredential(newKey))
+            assertNull(sessions.getSosSubmission(newKey))
+            assertNull(sessions.getSosLastLocation(newKey))
+        }
 }

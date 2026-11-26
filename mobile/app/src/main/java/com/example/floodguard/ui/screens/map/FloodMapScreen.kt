@@ -2259,8 +2259,9 @@ private fun CitizenMapDataPanel(
         )
 
         CitizenSourceStatus(
-            title = "Bản tin cảnh báo",
-            count = state.floodAlerts.size,
+            title = "Bản tin đang bật",
+            count = state.floodWarningV2Alerts?.size
+                ?: state.floodAlerts.size,
             loading = state.isLoadingFloodAlerts,
             error = state.floodAlertsError,
             loadedAt = state.floodAlertsLoadedAt,

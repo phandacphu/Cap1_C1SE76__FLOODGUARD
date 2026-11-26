@@ -5,6 +5,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.time.Instant
+import java.text.Collator
+import java.util.Locale
 
 internal data class SosResource<T>(val data: T? = null, val loading: Boolean = false,
     val error: String? = null, val loadedAt: Long? = null)
@@ -37,20 +40,60 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
     private var historyRequestId: String? = null
     private var closed = false
     private val completedIds = mutableSetOf<String>()
+
+    // Observations made while the current rescued-list read is in flight.
+    // A delayed list response must not erase these confirmed completions.
+    private var rescuedReadObservations = mutableMapOf<String, RescueSos>()
+
+    // A missing detail is not a confirmed completion.
+    // Suppress it only in the active-list snapshot already in flight.
+    private var activeMissingObservations = mutableSetOf<String>()
+
+    private val idCollator = Collator.getInstance(Locale.US)
     fun refresh(filter: SosFilter) {
         if (closed || listJobs[filter]?.isActive == true) return
         val version = (listVersions[filter] ?: 0) + 1; listVersions[filter] = version
         listJobs[filter]?.cancel()
+
+        val missingObservations = if (filter == SosFilter.ACTIVE) {
+            mutableSetOf<String>().also {
+                activeMissingObservations = it
+            }
+        } else null
+
+        val observations = if (filter == SosFilter.RESCUED) {
+            mutableMapOf<String, RescueSos>().also {
+                rescuedReadObservations = it
+            }
+        } else null
+
         changeList(filter) { it.copy(loading = true, error = null) }
         listJobs[filter] = scope.launch {
             try {
                 val items = source.list(filter)
                 if (closed || listVersions[filter] != version) return@launch
-                val visible = if (filter == SosFilter.ACTIVE) items.filterNot { it.id in completedIds } else items
+                val visible = if (filter == SosFilter.ACTIVE) {
+                    items.filterNot {
+                        it.id in completedIds ||
+                            it.id in missingObservations.orEmpty()
+                    }
+                } else {
+                    val cached = mutable.value.rescued.data.orEmpty()
+                        .associateBy { it.id }
+
+                    val reconciled = items.map { item ->
+                        cached[item.id]?.let { previous ->
+                            mergeRescuedItem(previous, item)
+                        } ?: item
+                    }
+
+                    mergeRescued(reconciled, observations.orEmpty().values)
+                }
                 changeList(filter) { SosResource(data = visible, loadedAt = now()) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!closed && listVersions[filter] == version && !deny(e))
+                if (closed || deny(e)) return@launch
+                if (listVersions[filter] == version)
                     changeList(filter) { it.copy(loading = false, error = message(e)) }
             }
         }
@@ -75,18 +118,34 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                 if (closed || detailVersion != version || mutable.value.detailId != id) return@launch
                 if (id in completedIds && item.state == "active")
                     throw RescueSosFailure(message = "Trạng thái vừa thay đổi. Vui lòng tải lại chi tiết.")
-                if (item.state == "rescued") applyCompleted(item)
+                val reconciledCompletion =
+                    item.state == "rescued" && mutable.value.uncertainId == id
+                if (item.state == "rescued") {
+                    if (reconciledCompletion) {
+                        applyCompleted(item)
+                    } else {
+                        observeCompleted(item)
+                    }
+                }
                 mutable.update { it.copy(detail = SosResource(data = item, loadedAt = now()),
                     uncertainId = if (it.uncertainId == id) null else it.uncertainId,
                     actionMessage = if (it.uncertainId == id) {
                         if (item.state == "rescued") "Máy chủ ghi nhận SOS $id đã cứu. Xem người và thời gian xác nhận bên dưới."
                         else "Đã đối chiếu: SOS $id vẫn chưa hoàn tất. Có thể xác nhận lại sau khi đã cứu thực tế."
                     } else it.actionMessage) }
+                if (reconciledCompletion) {
+                    refresh(SosFilter.ACTIVE)
+                    refresh(SosFilter.RESCUED)
+                    historyJob?.cancel()
+                    historyJob = null
+                    refreshHistory(id)
+                }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (closed || detailVersion != version || mutable.value.detailId != id || deny(e)) return@launch
+                if (closed || deny(e)) return@launch
+                if (detailVersion != version || mutable.value.detailId != id) return@launch
                 val missing = (e as? RescueSosFailure)?.httpStatus == 404
-                if (missing) removeActive(id)
+                if (missing) observeMissingActive(id)
                 mutable.update { it.copy(detail = it.detail.copy(data = if (missing) null else it.detail.data,
                     loading = false, error = message(e))) }
             }
@@ -105,7 +164,8 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                     mutable.update { it.copy(history = SosResource(data = history, loadedAt = now())) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!closed && mutable.value.detailId == id && version == historyVersion && !deny(e))
+                if (closed || deny(e)) return@launch
+                if (mutable.value.detailId == id && version == historyVersion)
                     mutable.update { it.copy(history = it.history.copy(loading = false, error = message(e))) }
             }
         }
@@ -141,18 +201,130 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
             }
         }
     }
+    private fun observeMissingActive(id: String) {
+        if (mutable.value.active.loading) {
+            activeMissingObservations.add(id)
+        }
+
+        // Preserve loading, error and loadedAt.
+        // An unrelated SOS must still arrive through the pending read.
+        changeList(SosFilter.ACTIVE) { resource ->
+            resource.copy(data = resource.data?.filterNot { it.id == id })
+        }
+    }
+
     private fun removeActive(id: String) {
         listVersions[SosFilter.ACTIVE] = (listVersions[SosFilter.ACTIVE] ?: 0) + 1
         listJobs.remove(SosFilter.ACTIVE)?.cancel()
         changeList(SosFilter.ACTIVE) { it.copy(data = it.data?.filterNot { row -> row.id == id }, loading = false) }
     }
+    private fun timestamp(value: String?): Long? =
+        value?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+
+    private fun recordTime(item: RescueSos): Long =
+        timestamp(item.updatedAt)
+            ?: timestamp(item.locationReceivedAt)
+            ?: timestamp(item.createdAt)
+            ?: Long.MIN_VALUE
+
+    private fun locationTime(item: RescueSos): Long =
+        timestamp(item.locationCapturedAt ?: item.createdAt)
+            ?: Long.MIN_VALUE
+
+    // The location and its timestamps must come from the same snapshot.
+    // When record and location freshness differ, preserve each independently.
+    private fun mergeRescuedItem(
+        first: RescueSos,
+        second: RescueSos
+    ): RescueSos {
+        val record = if (recordTime(second) >= recordTime(first)) {
+            second
+        } else {
+            first
+        }
+
+        val position = when {
+            first.location == null -> second
+            second.location == null -> first
+            locationTime(second) > locationTime(first) -> second
+            locationTime(second) < locationTime(first) -> first
+            else -> record
+        }
+
+        return record.copy(
+            location = position.location,
+            locationCapturedAt = position.locationCapturedAt,
+            locationReceivedAt = position.locationReceivedAt
+        )
+    }
+
+    private fun mergeRescued(
+        rows: Iterable<RescueSos>,
+        observations: Iterable<RescueSos>
+    ): List<RescueSos> {
+        val byId = linkedMapOf<String, RescueSos>()
+
+        for (item in rows + observations) {
+            val previous = byId[item.id]
+            byId[item.id] = if (previous == null) {
+                item
+            } else {
+                mergeRescuedItem(previous, item)
+            }
+        }
+
+        // Backend newest: createdAt descending, invalid/missing = epoch 0,
+        // then descending locale-aware ID comparison.
+        return byId.values.sortedWith(Comparator { first, second ->
+            val byCreatedAt = (timestamp(second.createdAt) ?: 0L)
+                .compareTo(timestamp(first.createdAt) ?: 0L)
+
+            if (byCreatedAt != 0) {
+                byCreatedAt
+            } else {
+                val byIdLocale = idCollator.compare(second.id, first.id)
+                if (byIdLocale != 0) byIdLocale
+                else second.id.compareTo(first.id)
+            }
+        })
+    }
+
+    private fun observeCompleted(item: RescueSos) {
+        completedIds.add(item.id)
+
+        if (mutable.value.rescued.loading) {
+            val previous = rescuedReadObservations[item.id]
+            rescuedReadObservations[item.id] = if (previous == null) {
+                item
+            } else {
+                mergeRescuedItem(previous, item)
+            }
+        }
+
+        // Preserve loading/error state and any pending list request.
+        changeList(SosFilter.ACTIVE) { resource ->
+            resource.copy(data = resource.data?.filterNot {
+                it.id == item.id
+            })
+        }
+
+        // A single detail is not a complete list.
+        changeList(SosFilter.RESCUED) { resource ->
+            resource.copy(data = resource.data?.let { rows ->
+                mergeRescued(rows, listOf(item))
+            })
+        }
+    }
+
+    // Used for a successful PATCH or confirmed timeout reconciliation.
+    // Callers must refresh both lists after invalidating old requests.
     private fun applyCompleted(item: RescueSos) {
         completedIds.add(item.id); removeActive(item.id)
         listVersions[SosFilter.RESCUED] = (listVersions[SosFilter.RESCUED] ?: 0) + 1
         listJobs.remove(SosFilter.RESCUED)?.cancel()
         // One result is not a complete history list; only update a previously loaded cache.
         changeList(SosFilter.RESCUED) { it.copy(data = it.data?.let { rows ->
-            listOf(item) + rows.filterNot { row -> row.id == item.id }
+            mergeRescued(rows, listOf(item))
         }, loading = false) }
     }
     private fun changeList(filter: SosFilter, transform: (SosResource<List<RescueSos>>) -> SosResource<List<RescueSos>>) {
@@ -167,6 +339,9 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
     fun close() {
         closed = true; listJobs.values.forEach { it.cancel() }
         detailJob?.cancel(); historyJob?.cancel(); completionJob?.cancel()
-        detailVersion++; historyVersion++; completedIds.clear(); mutable.value = RescueSosState()
+        detailVersion++; historyVersion++; completedIds.clear()
+        rescuedReadObservations.clear()
+        activeMissingObservations.clear()
+        mutable.value = RescueSosState()
     }
 }
