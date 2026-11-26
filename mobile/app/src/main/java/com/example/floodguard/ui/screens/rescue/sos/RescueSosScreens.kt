@@ -114,8 +114,11 @@ internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
                                 )
 
                                 Surface(
-                                    color = if (item.source == "sms")
-                                        Color(0xFF61431A) else SosBg,
+                                    color = when {
+                                        item.source == "sms" -> Color(0xFF61431A)
+                                        item.source == "api" || item.source.isNullOrBlank() -> Color(0xFF63301C)
+                                        else -> SosBg
+                                    },
                                     shape = MaterialTheme.shapes.small
                                 ) {
                                     Text(
@@ -124,8 +127,11 @@ internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
                                             horizontal = 8.dp,
                                             vertical = 4.dp
                                         ),
-                                        color = if (item.source == "sms")
-                                            Color(0xFFFFD080) else SosText,
+                                        color = when {
+                                            item.source == "sms" -> Color(0xFFFFD080)
+                                            item.source == "api" || item.source.isNullOrBlank() -> Color(0xFFFF9B50)
+                                            else -> SosText
+                                        },
                                         style = MaterialTheme.typography.labelMedium
                                     )
                                 }
@@ -376,9 +382,9 @@ private fun statusLabel(value: String?) = when (value) {
 }
 
 
-internal fun sosSourceLabel(source: String?): String = when (source) {
-    "sms" -> "SMS"
-    "api" -> "Ứng dụng"
+internal fun sosSourceLabel(source: String?): String = when {
+    source == "sms" -> "SMS"
+    source == "api" || source.isNullOrBlank() -> "Ứng dụng"
     else -> "Không rõ"
 }
 
