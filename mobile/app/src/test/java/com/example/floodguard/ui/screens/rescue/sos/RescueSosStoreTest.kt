@@ -144,4 +144,172 @@ class RescueSosStoreTest {
         store.complete("A"); runCurrent(); gate.complete(emptyList()); advanceUntilIdle()
         assertEquals("A", store.state.value.rescued.data!!.single().id)
     }
+
+    @Test fun lateDetailForbiddenClearsCurrentSessionData() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val source = Source().apply {
+            listAction = { listOf(item()) }
+            detailAction = { id ->
+                if (id == "A") {
+                    withContext(NonCancellable) {
+                        gate.await()
+                        throw RescueSosFailure(403, message = "revoked")
+                    }
+                } else item(id)
+            }
+        }
+        val store = RescueSosStore(source, this)
+        store.refresh(SosFilter.ACTIVE)
+        store.openDetail("A")
+        runCurrent()
+        store.openDetail("B")
+        runCurrent()
+        assertEquals("B", store.state.value.detail.data?.id)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("revoked", store.state.value.accessError)
+        assertNull(store.state.value.active.data)
+        assertNull(store.state.value.detail.data)
+        assertNull(store.state.value.history.data)
+        assertFalse(store.state.value.canComplete)
+    }
+
+    @Test fun lateHistoryUnauthorizedClearsCurrentSessionData() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val source = Source().apply {
+            detailAction = { item(it) }
+            historyAction = { id ->
+                if (id == "A") {
+                    withContext(NonCancellable) {
+                        gate.await()
+                        throw RescueSosFailure(401, message = "expired")
+                    }
+                } else emptyList()
+            }
+        }
+        val store = RescueSosStore(source, this)
+        store.openDetail("A")
+        runCurrent()
+        store.openDetail("B")
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("expired", store.state.value.accessError)
+        assertNull(store.state.value.detail.data)
+        assertNull(store.state.value.history.data)
+    }
+
+    @Test fun oldSessionUnauthorizedCannotAffectNewStore() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val oldSource = Source().apply {
+            detailAction = {
+                withContext(NonCancellable) {
+                    gate.await()
+                    throw RescueSosFailure(401, message = "old session")
+                }
+            }
+        }
+        val oldStore = RescueSosStore(oldSource, this)
+        oldStore.openDetail("A")
+        runCurrent()
+        oldStore.close()
+
+        val newSource = Source().apply {
+            detailAction = { item(it) }
+        }
+        val newStore = RescueSosStore(newSource, this)
+        newStore.openDetail("B")
+        runCurrent()
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertNull(oldStore.state.value.detail.data)
+        assertNull(newStore.state.value.accessError)
+        assertEquals("B", newStore.state.value.detail.data?.id)
+    }
+
+    @Test fun smsRefreshUsesLatestLocationWithoutChangingInitialLocation() = runTest {
+        val initial = com.example.floodguard.data.remote.dto.rescue.sos.SosPoint(
+            16.0544, 108.2022
+        )
+        val latest = com.example.floodguard.data.remote.dto.rescue.sos.SosPoint(
+            16.055, 108.203
+        )
+        var current = item().copy(
+            source = "sms",
+            location = initial,
+            initialLocation = initial,
+            smsReceivedAt = "2026-11-24T14:00:00.000Z"
+        )
+        val source = Source().apply {
+            listAction = { listOf(current) }
+            detailAction = { current }
+        }
+        val store = RescueSosStore(source, this)
+        store.refresh(SosFilter.ACTIVE)
+        store.openDetail("A")
+        runCurrent()
+
+        current = current.copy(
+            location = latest,
+            locationCapturedAt = "2026-11-24T14:01:00.000Z"
+        )
+        store.refresh(SosFilter.ACTIVE)
+        store.refreshDetail()
+        runCurrent()
+
+        assertEquals(initial, store.state.value.detail.data?.initialLocation)
+        assertEquals(latest, store.state.value.detail.data?.location)
+        assertEquals(latest, store.state.value.active.data?.single()?.location)
+        assertEquals("sms", store.state.value.detail.data?.source)
+        assertEquals(current.smsReceivedAt, store.state.value.detail.data?.smsReceivedAt)
+    }
+
+    @Test fun smsTimeoutReconciliationReloadsRescuedHistory() = runTest {
+        var rescued = false
+        val gate = CompletableDeferred<Unit>()
+        val active = item().copy(source = "sms")
+        val completed = item(state = "rescued").copy(source = "sms")
+        val source = Source().apply {
+            detailAction = {
+                if (rescued) {
+                    gate.await()
+                    completed
+                } else active
+            }
+            listAction = {
+                if (it == SosFilter.ACTIVE) {
+                    if (rescued) emptyList() else listOf(active)
+                } else {
+                    if (rescued) listOf(completed) else emptyList()
+                }
+            }
+            completeAction = {
+                rescued = true
+                throw java.io.IOException("timeout")
+            }
+        }
+        val store = RescueSosStore(source, this)
+        store.openDetail("A")
+        store.refresh(SosFilter.ACTIVE)
+        runCurrent()
+
+        store.complete("A")
+        runCurrent()
+
+        assertEquals(1, source.completeCalls)
+        assertEquals("A", store.state.value.uncertainId)
+        assertFalse(store.state.value.canComplete)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.active.data!!.isEmpty())
+        assertEquals("A", store.state.value.rescued.data!!.single().id)
+        assertEquals("sms", store.state.value.rescued.data!!.single().source)
+        assertEquals("rescued", store.state.value.detail.data?.state)
+        assertNull(store.state.value.uncertainId)
+        assertEquals(1, source.completeCalls)
+    }
 }

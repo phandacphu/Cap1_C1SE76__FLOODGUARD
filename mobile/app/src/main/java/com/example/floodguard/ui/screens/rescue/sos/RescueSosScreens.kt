@@ -106,7 +106,30 @@ internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
                     Surface(color = SosPanel, shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth().clickable { onOpen(item.id) }) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SosLabel("SOS ${item.id}", bold = true)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SosLabel(
+                                    "SOS ${item.id}",
+                                    bold = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                Surface(
+                                    color = if (item.source == "sms")
+                                        Color(0xFF61431A) else SosBg,
+                                    shape = MaterialTheme.shapes.small
+                                ) {
+                                    Text(
+                                        text = sosSourceLabel(item.source),
+                                        modifier = Modifier.padding(
+                                            horizontal = 8.dp,
+                                            vertical = 4.dp
+                                        ),
+                                        color = if (item.source == "sms")
+                                            Color(0xFFFFD080) else SosText,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
                             if (filter == SosFilter.ACTIVE && ordering.distances != null) {
                                 val meters = ordering.distances[item.id]
                                 SosLabel(if (meters != null)
@@ -156,6 +179,7 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
             if (state.accessError == null && item != null) {
                 SosLabel(when (item.state) { "active" -> "Đang chờ cứu"; "rescued" -> "Đã cứu"; else -> "Bản ghi lịch sử khác" }, bold = true, accent = true)
                 SosLabel("Người gửi (ID): ${item.residentId ?: "Chưa có thông tin"}")
+                SosSourceSection(item)
                 SosLabel("Số người: ${item.numberOfPeople?.toString() ?: "Chưa có thông tin"}")
                 SosLabel("Tình huống: " + (item.situations.takeIf { it.isNotEmpty() }?.joinToString(" • ", transform = ::situationLabel) ?: "Chưa có thông tin"))
                 SosLabel("Mức nước: ${waterLabel(item.waterLevel)}")
@@ -164,8 +188,8 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
                 SosLabel("Vị trí ban đầu: ${pointLabel(item.initialLocation)}")
                 SosLabel(if (item.state == "rescued") "Vị trí cuối đã lưu: ${pointLabel(item.location)}"
                     else "Vị trí mới nhất Backend đã nhận: ${pointLabel(item.location)}")
-                SosLabel("Thiết bị lấy vị trí: ${sosTime(item.locationCapturedAt)}")
-                SosLabel("Backend nhận vị trí: ${sosTime(item.locationReceivedAt)}")
+                SosLabel("Thời điểm thiết bị ghi nhận vị trí mới nhất: ${sosTime(item.locationCapturedAt, "Không rõ")}")
+                SosLabel("Backend nhận vị trí mới nhất: ${sosTime(item.locationReceivedAt)}")
                 SosLabel("Khi mất mạng, đây có thể là vị trí cũ; ứng dụng không biết vị trí chưa gửi được lên máy chủ.")
                 RescueRouteDistanceSection(id, item.location, rescueLocation, distanceRepository)
                 item.location?.takeIf { it.isValid() }?.let { SosLocationPreview(it, item.state == "rescued") }
@@ -314,13 +338,27 @@ private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit, o
     }
 }
 @Composable
-private fun SosLabel(text: String, bold: Boolean = false, accent: Boolean = false) {
-    Text(text, fontFamily = SosFont, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, color = if (accent) SosAccent else SosText)
+private fun SosLabel(
+    text: String,
+    bold: Boolean = false,
+    accent: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        fontFamily = SosFont,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        color = if (accent) SosAccent else SosText
+    )
 }
-internal fun sosTime(value: String?): String = value?.let {
+internal fun sosTime(
+    value: String?,
+    missing: String = "Chưa có thông tin"
+): String = value?.let {
     runCatching { DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss", Locale.forLanguageTag("vi-VN"))
         .withZone(ZoneId.systemDefault()).format(Instant.parse(it)) }.getOrDefault("Chưa có thời gian hợp lệ")
-} ?: "Chưa có thông tin"
+} ?: missing
 private fun pointLabel(point: SosPoint?) = point?.takeIf { it.isValid() }?.let {
     String.format(Locale.ROOT, "%.6f, %.6f", it.latitude, it.longitude)
 } ?: "Chưa có tọa độ hợp lệ"
@@ -335,4 +373,82 @@ private fun waterLabel(value: String?) = when (value) {
 private fun statusLabel(value: String?) = when (value) {
     null -> "Tạo yêu cầu"; "submitted" -> "Đã gửi"; "received" -> "Đã tiếp nhận (dữ liệu cũ)"
     "in_progress" -> "Đang cứu hộ (dữ liệu cũ)"; "assisted" -> "Đã cứu"; "cancelled" -> "Đã hủy (dữ liệu cũ)"; else -> value
+}
+
+
+internal fun sosSourceLabel(source: String?): String = when (source) {
+    "sms" -> "SMS"
+    "api" -> "Ứng dụng"
+    else -> "Không rõ"
+}
+
+internal fun sosDialablePhone(value: String?): String? =
+    value?.trim()?.takeIf {
+        Regex("^[+]?[0-9]{7,15}$").matches(it)
+    }
+
+@Composable
+private fun SosSourceSection(item: RescueSos) {
+    val context = LocalContext.current
+
+    Surface(
+        color = SosPanel,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SosLabel(
+                "Nguồn yêu cầu: " + sosSourceLabel(item.source),
+                bold = true,
+                accent = item.source == "sms"
+            )
+
+            if (item.source == "sms") {
+                SosLabel(
+                    "Số gửi SMS: " +
+                        (item.smsSenderPhone?.takeIf { it.isNotBlank() }
+                            ?: "Không rõ")
+                )
+
+                SosLabel(
+                    "Nhận SMS lúc: " +
+                        sosTime(item.smsReceivedAt, "Không rõ")
+                )
+
+                SosLabel(
+                    "Số gửi SMS chỉ dùng để liên hệ, " +
+                        "không phải thông tin danh tính đã xác minh."
+                )
+
+                val phone = sosDialablePhone(item.smsSenderPhone)
+
+                if (phone != null) {
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_DIAL,
+                                        Uri.fromParts("tel", phone, null)
+                                    )
+                                )
+                            } catch (_: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Không mở được trình quay số.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Gọi người gửi")
+                    }
+                }
+            }
+        }
+    }
 }

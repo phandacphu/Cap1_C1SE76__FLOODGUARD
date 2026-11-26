@@ -50,7 +50,8 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                 changeList(filter) { SosResource(data = visible, loadedAt = now()) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!closed && listVersions[filter] == version && !deny(e))
+                if (closed || deny(e)) return@launch
+                if (listVersions[filter] == version)
                     changeList(filter) { it.copy(loading = false, error = message(e)) }
             }
         }
@@ -75,6 +76,8 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                 if (closed || detailVersion != version || mutable.value.detailId != id) return@launch
                 if (id in completedIds && item.state == "active")
                     throw RescueSosFailure(message = "Trạng thái vừa thay đổi. Vui lòng tải lại chi tiết.")
+                val reconciledCompletion =
+                    item.state == "rescued" && mutable.value.uncertainId == id
                 if (item.state == "rescued") applyCompleted(item)
                 mutable.update { it.copy(detail = SosResource(data = item, loadedAt = now()),
                     uncertainId = if (it.uncertainId == id) null else it.uncertainId,
@@ -82,9 +85,17 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                         if (item.state == "rescued") "Máy chủ ghi nhận SOS $id đã cứu. Xem người và thời gian xác nhận bên dưới."
                         else "Đã đối chiếu: SOS $id vẫn chưa hoàn tất. Có thể xác nhận lại sau khi đã cứu thực tế."
                     } else it.actionMessage) }
+                if (reconciledCompletion) {
+                    refresh(SosFilter.ACTIVE)
+                    refresh(SosFilter.RESCUED)
+                    historyJob?.cancel()
+                    historyJob = null
+                    refreshHistory(id)
+                }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (closed || detailVersion != version || mutable.value.detailId != id || deny(e)) return@launch
+                if (closed || deny(e)) return@launch
+                if (detailVersion != version || mutable.value.detailId != id) return@launch
                 val missing = (e as? RescueSosFailure)?.httpStatus == 404
                 if (missing) removeActive(id)
                 mutable.update { it.copy(detail = it.detail.copy(data = if (missing) null else it.detail.data,
@@ -105,7 +116,8 @@ internal class RescueSosStore(private val source: RescueSosSource, private val s
                     mutable.update { it.copy(history = SosResource(data = history, loadedAt = now())) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!closed && mutable.value.detailId == id && version == historyVersion && !deny(e))
+                if (closed || deny(e)) return@launch
+                if (mutable.value.detailId == id && version == historyVersion)
                     mutable.update { it.copy(history = it.history.copy(loading = false, error = message(e))) }
             }
         }
