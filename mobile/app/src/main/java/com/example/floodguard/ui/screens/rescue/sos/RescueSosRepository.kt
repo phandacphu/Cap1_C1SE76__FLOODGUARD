@@ -14,7 +14,11 @@ internal data class RescueSos(
     val locationCapturedAt: String?, val locationReceivedAt: String?,
     val situations: List<String>, val numberOfPeople: Int?, val waterLevel: String?,
     val note: String?, val completedBy: String?, val completedAt: String?,
-    val createdAt: String?, val updatedAt: String?
+    val createdAt: String?, val updatedAt: String?,
+    val source: String? = null,
+    val clientRequestId: String? = null,
+    val smsSenderPhone: String? = null,
+    val smsReceivedAt: String? = null
 )
 internal class RescueSosFailure(val httpStatus: Int = 0, val code: String? = null,
     message: String, cause: Throwable? = null) : Exception(message, cause) {
@@ -66,7 +70,11 @@ internal class RescueSosRepository(private val api: RescueSosApi) : RescueSosSou
         require(row.situations?.all { !it.isNullOrBlank() } != false)
         return RescueSos(id, row.residentId, state, status, row.location, row.initialLocation,
             row.locationCapturedAt, row.locationReceivedAt, row.situations.orEmpty().filterNotNull(),
-            row.numberOfPeople, row.waterLevel, row.note, row.completedBy, row.completedAt, row.createdAt, row.updatedAt)
+            row.numberOfPeople, row.waterLevel, row.note, row.completedBy, row.completedAt, row.createdAt, row.updatedAt,
+            source = row.source,
+            clientRequestId = row.clientRequestId,
+            smsSenderPhone = row.smsSenderPhone,
+            smsReceivedAt = row.smsReceivedAt)
     }
     private fun requireId(id: String) {
         require(id.isNotBlank() && id == id.trim() && '/' !in id && id !in setOf(".", ".."))

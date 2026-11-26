@@ -33,7 +33,11 @@ internal data class SosWire(
     val situations: List<String?>? = null, val numberOfPeople: Int? = null,
     val waterLevel: String? = null, val note: String? = null,
     val completedBy: String? = null, val completedAt: String? = null,
-    val createdAt: String? = null, val updatedAt: String? = null
+    val createdAt: String? = null, val updatedAt: String? = null,
+    val source: String? = null,
+    val clientRequestId: String? = null,
+    val smsSenderPhone: String? = null,
+    val smsReceivedAt: String? = null
 )
 internal data class SosHistoryWire(
     val id: String? = null, val oldStatus: String? = null, val newStatus: String? = null,
