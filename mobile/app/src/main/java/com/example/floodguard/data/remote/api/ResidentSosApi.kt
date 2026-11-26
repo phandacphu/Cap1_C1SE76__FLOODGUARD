@@ -10,6 +10,12 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface ResidentSosApi {
+
+    @POST("sos-sms/credential")
+    suspend fun smsCredential(
+        @Body body: Map<String, String> = emptyMap()
+    ): Response<SosSmsCredentialResponse>
+
     @POST("rescue-requests")
     suspend fun create(
         @Body request: CreateSosRequest

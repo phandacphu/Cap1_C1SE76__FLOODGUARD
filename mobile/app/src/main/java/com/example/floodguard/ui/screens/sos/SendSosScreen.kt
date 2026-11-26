@@ -5,6 +5,7 @@ package com.example.floodguard.ui.screens.sos
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.ActivityNotFoundException
 import android.location.LocationManager
 import android.net.Uri
 
@@ -61,6 +62,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.example.floodguard.data.model.SosSubmissionPhase
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
@@ -89,7 +91,15 @@ fun SendSosScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val formEnabled = !uiState.isSubmitting && uiState.submittedSosId == null
+    val actionEnabled =
+        !uiState.isSubmitting &&
+                uiState.submittedSosId == null &&
+                !uiState.isRestoringLocation &&
+                uiState.locationSessionError == null
+
+    val formEnabled =
+        actionEnabled &&
+                uiState.pendingClientRequestId == null
 
 
     // CCF-81: Theo dõi vòng đời màn SOS
@@ -101,36 +111,6 @@ fun SendSosScreen(
                 .isAtLeast(Lifecycle.State.STARTED)
         )
     }
-
-
-    var locationIsExpired by remember {
-        mutableStateOf(false)
-    }
-
-    LaunchedEffect(
-        uiState.locationTimestampMillis,
-        uiState.isLoadingLocation,
-        isScreenActive
-    ) {
-        locationIsExpired = false
-
-        val timestamp = uiState.locationTimestampMillis
-            ?: return@LaunchedEffect
-
-        if (!isScreenActive || uiState.isLoadingLocation) {
-            return@LaunchedEffect
-        }
-
-        val ageMillis = System.currentTimeMillis() - timestamp
-
-        if (ageMillis < 0L || ageMillis > 30_000L) {
-            locationIsExpired = true
-        } else {
-            delay(30_001L - ageMillis)
-            locationIsExpired = true
-        }
-    }
-
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -185,20 +165,27 @@ fun SendSosScreen(
         }
 
 
-    LaunchedEffect(gpsRetryKey, isScreenActive) {
-        if (viewModel.uiState.value.isSubmitting ||
-            viewModel.uiState.value.submittedSosId != null
-        ) return@LaunchedEffect
+    LaunchedEffect(
+        gpsRetryKey,
+        isScreenActive,
+        uiState.isRestoringLocation,
+        uiState.locationSessionError,
+        uiState.isSubmitting,
+        uiState.pendingClientRequestId
+    ) {
+        val current = viewModel.uiState.value
 
-        if (!isScreenActive) {
-            // Xóa vị trí cũ khi ứng dụng không còn hoạt động.
-            viewModel.setLocationError(
-                "Vị trí cần được cập nhật khi quay lại màn SOS."
-            )
+        if (
+            current.isSubmitting ||
+            current.submittedSosId != null ||
+            current.pendingClientRequestId != null ||
+            current.isRestoringLocation ||
+            current.locationSessionError != null ||
+            !isScreenActive
+        ) {
             return@LaunchedEffect
         }
 
-        // Kiểm tra quyền vị trí
         val hasPermission =
             ContextCompat.checkSelfPermission(
                 context,
@@ -211,12 +198,11 @@ fun SendSosScreen(
 
         if (!hasPermission) {
             viewModel.setLocationError(
-                "Cần cấp quyền vị trí để lấy tọa độ SOS."
+                "Cần cấp quyền vị trí để cập nhật tọa độ SOS."
             )
             return@LaunchedEffect
         }
 
-        // Kiểm tra dịch vụ vị trí
         val locationManager =
             context.getSystemService(LocationManager::class.java)
 
@@ -235,59 +221,68 @@ fun SendSosScreen(
             return@LaunchedEffect
         }
 
+        fun validCoordinates(
+            point: android.location.Location?
+        ): Boolean =
+            point != null &&
+                    point.latitude.isFinite() &&
+                    point.longitude.isFinite() &&
+                    point.latitude in -90.0..90.0 &&
+                    point.longitude in -180.0..180.0
+
         viewModel.startLocationLoading()
 
         val cancellationTokenSource = CancellationTokenSource()
 
         try {
-            // Lấy vị trí với timeout tối đa 15 giây
-            val location = withTimeoutOrNull(15_000L) {
+            val fresh = withTimeoutOrNull(15_000L) {
                 fusedLocationClient.getCurrentLocation(
                     Priority.PRIORITY_HIGH_ACCURACY,
                     cancellationTokenSource.token
                 ).await()
             }
 
-            if (location != null) {
-                val ageMillis =
-                    System.currentTimeMillis() - location.time
+            if (validCoordinates(fresh)) {
+                viewModel.updateLocation(
+                    location = checkNotNull(fresh),
+                    fromCache = false
+                )
+            } else {
+                val cached = withTimeoutOrNull(3_000L) {
+                    fusedLocationClient.lastLocation.await()
+                }
 
-                val isValidLocation =
-                    location.latitude.isFinite() &&
-                            location.longitude.isFinite() &&
-                            location.latitude in -90.0..90.0 &&
-                            location.longitude in -180.0..180.0 &&
-                            ageMillis in 0L..30_000L
-
-                if (isValidLocation) {
-                    viewModel.updateLocation(location)
+                if (validCoordinates(cached)) {
+                    viewModel.updateLocation(
+                        location = checkNotNull(cached),
+                        fromCache = true
+                    )
                 } else {
                     viewModel.setLocationError(
-                        "Tọa độ GPS không hợp lệ hoặc đã cũ. Vui lòng thử lại."
+                        "Chưa lấy được tọa độ từ thiết bị. " +
+                                "Nếu có vị trí đã lưu, hãy kiểm tra " +
+                                "vị trí đó trước khi gửi."
                     )
                 }
-            } else {
-                viewModel.setLocationError(
-                    "Không thể lấy vị trí sau 15 giây. Vui lòng thử lại."
-                )
             }
-
-        } catch (e: CancellationException) {
-            throw e
-
-        } catch (e: SecurityException) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: SecurityException) {
             viewModel.setLocationError(
                 "Quyền truy cập vị trí không còn hợp lệ."
             )
-
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             viewModel.setLocationError(
-                "Không thể lấy GPS. Vui lòng thử lại."
+                "Không thể cập nhật GPS. " +
+                        "Vị trí gần nhất được giữ lại nếu có."
             )
-
         } finally {
             cancellationTokenSource.cancel()
         }
+    }
+
+    var confirmationViaSms by rememberSaveable {
+        mutableStateOf(false)
     }
 
 
@@ -323,7 +318,6 @@ fun SendSosScreen(
             item {
                 SosLocationCard(
                     uiState = uiState,
-                    isExpired = locationIsExpired,
                     enabled = formEnabled,
                     onRetry = {
                         if (formEnabled) gpsRetryKey++
@@ -482,7 +476,7 @@ fun SendSosScreen(
                         )
 
                         Text(
-                            "Đang gửi yêu cầu SOS...",
+                            "Đang xử lý bản SOS...",
                             color = SosText
                         )
                     }
@@ -506,8 +500,119 @@ fun SendSosScreen(
             }
 
             item {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.pendingClientRequestId != null) {
+                        Text(
+                            "Bản SOS đã lưu",
+                            color = SosText,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            "Thông tin được giữ cố định để các lần " +
+                                    "thử gửi thuộc cùng một yêu cầu.",
+                            color = SosYellow,
+                            fontSize = 12.sp
+                        )
+
+                        Text(
+                            text = when (uiState.pendingPhase) {
+                                SosSubmissionPhase.PREPARED ->
+                                    "Đã lưu nội dung, chưa bắt đầu gửi."
+
+                                SosSubmissionPhase.REJECTED ->
+                                    "Lần gửi đã bị từ chối. Bạn có thể " +
+                                            "bỏ bản lưu để sửa thông tin."
+
+                                SosSubmissionPhase.SMS_OPENED ->
+                                    "Đã chuyển sang bước SMS; chưa xác nhận " +
+                                            "hệ thống đã nhận SOS."
+
+                                else ->
+                                    "Chưa xác nhận được kết quả. " +
+                                            "Hãy giữ bản này để kiểm tra lại."
+                            },
+                            color = SosMuted,
+                            fontSize = 12.sp
+                        )
+
+                        OutlinedButton(
+                            enabled = actionEnabled,
+                            onClick = viewModel::checkPendingSubmission,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Kiểm tra kết quả SOS",
+                                color = SosCyan
+                            )
+                        }
+
+                        if (
+                            uiState.pendingPhase in setOf(
+                                SosSubmissionPhase.PREPARED,
+                                SosSubmissionPhase.REJECTED
+                            )
+                        ) {
+                            OutlinedButton(
+                                enabled = actionEnabled,
+                                onClick =
+                                    viewModel::discardUnsentSubmission,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (
+                                        uiState.pendingPhase ==
+                                        SosSubmissionPhase.REJECTED
+                                    ) {
+                                        "Bỏ bản bị từ chối"
+                                    } else {
+                                        "Bỏ bản chưa gửi"
+                                    },
+                                    color = SosYellow
+                                )
+                            }
+                        }
+                    }
+
+                    uiState.smsStatus?.let { message ->
+                        Text(
+                            message,
+                            color = SosYellow,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    OutlinedButton(
+                        enabled = actionEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            if (viewModel.validateForm()) {
+                                confirmationViaSms = true
+                                showSubmitConfirmation = true
+                            } else {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Hãy kiểm tra thông tin và vị trí " +
+                                            "trước khi mở SMS.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    ) {
+                        Text(
+                            "Mở trình soạn SMS cứu hộ",
+                            color = SosCyan
+                        )
+                    }
+                }
+            }
+
+            item {
                 Button(
                     onClick = {
+                        confirmationViaSms = false
                         val isValid = viewModel.validateForm()
 
                         android.util.Log.d(
@@ -542,8 +647,7 @@ fun SendSosScreen(
                         }
                     },
 
-                    enabled = !uiState.isSubmitting &&
-                            uiState.submittedSosId == null,
+                    enabled = actionEnabled,
 
                     modifier = Modifier
                         .fillMaxWidth()
@@ -562,8 +666,10 @@ fun SendSosScreen(
                     ) {
                         Text(
                             text = when {
-                                uiState.isSubmitting -> "ĐANG GỬI SOS..."
+                                uiState.isSubmitting -> "ĐANG XỬ LÝ..."
                                 uiState.submittedSosId != null -> "ĐÃ GỬI SOS – CHỜ CỨU HỘ"
+                                uiState.pendingClientRequestId != null ->
+                                    "THỬ GỬI QUA MẠNG"
                                 else -> "GỬI TÍN HIỆU SOS"
                             },
                             fontSize = if (uiState.submittedSosId != null) 16.sp else 23.sp,
@@ -671,7 +777,10 @@ fun SendSosScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = buildSosConfirmationSummary(uiState),
+                        text = buildSosConfirmationSummary(
+                            uiState,
+                            confirmationViaSms
+                        ),
                         color = SosText,
                         fontSize = 14.sp
                     )
@@ -679,13 +788,58 @@ fun SendSosScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = formEnabled,
+                    enabled = actionEnabled,
                     onClick = {
                         showSubmitConfirmation = false
-                        viewModel.submitSos()
+
+                        if (confirmationViaSms) {
+                            viewModel.openSms { recipient, body ->
+                                check(
+                                    lifecycleOwner.lifecycle.currentState
+                                        .isAtLeast(
+                                            Lifecycle.State.STARTED
+                                        )
+                                ) {
+                                    "Màn hình không còn hoạt động. " +
+                                            "Hãy bấm mở SMS lại."
+                                }
+
+                                val intent = Intent(
+                                    Intent.ACTION_SENDTO,
+                                    Uri.fromParts(
+                                        "smsto",
+                                        recipient,
+                                        null
+                                    )
+                                ).putExtra("sms_body", body)
+
+                                try {
+                                    context.startActivity(intent)
+                                } catch (_: ActivityNotFoundException) {
+                                    throw IllegalStateException(
+                                        "Không tìm thấy ứng dụng SMS " +
+                                                "trên thiết bị."
+                                    )
+                                } catch (_: SecurityException) {
+                                    throw IllegalStateException(
+                                        "Thiết bị không cho phép " +
+                                                "mở ứng dụng SMS."
+                                    )
+                                }
+                            }
+                        } else {
+                            viewModel.submitSos()
+                        }
                     }
                 ) {
-                    Text("Xác nhận gửi", color = SosPink)
+                    Text(
+                        text = if (confirmationViaSms) {
+                            "Mở ứng dụng SMS"
+                        } else {
+                            "Xác nhận gửi"
+                        },
+                        color = SosPink
+                    )
                 }
             },
             dismissButton = {
@@ -694,7 +848,16 @@ fun SendSosScreen(
                         showSubmitConfirmation = false
                     }
                 ) {
-                    Text("Sửa thông tin", color = SosCyan)
+                    Text(
+                        text = if (
+                            uiState.pendingClientRequestId != null
+                        ) {
+                            "Đóng"
+                        } else {
+                            "Sửa thông tin"
+                        },
+                        color = SosCyan
+                    )
                 }
             }
         )
@@ -787,7 +950,6 @@ private fun SosEmergencyBanner() {
 @Composable
 private fun SosLocationCard(
     uiState: SendSosUiState,
-    isExpired: Boolean,
     enabled: Boolean,
     onRetry: () -> Unit,
     onRequestPermission: () -> Unit
@@ -826,12 +988,58 @@ private fun SosLocationCard(
             fontWeight = FontWeight.Bold
         )
 
-        if (isExpired) {
-            Spacer(Modifier.height(8.dp))
+        if (uiState.isRestoringLocation) {
+            Text(
+                "Đang đọc vị trí đã lưu...",
+                color = SosMuted,
+                fontSize = 12.sp
+            )
+        }
+
+        if (uiState.isLocationFromCache) {
+            Spacer(Modifier.height(6.dp))
 
             Text(
-                text = "GPS đã quá 30 giây. Vui lòng cập nhật vị trí trước khi gửi SOS.",
+                "Đây là vị trí gần nhất. " +
+                        "Hãy kiểm tra xem còn đúng vị trí của bạn không.",
+                color = SosYellow,
+                fontSize = 12.sp
+            )
+        }
+
+        if (
+            uiState.latitude != null &&
+            uiState.longitude != null
+        ) {
+            val capturedAt = uiState.locationTimestampMillis
+
+            Text(
+                text = if (capturedAt != null) {
+                    val formatted =
+                        java.text.DateFormat.getDateTimeInstance()
+                            .format(java.util.Date(capturedAt))
+
+                    "Thời điểm lấy mẫu: $formatted"
+                } else {
+                    "Thời điểm lấy mẫu: không xác định"
+                },
+                color = SosMuted,
+                fontSize = 12.sp
+            )
+        }
+
+        uiState.locationSessionError?.let { message ->
+            Text(
+                message,
                 color = SosPink,
+                fontSize = 12.sp
+            )
+        }
+
+        uiState.locationStorageWarning?.let { message ->
+            Text(
+                message,
+                color = SosYellow,
                 fontSize = 12.sp
             )
         }
@@ -1128,7 +1336,10 @@ private fun SosNoteField(
         )
     }
 }
-private fun buildSosConfirmationSummary(state: SendSosUiState): String {
+private fun buildSosConfirmationSummary(
+    state: SendSosUiState,
+    viaSms: Boolean = false
+): String {
     val situations = SosSituation.entries
         .filter { it in state.selectedSituations }
         .joinToString(", ") { it.label }
@@ -1141,14 +1352,22 @@ private fun buildSosConfirmationSummary(state: SendSosUiState): String {
             "Chưa có vị trí"
         }
 
+    val capturedAt = state.locationTimestampMillis?.let {
+        java.text.DateFormat.getDateTimeInstance()
+            .format(java.util.Date(it))
+    } ?: "Không xác định"
+
     return buildString {
         appendLine("Tình huống: $situations")
         appendLine()
         appendLine("Số người: ${state.exactPeopleCount.trim()}")
         appendLine()
-        appendLine("Mức nước: ${state.waterLevel?.label ?: "Chưa chọn"}")
+        appendLine(
+            "Mức nước: ${state.waterLevel?.label ?: "Chưa chọn"}"
+        )
         appendLine()
         appendLine("Vị trí GPS: $position")
+        appendLine("Thời điểm lấy mẫu: $capturedAt")
 
         state.locationAccuracyMeters?.let { accuracy ->
             appendLine("Độ chính xác ước tính: $accuracy m")
@@ -1160,7 +1379,22 @@ private fun buildSosConfirmationSummary(state: SendSosUiState): String {
         }
 
         appendLine()
-        append("Xác nhận gửi thông tin và vị trí này tới hệ thống?")
+
+        if (viaSms) {
+            appendLine(
+                "Bạn cần bấm Gửi trong ứng dụng SMS. " +
+                        "Cước tin nhắn theo nhà mạng."
+            )
+            appendLine(
+                "Mở trình soạn chưa xác nhận hệ thống đã nhận SOS."
+            )
+            appendLine()
+            append("Mở trình soạn SMS cứu hộ?")
+        } else {
+            append(
+                "Xác nhận gửi thông tin và vị trí này tới hệ thống?"
+            )
+        }
     }
 }
 

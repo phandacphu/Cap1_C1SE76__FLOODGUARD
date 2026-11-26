@@ -39,5 +39,6 @@ data class RescueRequestDto(
 
     // Giữ tương thích với code/test cũ trong lúc chuyển đổi.
     // Backend mới không trả trường này; UI không sử dụng.
-    val urgency: String? = null
+    val urgency: String? = null,
+    val clientRequestId: String? = null
 )

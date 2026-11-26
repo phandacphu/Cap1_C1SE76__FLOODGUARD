@@ -1,6 +1,8 @@
 
 package com.example.floodguard.ui.screens.sos
 
+import com.example.floodguard.data.model.SosSubmissionPhase
+
 enum class SosSituation(val label: String) {
     TRAPPED("Bị mắc kẹt do ngập"),
     EVACUATION("Cần sơ tán khẩn cấp"),
@@ -59,9 +61,24 @@ data class SendSosUiState(
 // CCF-83: Thông tin cần thiết để gửi SOS
     val exactPeopleCount: String = "",
 
+    // Đang khôi phục vị trí của phiên đăng nhập hiện tại.
+    val isRestoringLocation: Boolean = false,
+
+    // Đang sử dụng lại vị trí gần nhất.
+    val isLocationFromCache: Boolean = false,
+
+    // Lỗi phiên đăng nhập hoặc lỗi khôi phục.
+    val locationSessionError: String? = null,
+
+    // Có vị trí trên màn hình nhưng chưa lưu được xuống thiết bị.
+    val locationStorageWarning: String? = null,
+
 // Trạng thái gửi yêu cầu SOS
     val isSubmitting: Boolean = false,
     val submitError: String? = null,
-    val submittedSosId: String? = null
+    val submittedSosId: String? = null,
+    val pendingClientRequestId: String? = null,
+    val pendingPhase: SosSubmissionPhase? = null,
+    val smsStatus: String? = null
 
 )

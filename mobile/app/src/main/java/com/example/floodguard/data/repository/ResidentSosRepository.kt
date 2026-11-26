@@ -32,6 +32,28 @@ class ResidentSosRepository(
 ) {
     private val gson = Gson()
 
+    suspend fun smsCredential(): Result<SosSmsCredential> =
+        execute {
+            val response = api.smsCredential()
+            checkHttp(response)
+
+            val body = response.body()
+            val credential = body?.data
+
+            if (
+                body?.success != true ||
+                credential == null ||
+                !credential.isValid()
+            ) {
+                throw ResidentSosResponseException(
+                    "Chưa chuẩn bị được mã SMS SOS. " +
+                            "Máy chủ trả về dữ liệu không hợp lệ."
+                )
+            }
+
+            credential
+        }
+
     suspend fun create(
         request: CreateSosRequest
     ): Result<CreatedSosDto> = execute {
