@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.floodguard.R
-import com.example.floodguard.data.model.FloodAlertDto
+import com.example.floodguard.data.repository.RescueFloodWarningV2
 
 private val LayerBackground = Color(0xFF122131)
 private val LayerText = Color(0xFFD4E4FA)
@@ -48,6 +48,8 @@ internal fun rescueAreaColor(area: RescueFloodMapArea): Color =
 internal fun RescueFloodAreaSheet(
     layers: RescueFloodMapLayers,
     state: RescueMapDataUiState,
+    warningFreshnessNotice: String?,
+    warningIsLoading: Boolean,
     selectedAreaId: String?,
     canFocus: Boolean,
     onSelect: (String?) -> Unit,
@@ -103,12 +105,30 @@ internal fun RescueFloodAreaSheet(
                                 }
                             }
                         }
-                        item { LayerLabel("Cảnh báo theo lần tải gần nhất", LayerText, bold = true) }
+                        item {
+                            LayerLabel(
+                                if (warningFreshnessNotice == null)
+                                    "Cảnh báo V2 đang hoạt động"
+                                else
+                                    "Cảnh báo V2 (dữ liệu lần tải trước)",
+                                LayerText,
+                                bold = true
+                            )
+                        }
+                        item { LayerLabel("Các bản tin này áp dụng chung cho các vùng được công bố; không gắn riêng với một polygon.") }
                         item { WarningLoadNotice(state.activeWarnings, onRetryWarnings) }
+                        if (warningFreshnessNotice != null) {
+                            item {
+                                WarningFreshnessNotice(
+                                    warningFreshnessNotice,
+                                    warningIsLoading,
+                                    onRetryWarnings
+                                )
+                            }
+                        }
                         val warnings = (state.activeWarnings as? RescueMapLoadState.Data)?.items.orEmpty()
-                        items(warnings.filter { it.status.equals("active", true) }) { warning ->
-                            val area = layers.areas.firstOrNull { it.id == warning.areaId?.trim() }
-                            WarningCard(warning, area?.name ?: "Chưa có vùng hiển thị tương ứng")
+                        items(warnings.filter { it.isActive }, key = { "warning:${it.id}" }) { warning ->
+                            WarningCard(warning)
                         }
                     } else {
                         val area = layers.areas.firstOrNull { it.id == selectedAreaId }
@@ -132,14 +152,21 @@ internal fun RescueFloodAreaSheet(
                                     ) { Text("Xem trên bản đồ", fontFamily = LayerFont) }
                                 }
                             }
-                            item { LayerLabel("Cảnh báo liên quan theo lần tải", LayerText, bold = true) }
+                            item { LayerLabel("Cảnh báo V2 áp dụng chung, không xác định riêng vùng này.", LayerText, bold = true) }
                             item { WarningLoadNotice(state.activeWarnings, onRetryWarnings) }
-                            val loaded = (state.activeWarnings as? RescueMapLoadState.Data)?.items
-                            val linked = loaded?.let { rescueWarningsForArea(it, area.id) }.orEmpty()
-                            if (loaded != null && linked.isEmpty()) {
-                                item { LayerLabel("Không có cảnh báo hiện hành gắn với vùng này trong lần tải gần nhất.") }
+                        if (warningFreshnessNotice != null) {
+                            item {
+                                WarningFreshnessNotice(
+                                    warningFreshnessNotice,
+                                    warningIsLoading,
+                                    onRetryWarnings
+                                )
                             }
-                            items(linked) { warning -> WarningCard(warning, area.name) }
+                        }
+                            val warnings = (state.activeWarnings as? RescueMapLoadState.Data)?.items.orEmpty()
+                            items(warnings.filter { it.isActive }, key = { "area-warning:${it.id}" }) { warning ->
+                                WarningCard(warning)
+                            }
                         }
                     }
                     item {
@@ -155,6 +182,21 @@ internal fun RescueFloodAreaSheet(
     }
 }
 
+@Composable
+private fun WarningFreshnessNotice(
+    message: String,
+    isLoading: Boolean,
+    onRetry: () -> Unit
+) {
+    Column {
+        LayerLabel(message, Color(0xFFFFB4AB))
+        if (!isLoading) {
+            TextButton(onClick = onRetry) {
+                LayerLabel("Thử cập nhật cảnh báo", LayerCyan)
+            }
+        }
+    }
+}
 @Composable
 private fun AreaTypeLabel(area: RescueFloodMapArea) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -182,14 +224,16 @@ private fun LegendEntry(type: RescueAreaType) {
 }
 
 @Composable
-private fun WarningCard(warning: FloodAlertDto, areaName: String) {
+private fun WarningCard(warning: RescueFloodWarningV2) {
     LayerCard {
-        LayerLabel(warning.title?.trim().orEmpty().ifEmpty { "Cảnh báo chưa có tiêu đề" }, LayerText, bold = true)
-        LayerLabel("Vùng: $areaName")
-        LayerLabel("Mức cảnh báo: ${RescueFloodSeverity.from(warning.severity).label}")
-        LayerLabel(warning.content?.trim().orEmpty().ifEmpty { "Chưa có nội dung." })
-        LayerLabel("Bắt đầu: ${formatRescueWarningTime(warning.startAt)}")
-        LayerLabel("Kết thúc: ${formatRescueWarningTime(warning.endAt)}")
+        LayerLabel(warning.title, LayerText, bold = true)
+        LayerLabel("Phạm vi: Toàn bộ các vùng được hệ thống công bố")
+        LayerLabel(warning.content)
+        LayerLabel("Bắt đầu: ${formatRescueWarningTime(warning.startAt)} GMT+7")
+        LayerLabel(
+            "Kết thúc: " + (warning.endAt?.let { formatRescueWarningTime(it) } ?: "Đang có hiệu lực") +
+                (if (warning.endAt != null) " GMT+7" else "")
+        )
     }
 }
 
