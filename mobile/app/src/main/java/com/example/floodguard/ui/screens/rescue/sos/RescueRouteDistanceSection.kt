@@ -203,7 +203,7 @@ internal fun RescueRouteDistanceSection(
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("Quãng đường dự kiến", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Quãng đường tham khảo", color = MaterialTheme.colorScheme.onSurfaceVariant)
             when {
                 validDestination == null || location == null -> Text("Chưa xác định")
                 fix == null -> {
@@ -233,8 +233,6 @@ internal fun RescueRouteDistanceSection(
                     TextButton(onClick = { retryKey++ }) { Text("Thử lại") }
                 }
             }
-            Text("Quãng đường ô tô chỉ tham khảo, không bảo đảm an toàn khi ngập.",
-                style = MaterialTheme.typography.bodySmall)
         }
     }
 }

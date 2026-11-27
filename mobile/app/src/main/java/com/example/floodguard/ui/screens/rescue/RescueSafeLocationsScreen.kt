@@ -26,7 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.floodguard.R
 import com.example.floodguard.data.repository.RescueCatalogGps
 import com.example.floodguard.data.repository.RescueCatalogLocation
-import java.util.Locale
+import com.example.floodguard.data.repository.formatSafeRoadDistance
 
 private val CatalogBackground = Color(0xFF051424)
 private val CatalogSurface = Color(0xFF122131)
@@ -53,6 +53,7 @@ internal fun RescueSafeLocationsScreen(
     val state by viewModel.listState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var search by rememberSaveableCatalogSearch()
+    var isMapTouchActive by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) {
         viewModel.onListScreenEntered()
@@ -157,20 +158,13 @@ internal fun RescueSafeLocationsScreen(
                 }
             ) { padding ->
                 LazyColumn(
+                    userScrollEnabled = !isMapTouchActive,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    item {
-                        Text(
-                            text = "Các địa điểm do hệ thống cung cấp",
-                            color = CatalogMuted,
-                            fontFamily = CatalogFont,
-                            fontSize = 13.sp
-                        )
-                    }
 
                     item {
                         OutlinedTextField(
@@ -217,20 +211,15 @@ internal fun RescueSafeLocationsScreen(
                         }
                     }
 
-                    item {
-                        Text(
-                            text = when {
-                                gps == null ->
-                                    "Chưa có GPS. Danh sách vẫn xem được."
-                                fromLastKnown ->
-                                    "Theo vị trí lần cuối"
-                                else ->
-                                    "Đang sử dụng vị trí của bạn"
-                            },
-                            color = CatalogMuted,
-                            fontFamily = CatalogFont,
-                            fontSize = 12.sp
-                        )
+                    if (gps == null) {
+                        item {
+                            Text(
+                                text = "Chưa có GPS. Danh sách vẫn xem được.",
+                                color = CatalogMuted,
+                                fontFamily = CatalogFont,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
 
                     item(key = "view_mode") {
@@ -325,6 +314,7 @@ internal fun RescueSafeLocationsScreen(
                                 onRequestLocation = {
                                     rescueLocation?.locate?.invoke()
                                 },
+                                onMapTouchChanged = { isMapTouchActive = it },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -335,8 +325,18 @@ internal fun RescueSafeLocationsScreen(
                         ) { location ->
                             CatalogLocationCard(
                                 location = location,
-                                showDistance = gps != null &&
-                                    state.gps == gps,
+                                roadMeters = if (
+                                    gps != null &&
+                                    state.gps == gps &&
+                                    !state.isStale
+                                ) {
+                                    state.roadEstimates[location.id]
+                                        ?.takeIf { it.matches(location) }
+                                        ?.meters
+                                } else null,
+                                roadLoading = gps != null &&
+                                    state.gps == gps &&
+                                    (state.isLoading || state.roadLoading),
                                 onClick = {
                                     onOpenDetail(location.id)
                                 }
@@ -387,7 +387,8 @@ private fun CatalogNotice(message: String) {
 @Composable
 private fun CatalogLocationCard(
     location: RescueCatalogLocation,
-    showDistance: Boolean,
+    roadMeters: Long?,
+    roadLoading: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -425,19 +426,17 @@ private fun CatalogLocationCard(
                 fontSize = 12.sp
             )
 
-            if (showDistance && location.distanceKm != null) {
-                Text(
-                    text = "Cách bạn khoảng " +
-                        String.format(
-                            Locale.forLanguageTag("vi-VN"),
-                            "%.2f",
-                            location.distanceKm
-                        ) + " km",
-                    color = CatalogCyan,
-                    fontFamily = CatalogFont,
-                    fontSize = 13.sp
-                )
-            }
+            Text(
+                text = "Đường đi dự kiến: " +
+                    if (roadLoading) {
+                        "Đang tính..."
+                    } else {
+                        formatSafeRoadDistance(roadMeters)
+                    },
+                color = CatalogCyan,
+                fontFamily = CatalogFont,
+                fontSize = 13.sp
+            )
 
             Text(
                 text = "Nhấn để xem chi tiết",

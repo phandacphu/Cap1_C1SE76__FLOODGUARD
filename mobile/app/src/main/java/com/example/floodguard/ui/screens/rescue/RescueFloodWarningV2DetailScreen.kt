@@ -199,32 +199,26 @@ internal fun RescueFloodWarningV2DetailScreen(
                         DetailWarningHeader(warning)
                     }
 
-                    if (!warning.isActive) {
-                        item(key = "inactive_notice") {
-                            DetailWarningNotice(
-                                "Bản tin đã được Admin tắt. " +
-                                    "Cảnh báo theo bản tin này đã kết thúc."
-                            )
-                        }
-                    }
 
                     item(key = "times") {
                         DetailWarningPanel {
                             DetailWarningField(
-                                "BẮT ĐẦU · GMT+7",
+                                "Bắt đầu",
                                 formatRescueWarningTime(warning.startAt)
                             )
 
-                            HorizontalDivider(
-                                color = DetailWarningBorder
-                            )
+                            if (!warning.isActive) {
+                                HorizontalDivider(
+                                    color = DetailWarningBorder
+                                )
 
-                            DetailWarningField(
-                                "KẾT THÚC · GMT+7",
-                                warning.endAt?.let {
-                                    formatRescueWarningTime(it)
-                                } ?: "Đang có hiệu lực"
-                            )
+                                DetailWarningField(
+                                    "Kết thúc",
+                                    warning.endAt?.let {
+                                        formatRescueWarningTime(it)
+                                    } ?: "Chưa có thông tin"
+                                )
+                            }
                         }
                     }
 
@@ -259,46 +253,12 @@ internal fun RescueFloodWarningV2DetailScreen(
                             )
 
                             Text(
-                                text = "Toàn bộ các vùng được hệ thống " +
-                                    "công bố trên bản đồ.",
+                                text = "Toàn bộ các vùng tại bản đồ ngập",
                                 color = DetailWarningText,
                                 fontFamily = DetailWarningFont,
                                 fontSize = 14.sp
                             )
 
-                            Text(
-                                text = "Bản đồ hiển thị ba lớp: " +
-                                    "vùng ngập hiện tại, vùng trũng và vùng ngập lịch sử.",
-                                color = DetailWarningMuted,
-                                fontFamily = DetailWarningFont,
-                                fontSize = 12.sp
-                            )
-
-                            if (!warning.isActive) {
-                                DetailWarningNotice(
-                                    "Bản đồ sử dụng dữ liệu hiện có " +
-                                        "của hệ thống, không tái hiện trạng thái " +
-                                        "các vùng khi bản tin cảnh báo đã kết thúc."
-                                )
-                            }
-
-                            Text(
-                                text = "Bản đồ cứu hộ hiện tại",
-                                color = DetailWarningCyan,
-                                fontFamily = DetailWarningFont,
-                                fontWeight = FontWeight.Bold
-                            )
-                            // Reuse the same Rescue map Composable, map layers and marker UI.
-                            // Embedded mode hides only the tab header, GPS controls and bottom bar.
-                            RescueMapScreen(
-                                onBack = {},
-                                location = rescueLocation,
-                                warningViewModel = viewModel,
-                                accountKey = accountKey,
-                                initiallyShowFloodLayers = true,
-                                embedded = true,
-                                modifier = Modifier.fillMaxWidth().height(360.dp)
-                            )
                         }
                     }
 
@@ -315,7 +275,7 @@ internal fun RescueFloodWarningV2DetailScreen(
                             )
 
                             DetailWarningField(
-                                "Cập nhật lần cuối · GMT+7",
+                                "Cập nhật lần cuối",
                                 formatRescueWarningTime(
                                     warning.updatedAt
                                 )
@@ -337,16 +297,6 @@ internal fun RescueFloodWarningV2DetailScreen(
                     }
                 }
 
-                item(key = "footer") {
-                    Text(
-                        text = "Dữ liệu cung cấp để hỗ trợ " +
-                            "công tác cứu hộ. " +
-                            "Hãy kiểm tra tình hình thực tế.",
-                        color = DetailWarningMuted,
-                        fontFamily = DetailWarningFont,
-                        fontSize = 12.sp
-                    )
-                }
             }
         }
     }

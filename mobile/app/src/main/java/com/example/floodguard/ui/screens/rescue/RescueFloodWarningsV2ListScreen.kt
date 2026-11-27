@@ -101,7 +101,7 @@ internal fun RescueFloodWarningsV2ListScreen(
                         .fillMaxWidth()
                         .padding(
                             horizontal = 12.dp,
-                            vertical = 8.dp
+                            vertical = 2.dp
                         ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -135,8 +135,8 @@ internal fun RescueFloodWarningsV2ListScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item(key = "heading") {
                     Row(
@@ -145,38 +145,36 @@ internal fun RescueFloodWarningsV2ListScreen(
                         horizontalArrangement =
                             Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Danh sách cảnh báo",
-                                color = WarningText,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = WarningFont
-                            )
+                        Text(
+                            text = "Danh sách cảnh báo",
+                            color = WarningText,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = WarningFont,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.weight(1f)
+                        )
 
-                            Text(
-                                text = "Nguồn: Admin FLOODGUARD",
-                                color = WarningMuted,
-                                fontSize = 12.sp,
-                                fontFamily = WarningFont
-                            )
-                        }
-
-                        OutlinedButton(
+                        TextButton(
                             onClick = viewModel::refreshList,
-                            enabled = !state.isLoading
+                            enabled = !state.isLoading,
+                            contentPadding = PaddingValues(
+                                horizontal = 4.dp,
+                                vertical = 0.dp
+                            )
                         ) {
-                            Text("Làm mới")
+                            Text(
+                                text = "Làm mới",
+                                color = WarningCyan.copy(
+                                    alpha = if (state.isLoading) 0.5f else 1f
+                                ),
+                                fontSize = 13.sp,
+                                fontFamily = WarningFont,
+                                maxLines = 1
+                            )
                         }
                     }
-                }
-
-                item(key = "intro") {
-                    WarningV2Notice(
-                        "Các bản tin áp dụng cho toàn bộ vùng " +
-                            "được hệ thống công bố trên bản đồ. " +
-                            "Cứu hộ chỉ xem thông tin, không quản lý bản tin."
-                    )
                 }
 
                 item(key = "search") {
@@ -288,8 +286,7 @@ internal fun RescueFloodWarningsV2ListScreen(
                 ) {
                     item(key = "empty") {
                         WarningV2Notice(
-                            "Không có bản tin phù hợp. " +
-                                "Thử trạng thái khác hoặc làm mới."
+                            "Không còn bản tin nào"
                         )
                     }
                 }
@@ -306,16 +303,6 @@ internal fun RescueFloodWarningsV2ListScreen(
                     )
                 }
 
-                item(key = "footer") {
-                    Text(
-                        text = "Thông tin vùng và bản tin dùng " +
-                            "để hỗ trợ công tác cứu hộ. " +
-                            "Hãy đối chiếu tình hình thực tế.",
-                        color = WarningMuted,
-                        fontSize = 12.sp,
-                        fontFamily = WarningFont
-                    )
-                }
             }
         }
     }

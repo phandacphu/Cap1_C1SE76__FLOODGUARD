@@ -27,7 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.floodguard.R
 import com.example.floodguard.data.repository.RescueCatalogGps
 import com.example.floodguard.data.repository.RescueCatalogLocation
-import java.util.Locale
+import com.example.floodguard.data.repository.formatSafeRoadDistance
 
 private val DetailBackground = Color(0xFF051424)
 private val DetailSurface = Color(0xFF122131)
@@ -54,6 +54,7 @@ internal fun RescueSafeLocationDetailScreen(
     onSos: () -> Unit
 ) {
     val sharedState by viewModel.detailState.collectAsStateWithLifecycle()
+    val listState by viewModel.listState.collectAsStateWithLifecycle()
     // Never render detail from another navigation entry, even for the same ID.
     val state = if (
         sharedState.id == id && sharedState.ownerKey == ownerKey
@@ -296,22 +297,34 @@ internal fun RescueSafeLocationDetailScreen(
                                             "${location.longitude}"
                                     )
 
-                                    if (
+                                    val roadMeters = if (
                                         gps != null &&
-                                        !state.isLoading &&
+                                        listState.gps == gps &&
+                                        !listState.isStale &&
                                         !state.isStale &&
-                                        location.distanceKm != null
+                                        !state.isLoading
                                     ) {
-                                        DetailField(
-                                            title = "Khoảng cách tham khảo",
-                                            value = "Cách bạn khoảng " +
-                                                String.format(
-                                                    Locale.forLanguageTag("vi-VN"),
-                                                    "%.2f",
-                                                    location.distanceKm
-                                                ) + " km (đường chim bay)"
-                                        )
-                                    }
+                                        listState.roadEstimates[location.id]
+                                            ?.takeIf { it.matches(location) }
+                                            ?.meters
+                                    } else null
+
+                                    Text(
+                                        text = "Đường đi dự kiến: " +
+                                            if (
+                                                gps != null &&
+                                                listState.gps == gps &&
+                                                (listState.isLoading ||
+                                                    listState.roadLoading)
+                                            ) {
+                                                "Đang tính..."
+                                            } else {
+                                                formatSafeRoadDistance(roadMeters)
+                                            },
+                                        color = DetailCyan,
+                                        fontFamily = DetailFont,
+                                        fontSize = 14.sp
+                                    )
                                 }
                             }
                         }
@@ -348,49 +361,8 @@ internal fun RescueSafeLocationDetailScreen(
                         }
                     }
 
-                    item {
-                        Text(
-                            text = when {
-                                gps == null ->
-                                    "Chưa có GPS hợp lệ. Có thể xem địa điểm " +
-                                        "và mở ứng dụng chỉ đường."
-                                fromLastKnown ->
-                                    "Đang sử dụng vị trí hợp lệ gần nhất."
-                                else ->
-                                    "Đang sử dụng vị trí của bạn."
-                            },
-                            color = DetailMuted,
-                            fontFamily = DetailFont,
-                            fontSize = 12.sp
-                        )
-                    }
 
-                    item {
-                        OutlinedButton(
-                            onClick = {
-                                rescueLocation?.locate?.invoke()
-                            },
-                            enabled = rescueLocation != null,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                controllerState?.actionLabel
-                                    ?: "Cập nhật vị trí"
-                            )
-                        }
-                    }
 
-                    item {
-                        Text(
-                            text = "Khoảng cách chỉ tính theo đường thẳng, " +
-                                "không phải quãng đường di chuyển. " +
-                                "Hãy xác minh điều kiện an toàn thực tế " +
-                                "trước khi đến điểm tránh trú.",
-                            color = DetailMuted,
-                            fontFamily = DetailFont,
-                            fontSize = 12.sp
-                        )
-                    }
                 }
             }
         }
