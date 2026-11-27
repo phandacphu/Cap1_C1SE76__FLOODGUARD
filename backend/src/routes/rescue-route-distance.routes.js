@@ -10,6 +10,9 @@ const { createRescueRouteDistanceController } = require("../controllers/rescue-r
 const { createRescueRouteMatrixController } = require("../controllers/rescue-route-matrix.controller");
 const { createRescueRouteMatrixService } = require("../services/rescue-route-matrix.service");
 
+const { getSafeLocationDetail } = require("../services/safe-location.service");
+const { createRescueSafeLocationMatrixController } = require("../controllers/rescue-safe-location-matrix.controller");
+
 const router = express.Router();
 const routeDistanceService = createRescueRouteDistanceService();
 const controller = createRescueRouteDistanceController({
@@ -26,6 +29,20 @@ const matrixController = createRescueRouteMatrixController({
 });
 
 // JWT and Rescue RBAC apply to both endpoints; Firebase is read-only here.
+const safeLocationMatrixController =
+  createRescueSafeLocationMatrixController({
+    findUser: getUserById,
+    findLocation: (id) => getSafeLocationDetail(id),
+    estimateBatch: routeMatrixService.estimateBatch,
+  });
+
+router.post(
+  "/safe-locations/batch",
+  authenticateToken,
+  authorizeRoles("rescue"),
+  safeLocationMatrixController,
+);
+
 router.post("/batch", authenticateToken, authorizeRoles("rescue"), matrixController);
 // Read-only with respect to Firestore; ORS API key remains server-side.
 router.post("/", authenticateToken, authorizeRoles("rescue"), controller);
