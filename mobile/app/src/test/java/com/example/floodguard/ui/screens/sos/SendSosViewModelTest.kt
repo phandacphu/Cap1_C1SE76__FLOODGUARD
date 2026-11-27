@@ -122,22 +122,29 @@ class SendSosViewModelTest {
     }
 
     @Test
-    fun expiredGps_isInvalid() {
-        val viewModel = createViewModel()
+    fun olderGps_isValidAndKeepsCapturedTime() {
+        val now = 1_900_000_000_000L
+        val capturedAt = now - 31_000L
+
+        val viewModel = createViewModel(
+            nowMillis = { now }
+        )
 
         fillRequiredFields(viewModel)
-
         viewModel.updateLocation(
-            createLocation(
-                timestamp = System.currentTimeMillis() - 31_000L
-            )
+            createLocation(timestamp = capturedAt)
         )
 
-        assertFalse(viewModel.validateForm())
+        assertTrue(viewModel.validateForm())
 
-        assertNotNull(
-            viewModel.uiState.value.validationErrors.location
-        )
+        val state = viewModel.uiState.value
+
+        assertNull(state.validationErrors.location)
+        assertFalse(state.validationErrors.hasErrors())
+
+        assertEquals(16.0544, state.latitude!!, 0.0)
+        assertEquals(108.2022, state.longitude!!, 0.0)
+        assertEquals(capturedAt, state.locationTimestampMillis)
     }
 
     @Test
@@ -171,12 +178,21 @@ class SendSosViewModelTest {
     }
 
     @Test
-    fun resetForm_clearsFieldsAndGps() {
+    fun resetForm_clearsFieldsButKeepsLastGps() {
         val viewModel = createViewModel()
+
+        val capturedAt = 1_900_000_000_000L
+        val location = createLocation(
+            timestamp = capturedAt
+        ).apply {
+            accuracy = 12f
+        }
 
         fillRequiredFields(viewModel)
         viewModel.updateNote("Cần cứu hộ")
-        viewModel.updateLocation(createLocation())
+        viewModel.updateLocation(location)
+
+        assertTrue(viewModel.validateForm())
 
         viewModel.resetForm()
 
@@ -185,13 +201,25 @@ class SendSosViewModelTest {
         assertTrue(state.selectedSituations.isEmpty())
         assertNull(state.waterLevel)
         assertEquals("", state.note)
-
-        assertNull(state.latitude)
-        assertNull(state.longitude)
-        assertNull(state.locationTimestampMillis)
-
-        // CCF-83
         assertEquals("", state.exactPeopleCount)
+
+        assertEquals(16.0544, state.latitude!!, 0.0)
+        assertEquals(108.2022, state.longitude!!, 0.0)
+        assertEquals(capturedAt, state.locationTimestampMillis)
+        assertEquals(12f, state.locationAccuracyMeters!!, 0f)
+        assertTrue(state.isLocationFromCache)
+
+        assertNull(state.submittedSosId)
+        assertNull(state.pendingClientRequestId)
+
+        // GPS còn được giữ nhưng form trống vẫn không được gửi.
+        assertFalse(viewModel.validateForm())
+
+        val errors = viewModel.uiState.value.validationErrors
+        assertNotNull(errors.situations)
+        assertNotNull(errors.waterLevel)
+        assertNotNull(errors.exactPeopleCount)
+        assertNull(errors.location)
     }
 
     @Test
@@ -445,25 +473,62 @@ class SendSosViewModelTest {
     }
 
     @Test
-    fun submitSos_rechecksGpsAtActualPostTime() = runTest(testDispatcher) {
-        var now = 1_900_000_000_000L
-        var calls = 0
-        val vm = validViewModel({
-            calls++
-            Result.success(createdSos())
-        }, nowMillis = { now })
+    fun submitSos_keepsCapturedGpsWhenClockAdvances() =
+        runTest(testDispatcher) {
+            var now = 1_900_000_000_000L
+            val capturedAt = now
 
-        vm.submitSos() // First validation passes, coroutine has not run yet.
-        assertTrue(vm.uiState.value.isSubmitting)
-        now += 31_000L
-        runCurrent() // GPS is expired immediately before Repository POST.
+            var calls = 0
+            var received: CreateSosRequest? = null
 
-        assertEquals(0, calls)
-        assertFalse(vm.uiState.value.isSubmitting)
-        assertNull(vm.uiState.value.submittedSosId)
-        assertNotNull(vm.uiState.value.validationErrors.location)
-        assertTrue(vm.uiState.value.submitError.orEmpty().contains("GPS"))
-    }
+            val vm = validViewModel(
+                onCreate = { request ->
+                    calls++
+                    received = request
+                    Result.success(createdSos())
+                },
+                nowMillis = { now }
+            )
+
+            vm.submitSos()
+
+            assertTrue(vm.uiState.value.isSubmitting)
+
+            // Coroutine chưa chạy; đồng hồ tiến thêm 31 giây.
+            now += 31_000L
+            runCurrent()
+
+            assertEquals(1, calls)
+            assertNotNull(received)
+            assertNotNull(received!!.clientRequestId)
+
+            assertEquals(
+                16.0544,
+                received!!.location.latitude,
+                0.0
+            )
+            assertEquals(
+                108.2022,
+                received!!.location.longitude,
+                0.0
+            )
+
+            val state = vm.uiState.value
+
+            assertFalse(state.isSubmitting)
+            assertEquals(
+                "test-sos-123",
+                state.submittedSosId
+            )
+            assertNull(state.submitError)
+            assertNull(state.validationErrors.location)
+
+            // Giữ thời điểm GPS ban đầu, không dùng giờ gửi.
+            assertEquals(
+                capturedAt,
+                state.locationTimestampMillis
+            )
+        }
 
     @Test
     fun submitSos_resetWhileSubmittingDoesNotClearRequest() = runTest(testDispatcher) {

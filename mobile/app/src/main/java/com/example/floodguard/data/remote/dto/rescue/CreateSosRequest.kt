@@ -10,5 +10,6 @@ data class CreateSosRequest(
     val situations: List<String>,
     val numberOfPeople: Int,
     val waterLevel: String,
-    val note: String?
+    val note: String?,
+    val clientRequestId: String? = null
 )

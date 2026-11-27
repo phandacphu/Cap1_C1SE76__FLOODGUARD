@@ -6,6 +6,7 @@ import com.example.floodguard.data.remote.dto.rescue.CreateSosRequest
 import com.example.floodguard.data.remote.dto.rescue.CreatedSosDto
 import com.example.floodguard.data.remote.dto.rescue.RescueRequestDto
 import com.example.floodguard.data.repository.ResidentSosApiException
+import com.example.floodguard.data.repository.ResidentSosNetworkException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,13 +20,29 @@ data class ResidentSosEntryState(
     val error: String? = null
 )
 
+// Lần gọi hiện tại dừng trước createRemote().
+// Không có nghĩa các lần gửi trước đó chưa tới Backend.
+class ResidentSosNotPostedException(
+    message: String,
+    cause: Throwable? = null
+) : Exception(message, cause)
+
+// Đã gọi createRemote(), nhưng chưa xác nhận được kết quả.
+class ResidentSosUncertainSubmissionException(
+    message: String,
+    cause: Throwable? = null
+) : Exception(message, cause)
+
 class ResidentSosSubmissionViewModel(
     private val loadActive:
     suspend () -> Result<List<RescueRequestDto>>,
     private val createRemote:
     suspend (CreateSosRequest) -> Result<CreatedSosDto>
 ) : ViewModel() {
-    private val _state = MutableStateFlow(ResidentSosEntryState())
+
+    private val _state =
+        MutableStateFlow(ResidentSosEntryState())
+
     val state = _state.asStateFlow()
 
     private val submitMutex = Mutex()
@@ -35,27 +52,48 @@ class ResidentSosSubmissionViewModel(
     }
 
     fun checkActive() {
+        val previous = _state.value
+
         if (
-            _state.value.isChecking ||
+            previous.isChecking ||
             submitMutex.isLocked ||
-            _state.value.openSosId != null
+            previous.openSosId != null
         ) {
             return
         }
 
-        _state.value = ResidentSosEntryState(isChecking = true)
+        // Khi kiểm tra lại, giữ form đang mở để không làm
+        // màn hình bị tháo ra rồi dựng lại.
+        _state.value = previous.copy(
+            isChecking = true,
+            error = null
+        )
 
         viewModelScope.launch {
             readActive().fold(
                 onSuccess = { active ->
                     _state.value = if (active == null) {
-                        ResidentSosEntryState(formAllowed = true)
+                        ResidentSosEntryState(
+                            formAllowed = true
+                        )
                     } else {
-                        ResidentSosEntryState(openSosId = active.id)
+                        ResidentSosEntryState(
+                            openSosId = active.id
+                        )
                     }
                 },
                 onFailure = { error ->
+                    val allowForm =
+                        !isAccessError(error) &&
+                                (
+                                        previous.formAllowed ||
+                                                error is ResidentSosNetworkException ||
+                                                (error is ResidentSosApiException &&
+                                                        error.statusCode in 500..599)
+                                        )
+
                     _state.value = ResidentSosEntryState(
+                        formAllowed = allowForm,
                         error = error.message
                             ?: "Chưa kiểm tra được SOS đang hoạt động."
                     )
@@ -69,49 +107,63 @@ class ResidentSosSubmissionViewModel(
         isLocationFresh: () -> Boolean = { true }
     ): Result<CreatedSosDto> {
         if (!submitMutex.tryLock()) {
-            return Result.failure(
-                IllegalStateException("Đang xử lý yêu cầu SOS.")
+            return notPosted(
+                "Đang xử lý yêu cầu SOS."
             )
         }
 
         try {
+            val current = _state.value
+
             if (
-                !_state.value.formAllowed ||
-                _state.value.isChecking ||
-                _state.value.openSosId != null
+                !current.formAllowed ||
+                current.isChecking ||
+                current.openSosId != null
             ) {
-                return Result.failure(
-                    IllegalStateException(
-                        "Cần kiểm tra SOS đang hoạt động trước khi gửi."
-                    )
+                return notPosted(
+                    "Cần kiểm tra SOS đang hoạt động trước khi gửi."
                 )
             }
 
-            // Kiểm tra lại ngay trước mỗi lần POST do người dùng yêu cầu.
+            // Chỉ thao tác gửi do người dùng yêu cầu mới
+            // đi tới bước kiểm tra trước POST này.
             val beforeCreate = readActive()
             val checkError = beforeCreate.exceptionOrNull()
 
             if (checkError != null) {
-                return Result.failure(checkError)
-            }
-
-            beforeCreate.getOrNull()?.let { active ->
-                openExisting(active.id!!)
-                return Result.failure(
-                    IllegalStateException(
-                        "Bạn đã có SOS đang hoạt động. Đang mở yêu cầu."
+                if (isAccessError(checkError)) {
+                    _state.value = ResidentSosEntryState(
+                        error = checkError.message
                     )
+                }
+
+                return notPosted(
+                    message =
+                        "Lần này chưa gửi yêu cầu tạo SOS vì " +
+                                "chưa kiểm tra được SOS đang hoạt động. " +
+                                (
+                                        checkError.message
+                                            ?: "Vui lòng kiểm tra kết nối."
+                                        ),
+                    cause = checkError
                 )
             }
 
-            // GET kiểm tra SOS có thể kéo dài.
-// Kiểm tra lại mẫu GPS ngay trước khi bắt đầu POST.
+            beforeCreate.getOrNull()?.let { active ->
+                openExisting(checkNotNull(active.id))
+
+                return notPosted(
+                    "Bạn đã có SOS đang hoạt động. " +
+                            "Đang mở yêu cầu để kiểm tra."
+                )
+            }
+
+            // Giữ callback hiện có để tương thích với
+            // SendSosViewModel. Chính sách GPS sẽ nối ở bước sau.
             if (!isLocationFresh()) {
-                return Result.failure(
-                    IllegalStateException(
-                        "Vị trí GPS đã quá 30 giây hoặc không hợp lệ. " +
-                                "Vui lòng cập nhật GPS rồi xác nhận gửi lại."
-                    )
+                return notPosted(
+                    "Vị trí GPS chưa đáp ứng điều kiện gửi. " +
+                            "Vui lòng kiểm tra vị trí rồi xác nhận lại."
                 )
             }
 
@@ -126,9 +178,7 @@ class ResidentSosSubmissionViewModel(
             val created = result.getOrNull()
 
             if (created != null && !created.id.isNullOrBlank()) {
-                _state.value = ResidentSosEntryState(
-                    openSosId = created.id
-                )
+                openExisting(created.id)
                 return result
             }
 
@@ -140,70 +190,102 @@ class ResidentSosSubmissionViewModel(
                 error.code == "DUPLICATE_SOS_REQUEST"
             ) {
                 val existingId = error.activeRequestId
+
                 if (!existingId.isNullOrBlank()) {
                     openExisting(existingId)
                     return Result.failure(error)
                 }
 
-                return reconcileAfterUncertainResult()
+                return reconcileAfterUncertainResult(error)
             }
 
-            // Lỗi 4xx đã có kết quả rõ ràng, giữ form và báo lỗi.
+            // HTTP 408 vẫn có thể xảy ra khi phía máy chủ
+            // chưa trả được kết quả xử lý.
             if (
                 error is ResidentSosApiException &&
-                error.statusCode in 400..499
+                error.statusCode in 400..499 &&
+                error.statusCode != 408
             ) {
+                if (isAccessError(error)) {
+                    _state.value = ResidentSosEntryState(
+                        error = error.message
+                    )
+                }
+
                 return Result.failure(error)
             }
 
-            // Mất mạng, 5xx hoặc response không hợp lệ:
-            // không biết chắc Backend đã lưu hay chưa.
-            return reconcileAfterUncertainResult()
+            // Mất mạng, 5xx, response không hợp lệ hoặc
+            // thiếu mã SOS: chỉ đối chiếu, không tự POST lại.
+            return reconcileAfterUncertainResult(error)
         } finally {
             submitMutex.unlock()
         }
     }
 
-    private suspend fun reconcileAfterUncertainResult():
-            Result<CreatedSosDto> {
+    private suspend fun reconcileAfterUncertainResult(
+        originalError: Throwable?
+    ): Result<CreatedSosDto> {
         val result = readActive()
         val active = result.getOrNull()
 
         if (active != null) {
-            openExisting(active.id!!)
+            openExisting(checkNotNull(active.id))
+
             return Result.failure(
-                IllegalStateException(
+                ResidentSosUncertainSubmissionException(
                     "Đã tìm thấy SOS đang hoạt động. " +
-                            "Mở yêu cầu để kiểm tra kết quả."
+                            "Mở yêu cầu để kiểm tra kết quả.",
+                    originalError
                 )
             )
         }
 
-        val error = result.exceptionOrNull()
+        val checkError = result.exceptionOrNull()
 
-        return if (error != null) {
-            Result.failure(
-                IllegalStateException(
-                    "Chưa xác nhận được kết quả gửi SOS. " +
-                            "Không tự gửi lại. " +
-                            (error.message ?: "Vui lòng kiểm tra kết nối."),
-                    error
-                )
+        if (checkError != null && isAccessError(checkError)) {
+            _state.value = ResidentSosEntryState(
+                error = checkError.message
             )
+        }
+
+        val message = if (checkError != null) {
+            "Chưa xác nhận được kết quả gửi SOS. " +
+                    "Thông tin cần được giữ lại để đối chiếu. " +
+                    (
+                            checkError.message
+                                ?: "Vui lòng kiểm tra kết nối."
+                            )
         } else {
-            Result.failure(
-                IllegalStateException(
-                    "Chưa xác nhận gửi thành công. " +
-                            "Lần kiểm tra hiện tại chưa thấy SOS hoạt động. " +
-                            "Thông tin form được giữ nguyên; " +
-                            "hãy kiểm tra lại trước khi chủ động gửi lại."
-                )
-            )
+            "Chưa xác nhận gửi thành công. " +
+                    "Lần kiểm tra hiện tại chưa thấy SOS hoạt động. " +
+                    "Cần giữ nguyên bản gửi để đối chiếu."
         }
+
+        return Result.failure(
+            ResidentSosUncertainSubmissionException(
+                message = message,
+                cause = checkError ?: originalError
+            )
+        )
     }
 
+    private fun notPosted(
+        message: String,
+        cause: Throwable? = null
+    ): Result<CreatedSosDto> =
+        Result.failure(
+            ResidentSosNotPostedException(message, cause)
+        )
+
+    private fun isAccessError(error: Throwable): Boolean =
+        error is ResidentSosApiException &&
+                error.statusCode in setOf(401, 403)
+
     private fun openExisting(id: String) {
-        _state.value = ResidentSosEntryState(openSosId = id)
+        _state.value = ResidentSosEntryState(
+            openSosId = id
+        )
     }
 
     private suspend fun readActive(): Result<RescueRequestDto?> {
@@ -213,7 +295,8 @@ class ResidentSosSubmissionViewModel(
                     if (
                         requests.size > 1 ||
                         requests.any {
-                            it.id.isNullOrBlank() || it.state != "active"
+                            it.id.isNullOrBlank() ||
+                                    it.state != "active"
                         }
                     ) {
                         Result.failure(
@@ -226,7 +309,9 @@ class ResidentSosSubmissionViewModel(
                         Result.success(requests.singleOrNull())
                     }
                 },
-                onFailure = { Result.failure(it) }
+                onFailure = {
+                    Result.failure(it)
+                }
             )
         } catch (error: CancellationException) {
             throw error

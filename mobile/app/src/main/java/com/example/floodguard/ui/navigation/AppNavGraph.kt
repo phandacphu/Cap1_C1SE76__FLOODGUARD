@@ -40,6 +40,7 @@ import com.example.floodguard.ui.screens.sos.ResidentSosDetailViewModel
 import com.example.floodguard.ui.screens.sos.ResidentSosSubmissionViewModel
 import com.example.floodguard.ui.screens.sos.rememberResidentSosTracking
 import com.example.floodguard.ui.screens.sos.ResidentSosUploadPanel
+import com.example.floodguard.ui.screens.sos.rememberSosSmsPreparation
 import com.example.floodguard.data.repository.AuthRepository
 import com.example.floodguard.data.repository.FloodAlertRepository
 import com.example.floodguard.data.repository.FloodAreaRepository
@@ -118,6 +119,9 @@ fun AppNavGraph(
     val sessionManager = remember(context) {
         SessionManager(context.applicationContext)
     }
+
+    rememberSosSmsPreparation(sessionManager)
+
     val residentSosTracking = rememberResidentSosTracking(sessionManager)
     val scope = rememberCoroutineScope()
     val navigationSession by produceState<NavigationSession?>(
@@ -1563,7 +1567,8 @@ fun AppNavGraph(
 
             val submissionViewModel: ResidentSosSubmissionViewModel =
                 viewModel(
-                    viewModelStoreOwner = entry
+                    viewModelStoreOwner = entry,
+                    key = "resident-sos-submission:${session.accountKey}"
                 ) {
                     ResidentSosSubmissionViewModel(
                         loadActive = {
@@ -1579,9 +1584,17 @@ fun AppNavGraph(
                 }
 
             val sendSosViewModel: SendSosViewModel = viewModel(
-                viewModelStoreOwner = entry
+                viewModelStoreOwner = entry,
+                key = "send-sos:${session.accountKey}"
             ) {
                 SendSosViewModel(
+                    sessionManager = sessionManager,
+                    loadSubmittedRequests = {
+                        residentRepository.getRequests()
+                            .onFailure(
+                                residentSosTracking::onApiError
+                            )
+                    },
                     submitValidatedSos = { request, isLocationFresh ->
                         submissionViewModel.submit(
                             request = request,
@@ -1591,17 +1604,36 @@ fun AppNavGraph(
                 )
             }
 
+
             val submissionState by
             submissionViewModel.state.collectAsState()
 
-            LaunchedEffect(submissionState.openSosId) {
-                val id = submissionState.openSosId
-                    ?: return@LaunchedEffect
+            val sendState by
+            sendSosViewModel.uiState.collectAsState()
+
+            LaunchedEffect(
+                submissionState.openSosId,
+                sendState.submittedSosId,
+                sendState.isSubmitting,
+                sendState.isRestoringLocation
+            ) {
+                if (
+                    sendState.isSubmitting ||
+                    sendState.isRestoringLocation
+                ) {
+                    return@LaunchedEffect
+                }
+
+                val id =
+                    sendState.submittedSosId ?:
+                    submissionState.openSosId ?:
+                    return@LaunchedEffect
 
                 residentSosTracking.refresh()
 
                 navController.navigate(
-                    "${AppRoutes.SOS_STATUS}/${android.net.Uri.encode(id)}"
+                    "${AppRoutes.SOS_STATUS}/" +
+                            android.net.Uri.encode(id)
                 ) {
                     popUpTo(entry.destination.id) {
                         inclusive = true
