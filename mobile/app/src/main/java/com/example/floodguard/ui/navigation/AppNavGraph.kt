@@ -95,6 +95,8 @@ import com.example.floodguard.ui.screens.rescue.RescueSafeLocationsScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationDetailScreen
 import com.example.floodguard.ui.screens.rescue.RescueSafeLocationViewModel
 import com.example.floodguard.data.repository.RescueSafeLocationRepository
+import com.example.floodguard.data.repository.RescueSafeLocationRoadRepository
+import com.example.floodguard.data.repository.RescueSafeLocationRoadApi
 import com.example.floodguard.data.remote.api.RescueFloodWarningV2Api
 import com.example.floodguard.data.repository.RescueFloodWarningV2Repository
 import com.example.floodguard.data.repository.RescueFloodWarningV2ZonesRepository
@@ -279,6 +281,10 @@ fun AppNavGraph(
                 RescueSafeLocationViewModel(
                     RescueSafeLocationRepository(
                         ApiClient.rescueSafeLocationApi
+                    ),
+                    RescueSafeLocationRoadRepository(
+                        ApiClient.createAuthenticatedRetrofit(sessionManager)
+                            .create(RescueSafeLocationRoadApi::class.java)
                     )
                 )
             }
@@ -435,10 +441,7 @@ fun AppNavGraph(
                         else ->
                             RescueOverviewSectionState.Ready(
                                 "${warningState.activeCount} đang bật / " +
-                                    "${warningState.warnings.size} bản tin. " +
-                                    "Gần nhất: " +
-                                    (warningState.latestWarning?.title
-                                        ?: "Không có") +
+                                    "${warningState.warnings.size} bản tin" +
                                     if (warningState.isStale) {
                                         " · Chưa thể cập nhật dữ liệu mới."
                                     } else {
@@ -584,7 +587,20 @@ fun AppNavGraph(
                 val distanceRepository = rescueDistanceRepository
                 if (!id.isNullOrBlank() && distanceRepository != null) RescueSosDetailScreen(id = id, store = store,
                     rescueLocation = rescueLocation, distanceRepository = distanceRepository,
-                    onBack = { openRescueTab(AppRoutes.RESCUE_SOS) },
+                    onBack = {
+                        val returned = navController.popBackStack(
+                            AppRoutes.RESCUE_SOS,
+                            inclusive = false
+                        )
+                        if (!returned) {
+                            navController.navigate(AppRoutes.RESCUE_SOS) {
+                                popUpTo(entry.destination.id) {
+                                    inclusive = true
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                     onOverview = { openRescueTab(AppRoutes.RESCUE_HOME) },
                     onMap = { openRescueTab(AppRoutes.RESCUE_MAP) },
                     onSafeLocations = { openRescueTab(AppRoutes.RESCUE_SAFE_LOCATIONS) })

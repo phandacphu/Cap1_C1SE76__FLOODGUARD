@@ -7,7 +7,7 @@ import com.example.floodguard.data.model.RescueSafeLocationDto
 import com.example.floodguard.data.model.RescueSafeLocationsData
 import com.example.floodguard.data.model.RescueSafeLocationsResponse
 import com.example.floodguard.data.remote.api.RescueSafeLocationApi
-import com.example.floodguard.data.repository.RescueCatalogGps
+import com.example.floodguard.data.repository.*
 import com.example.floodguard.data.repository.RescueSafeLocationRepository
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -553,4 +553,272 @@ class RescueSafeLocationViewModelTest {
         assertEquals("new-entry", vm.detailState.value.ownerKey)
         assertEquals("loc-a", vm.detailState.value.location?.id)
     }
+
+
+    private class MatrixFakeApi : RescueSafeLocationRoadApi {
+
+        val requests = mutableListOf<SafeRoadRequest>()
+
+        var handler: suspend (SafeRoadRequest) ->
+            Response<SafeRoadResponse> = {
+                error("Unexpected Matrix request")
+            }
+
+        override suspend fun estimate(
+            request: SafeRoadRequest
+        ): Response<SafeRoadResponse> {
+            requests.add(request)
+            return handler(request)
+        }
+    }
+
+    private fun matrixOk(
+        vararg values: Pair<String, Long?>
+    ): Response<SafeRoadResponse> =
+        Response.success(
+            SafeRoadResponse(
+                success = true,
+                data = SafeRoadData(
+                    provider = "openrouteservice",
+                    travelMode = "DRIVE",
+                    results = values.map { (id, meters) ->
+                        SafeRoadResult(
+                            locationId = id,
+                            destination = SafeRoadPoint(0.0, 0.0),
+                            distanceMeters = meters
+                        )
+                    }
+                )
+            )
+        )
+
+    private fun matrixViewModel(
+        api: FakeApi,
+        matrix: MatrixFakeApi
+    ) = RescueSafeLocationViewModel(
+        RescueSafeLocationRepository(api),
+        RescueSafeLocationRoadRepository(matrix)
+    )
+
+    @Test
+    fun matrixSortsByRoadDistance() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        api.onList = { _, _ ->
+            listOk(
+                item("a", 0.1),
+                item("b", 5.0),
+                item("c", 0.2),
+                item("d", 9.0)
+            )
+        }
+
+        matrix.handler = {
+            matrixOk(
+                "a" to 2000L,
+                "b" to 0L,
+                "c" to null,
+                "d" to 500L
+            )
+        }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        vm.onGpsChanged(RescueCatalogGps(16.0, 108.0))
+        runCurrent()
+
+        val state = vm.listState.value
+
+        assertEquals(
+            listOf("b", "d", "a", "c"),
+            state.locations.map { it.id }
+        )
+
+        assertEquals(0L, state.roadEstimates["b"]?.meters)
+        assertEquals(500L, state.roadEstimates["d"]?.meters)
+        assertNull(state.roadEstimates["c"]?.meters)
+        assertFalse(state.roadLoading)
+        assertEquals(1, matrix.requests.size)
+    }
+
+    @Test
+    fun matrixDoesNotRunWithoutGps() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        api.onList = { _, _ -> listOk(item()) }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        assertTrue(vm.listState.value.hasLoaded)
+        assertEquals(1, vm.listState.value.locations.size)
+        assertTrue(vm.listState.value.roadEstimates.isEmpty())
+        assertFalse(vm.listState.value.roadLoading)
+        assertTrue(matrix.requests.isEmpty())
+    }
+
+    @Test
+    fun matrixGpsRevocationClearsDistancesImmediately() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        api.onList = { _, _ -> listOk(item("a")) }
+        matrix.handler = { matrixOk("a" to 1200L) }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        vm.onGpsChanged(RescueCatalogGps(16.0, 108.0))
+        runCurrent()
+
+        assertEquals(
+            1200L,
+            vm.listState.value.roadEstimates["a"]?.meters
+        )
+
+        vm.onGpsChanged(null)
+
+        assertNull(vm.listState.value.gps)
+        assertTrue(vm.listState.value.roadEstimates.isEmpty())
+        assertFalse(vm.listState.value.roadLoading)
+
+        runCurrent()
+
+        assertTrue(vm.listState.value.hasLoaded)
+        assertEquals(1, vm.listState.value.locations.size)
+        assertTrue(vm.listState.value.roadEstimates.isEmpty())
+        assertEquals(1, matrix.requests.size)
+    }
+
+    @Test
+    fun matrixOldGpsResponseCannotOverrideNewGps() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        val oldResponse =
+            CompletableDeferred<Response<SafeRoadResponse>>()
+
+        api.onList = { _, _ -> listOk(item("a")) }
+
+        matrix.handler = { request ->
+            if (request.origin.latitude == 16.0) {
+                withContext(NonCancellable) {
+                    oldResponse.await()
+                }
+            } else {
+                matrixOk("a" to 2200L)
+            }
+        }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        vm.onGpsChanged(RescueCatalogGps(16.0, 108.0))
+        runCurrent()
+
+        assertTrue(vm.listState.value.roadLoading)
+
+        try {
+            vm.onGpsChanged(
+                RescueCatalogGps(17.0, 108.0)
+            )
+            runCurrent()
+
+            assertEquals(
+                2200L,
+                vm.listState.value.roadEstimates["a"]?.meters
+            )
+
+            oldResponse.complete(matrixOk("a" to 100L))
+            runCurrent()
+
+            assertEquals(
+                RescueCatalogGps(17.0, 108.0),
+                vm.listState.value.gps
+            )
+
+            assertEquals(
+                2200L,
+                vm.listState.value.roadEstimates["a"]?.meters
+            )
+
+            assertFalse(vm.listState.value.roadLoading)
+        } finally {
+            oldResponse.complete(matrixOk("a" to 100L))
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun matrixFailureKeepsCatalogueAvailable() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        api.onList = { _, _ ->
+            listOk(item("a"), item("b"))
+        }
+
+        matrix.handler = {
+            throw IOException("Matrix offline")
+        }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        vm.onGpsChanged(RescueCatalogGps(16.0, 108.0))
+        runCurrent()
+
+        val state = vm.listState.value
+
+        assertTrue(state.hasLoaded)
+        assertEquals(2, state.locations.size)
+        assertTrue(state.roadEstimates.isEmpty())
+        assertFalse(state.roadLoading)
+        assertFalse(state.isLoading)
+        assertFalse(state.isStale)
+    }
+
+    @Test
+    fun matrixRetryRestoresRoadDistance() = runWithMain {
+        val api = FakeApi()
+        val matrix = MatrixFakeApi()
+
+        api.onList = { _, _ -> listOk(item("a")) }
+
+        matrix.handler = {
+            Response.error(
+                429,
+                "".toResponseBody(null)
+            )
+        }
+
+        val vm = matrixViewModel(api, matrix)
+        runCurrent()
+
+        vm.onGpsChanged(RescueCatalogGps(16.0, 108.0))
+        runCurrent()
+
+        assertTrue(vm.listState.value.roadEstimates.isEmpty())
+        assertFalse(vm.listState.value.roadLoading)
+
+        matrix.handler = {
+            matrixOk("a" to 1500L)
+        }
+
+        vm.refreshLocations()
+        runCurrent()
+
+        assertEquals(
+            1500L,
+            vm.listState.value.roadEstimates["a"]?.meters
+        )
+
+        assertEquals(2, matrix.requests.size)
+        assertFalse(vm.listState.value.roadLoading)
+        assertFalse(vm.listState.value.isLoading)
+    }
+
 }

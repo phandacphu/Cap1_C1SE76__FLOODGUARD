@@ -14,12 +14,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -147,7 +149,7 @@ internal fun RescueSosListScreen(store: RescueSosStore, filter: SosFilter,
                             SosLabel(item.situations.takeIf { it.isNotEmpty() }?.joinToString(" • ", transform = ::situationLabel)
                                 ?: "Chưa có thông tin tình huống")
                             SosLabel("Gửi lúc: ${sosTime(item.createdAt)}")
-                            SosLabel("Backend nhận vị trí: ${sosTime(item.locationReceivedAt)}")
+                            SosLabel("Nhận vị trí lúc: ${sosTime(item.locationReceivedAt)}")
                             item.note?.takeIf { it.isNotBlank() }?.let { SosLabel(it) }
                             SosLabel("Mở chi tiết", accent = true)
                         }
@@ -170,13 +172,17 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
     LaunchedEffect(state.accessError, item?.state) {
         if (state.accessError != null || item?.state != "active") confirm = false
     }
-    SosFrame("Chi tiết SOS", onOverview, onMap, onSafeLocations) {
+    SosFrame(
+        "Chi tiết SOS",
+        onOverview,
+        onMap,
+        onSafeLocations,
+        onBack = onBack,
+        onRefresh = { store.openDetail(id) },
+        refreshing = resource.loading
+    ) {
         Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onBack) { Text("Danh sách SOS") }
-                OutlinedButton(onClick = { store.openDetail(id) }, enabled = !resource.loading) { Text("Tải lại") }
-            }
             SosLabel("Mã SOS: $id", bold = true)
             if (resource.loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             state.accessError?.let { SosLabel(it); SosLabel("Quay về Tổng quan để đăng nhập lại.") }
@@ -193,10 +199,9 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
                 SosLabel("Gửi lúc: ${sosTime(item.createdAt)}")
                 SosLabel("Vị trí ban đầu: ${pointLabel(item.initialLocation)}")
                 SosLabel(if (item.state == "rescued") "Vị trí cuối đã lưu: ${pointLabel(item.location)}"
-                    else "Vị trí mới nhất Backend đã nhận: ${pointLabel(item.location)}")
-                SosLabel("Thời điểm thiết bị ghi nhận vị trí mới nhất: ${sosTime(item.locationCapturedAt, "Không rõ")}")
-                SosLabel("Backend nhận vị trí mới nhất: ${sosTime(item.locationReceivedAt)}")
-                SosLabel("Khi mất mạng, đây có thể là vị trí cũ; ứng dụng không biết vị trí chưa gửi được lên máy chủ.")
+                    else "Vị trí mới nhất đã nhận: ${pointLabel(item.location)}")
+                SosLabel("Thời điểm ghi nhận vị trí: ${sosTime(item.locationCapturedAt, "Không rõ")}")
+                SosLabel("Thời điểm nhận vị trí: ${sosTime(item.locationReceivedAt)}")
                 RescueRouteDistanceSection(id, item.location, rescueLocation, distanceRepository)
                 item.location?.takeIf { it.isValid() }?.let { SosLocationPreview(it, item.state == "rescued") }
                 if (item.state == "rescued") {
@@ -208,7 +213,7 @@ internal fun RescueSosDetailScreen(id: String, store: RescueSosStore,
                         modifier = Modifier.fillMaxWidth()) {
                         Text(if (state.completingId == id) "Đang xác nhận…" else "Xác nhận đã cứu")
                     }
-                    SosLabel("Chỉ xác nhận sau khi đã thực sự cứu/hỗ trợ người dân.")
+
                 }
                 state.actionMessage?.let { SosLabel(it, accent = true) }
                 SosLabel("Lịch sử xử lý", bold = true)
@@ -320,23 +325,79 @@ private fun SosLocationPreview(point: SosPoint, rescued: Boolean) {
         },
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text("Tra cứu chỉ đường trên Google Maps")
+        Text("Tra cứu chỉ đường trên Google Maps", fontSize = 12.sp, maxLines = 1, softWrap = false)
     }
 
-    SosLabel(
-        "Chỉ đường tham khảo; hệ thống chưa xác minh tuyến tránh ngập."
-    )
 }
 
 @Composable
 private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit, onSafeLocations: (() -> Unit)?,
+    onBack: (() -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null,
+    refreshing: Boolean = false,
     content: @Composable ColumnScope.() -> Unit) {
     MaterialTheme(colorScheme = darkColorScheme(primary = SosAccent, onPrimary = SosBg,
         surface = SosPanel, onSurface = SosText, background = SosBg, onBackground = SosText)) {
     Surface(color = SosBg, contentColor = SosText, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SosLabel(title, bold = true, accent = true); content()
+                if (onBack != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TextButton(
+                            onClick = onBack,
+                            contentPadding = PaddingValues(
+                                horizontal = 2.dp,
+                                vertical = 0.dp
+                            )
+                        ) {
+                            Text(
+                                text = "Quay lại",
+                                color = SosAccent,
+                                fontFamily = SosFont,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                        }
+
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontFamily = SosFont,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        if (onRefresh != null) {
+                            TextButton(
+                                onClick = onRefresh,
+                                enabled = !refreshing,
+                                contentPadding = PaddingValues(
+                                    horizontal = 2.dp,
+                                    vertical = 0.dp
+                                )
+                            ) {
+                                Text(
+                                    text = "Làm mới",
+                                    color = SosAccent.copy(
+                                        alpha = if (refreshing) 0.5f else 1f
+                                    ),
+                                    fontFamily = SosFont,
+                                    fontSize = 13.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    SosLabel(title, bold = true, accent = true)
+                }
+                content()
             }
             RescueBottomBar(selectedTab = RescueMainTab.SOS, onOverview = onOverview, onMap = onMap, onSafeLocations = onSafeLocations)
         }
@@ -414,7 +475,7 @@ private fun SosSourceSection(item: RescueSos) {
 
             if (item.source == "sms") {
                 SosLabel(
-                    "Số gửi SMS: " +
+                    "Số gửi SMS (chưa xác minh): " +
                         (item.smsSenderPhone?.takeIf { it.isNotBlank() }
                             ?: "Không rõ")
                 )
@@ -424,10 +485,6 @@ private fun SosSourceSection(item: RescueSos) {
                         sosTime(item.smsReceivedAt, "Không rõ")
                 )
 
-                SosLabel(
-                    "Số gửi SMS chỉ dùng để liên hệ, " +
-                        "không phải thông tin danh tính đã xác minh."
-                )
 
                 val phone = sosDialablePhone(item.smsSenderPhone)
 

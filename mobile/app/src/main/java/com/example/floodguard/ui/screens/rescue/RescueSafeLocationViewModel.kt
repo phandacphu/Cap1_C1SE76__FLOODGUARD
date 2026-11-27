@@ -8,6 +8,9 @@ import com.example.floodguard.data.repository.RescueCatalogLocation
 import com.example.floodguard.data.repository.RescueCatalogResult
 import com.example.floodguard.data.repository.RescueSafeLocationRepository
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import com.example.floodguard.data.repository.RescueSafeLocationRoadRepository
+import com.example.floodguard.data.repository.SafeRoadEstimate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +24,9 @@ data class RescueSafeLocationListUiState(
     val errorMessage: String? = null,
     val isStale: Boolean = false,
     val gps: RescueCatalogGps? = null,
-    val usingLastKnownGps: Boolean = false
+    val usingLastKnownGps: Boolean = false,
+    val roadEstimates: Map<String, SafeRoadEstimate> = emptyMap(),
+    val roadLoading: Boolean = false
 )
 
 data class RescueSafeLocationDetailUiState(
@@ -39,7 +44,8 @@ data class RescueSafeLocationDetailUiState(
 }
 
 class RescueSafeLocationViewModel(
-    private val repository: RescueSafeLocationRepository
+    private val repository: RescueSafeLocationRepository,
+    private val roadRepository: RescueSafeLocationRoadRepository? = null
 ) : ViewModel() {
 
     private val _listState =
@@ -106,6 +112,8 @@ class RescueSafeLocationViewModel(
                     it.copy(distanceKm = null)
                 },
                 gps = validGps,
+                roadEstimates = emptyMap(),
+                roadLoading = false,
                 usingLastKnownGps = lastKnown,
                 errorMessage = null,
                 isStale = previous.hasLoaded
@@ -134,6 +142,8 @@ class RescueSafeLocationViewModel(
         _listState.update {
             it.copy(
                 isLoading = true,
+                roadEstimates = emptyMap(),
+                roadLoading = false,
                 errorMessage = null,
                 isStale = it.hasLoaded
             )
@@ -156,6 +166,48 @@ class RescueSafeLocationViewModel(
                             errorMessage = null,
                             isStale = false
                         )
+                    }
+
+                    if (
+                        requestedGps != null &&
+                        roadRepository != null &&
+                        result.data.isNotEmpty()
+                    ) {
+                        _listState.update {
+                            it.copy(roadLoading = true)
+                        }
+
+                        val estimates = try {
+                            roadRepository.estimate(
+                                requestedGps,
+                                result.data
+                            )
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Exception) {
+                            emptyMap()
+                        }
+
+                        if (
+                            version != listVersion ||
+                            currentGps != requestedGps
+                        ) {
+                            return@launch
+                        }
+
+                        val ordered = result.data.sortedWith(
+                            compareBy<RescueCatalogLocation> {
+                                estimates[it.id]?.meters ?: Long.MAX_VALUE
+                            }.thenBy { it.id }
+                        )
+
+                        _listState.update {
+                            it.copy(
+                                locations = ordered,
+                                roadEstimates = estimates,
+                                roadLoading = false
+                            )
+                        }
                     }
                 }
 

@@ -152,28 +152,15 @@ internal fun RescueFloodAreaSheet(
                                     ) { Text("Xem trên bản đồ", fontFamily = LayerFont) }
                                 }
                             }
-                            item { LayerLabel("Cảnh báo V2 áp dụng chung, không xác định riêng vùng này.", LayerText, bold = true) }
-                            item { WarningLoadNotice(state.activeWarnings, onRetryWarnings) }
-                        if (warningFreshnessNotice != null) {
-                            item {
-                                WarningFreshnessNotice(
-                                    warningFreshnessNotice,
-                                    warningIsLoading,
-                                    onRetryWarnings
-                                )
-                            }
-                        }
-                            val warnings = (state.activeWarnings as? RescueMapLoadState.Data)?.items.orEmpty()
-                            items(warnings.filter { it.isActive }, key = { "area-warning:${it.id}" }) { warning ->
-                                WarningCard(warning)
-                            }
                         }
                     }
-                    item {
-                        LayerLabel(
-                            "Dữ liệu hiển thị theo lần tải từ hệ thống; không xác nhận ngập thời gian thực. " +
-                                "Không suy ra độ sâu hoặc mức an toàn từ màu vùng."
-                        )
+                    if (selectedAreaId == null) {
+                        item {
+                            LayerLabel(
+                                "Dữ liệu hiển thị theo lần tải từ hệ thống; không xác nhận ngập thời gian thực. " +
+                                    "Không suy ra độ sâu hoặc mức an toàn từ màu vùng."
+                            )
+                        }
                     }
                     item { Box(modifier = Modifier.size(8.dp)) }
                 }

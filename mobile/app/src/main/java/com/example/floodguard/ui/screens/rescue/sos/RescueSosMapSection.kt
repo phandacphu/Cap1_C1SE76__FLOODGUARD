@@ -17,6 +17,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -46,10 +50,35 @@ internal fun RescueSosMapSection(
         val point = sos.location?.takeIf { it.isValid() } ?: return@mapNotNull null
         sos to LatLng(point.latitude!!, point.longitude!!)
     }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(if (filter == SosFilter.ACTIVE) "Bản đồ SOS đang chờ (${pins.size})"
-            else "Bản đồ SOS đã cứu (${pins.size})")
-        TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Thu gọn" else "Hiện bản đồ") }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (filter == SosFilter.ACTIVE)
+                "Bản đồ SOS đang chờ (${pins.size})"
+            else "Bản đồ SOS đã cứu (${pins.size})",
+            modifier = Modifier.weight(1f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        TextButton(
+            onClick = { expanded = !expanded },
+            contentPadding = PaddingValues(
+                horizontal = 4.dp,
+                vertical = 0.dp
+            )
+        ) {
+            Text(
+                text = if (expanded) "Thu gọn" else "Hiện bản đồ",
+                fontSize = 12.sp,
+                maxLines = 1
+            )
+        }
     }
     if (!expanded) return
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -187,7 +188,7 @@ internal fun RescueMapScreen(
     LaunchedEffect(attempt, mapLoaded, hasMapConfiguration) {
         timedOut = false
         if (hasMapConfiguration && !mapLoaded) {
-            delay(20_000)
+            delay(45_000)
             timedOut = true
         }
     }
@@ -273,30 +274,59 @@ internal fun RescueMapScreen(
             modifier = if (embedded) Modifier.fillMaxSize()
                 else Modifier.fillMaxSize().safeDrawingPadding()
         ) {
-            if (!embedded) {
-                Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    title,
-                    modifier = Modifier.weight(1f),
-                    fontFamily = MapFont,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MapText
-                )
-            }
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = refreshMapData) {
-                    MapLabel("Làm mới bản đồ", MapCyan)
+                if (!embedded) {
+                    Text(
+                        title,
+                        modifier = Modifier.weight(1f),
+                        fontFamily = MapFont,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        color = MapText
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        if (!mapLoaded) {
+                            retry()
+                        }
+                        refreshMapData()
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(
+                        text = if (embedded) "Làm mới bản đồ" else "Làm mới",
+                        fontFamily = MapFont,
+                        fontSize = 13.sp,
+                        color = MapCyan
+                    )
+                }
+                if (!embedded) {
+                    Button(
+                        modifier = Modifier.height(32.dp).widthIn(min = 56.dp),
+                        onClick = location.locate,
+                        enabled = !location.state.isLoading && hasMapConfiguration,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 8.dp, vertical = 4.dp
+                        ),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MapCyan,
+                            contentColor = MapBackground
+                        )
+                    ) {
+                        Text(
+                            text = if (location.state.isLoading) "Đang lấy…" else "Vị trí",
+                            fontFamily = MapFont,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
             val areaLoadFailed = dataState.floodAreas is RescueMapLoadState.Error
@@ -331,69 +361,31 @@ internal fun RescueMapScreen(
                 }
             }
 
-            warningPresentation.staleNotice?.let { notice ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    color = MapSurface,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            if (embedded) {
+                warningPresentation.staleNotice?.let { notice ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        color = MapSurface,
+                        shape = MaterialTheme.shapes.small
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            MapLabel(notice, Color(0xFFFFB4AB))
-                        }
-                        TextButton(
-                            onClick = warningViewModel::refreshActiveMapWarnings,
-                            enabled = !activeMapState.isLoading
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            MapLabel("Thử lại", MapCyan)
-                        }
-                    }
-                }
-            }
-            if (!embedded) {
-                Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val freshFix = location.state.fix
-                val fix = freshFix ?: location.state.lastKnownFix
-                Column(modifier = Modifier.weight(1f)) {
-                    if (fix == null) {
-                        MapLabel(location.state.message)
-                    } else {
-                        if (freshFix == null) {
-                            MapLabel("Mất kết nối GPS · vị trí lần cuối (chưa cập nhật)", MapCyan)
-                        } else {
-                            MapLabel(if (fix.isApproximate) "Vị trí gần đúng" else "Vị trí lần lấy gần nhất", MapCyan)
-                        }
-                        MapLabel(fix.accuracyMeters?.let {
-                            "Độ chính xác lần lấy cuối khoảng ${ceil(it.toDouble()).toLong()} m"
-                        } ?: "Thiết bị chưa cung cấp độ chính xác")
-                        if (fix.isApproximate) {
-                            TextButton(onClick = location.openAppSettings) {
-                                MapLabel("Đổi quyền vị trí", MapCyan)
+                            Column(modifier = Modifier.weight(1f)) {
+                                MapLabel(notice, Color(0xFFFFB4AB))
+                            }
+                            TextButton(
+                                onClick = warningViewModel::refreshActiveMapWarnings,
+                                enabled = !activeMapState.isLoading
+                            ) {
+                                MapLabel("Thử lại", MapCyan)
                             }
                         }
                     }
                 }
-                Button(
-                    onClick = location.locate,
-                    enabled = !location.state.isLoading && hasMapConfiguration,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MapCyan,
-                        contentColor = MapBackground
-                    )
-                ) {
-                    Text(location.state.actionLabel, fontFamily = MapFont)
-                }
             }
-            }
-
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 if (!hasMapConfiguration) {
                     Column(
@@ -403,7 +395,10 @@ internal fun RescueMapScreen(
                         MapLabel("Chưa có cấu hình bản đồ", MapText)
                         MapLabel("Vui lòng kiểm tra cấu hình Google Maps của ứng dụng rồi mở lại màn hình.")
                         Button(
-                            onClick = retry,
+                            onClick = {
+                                retry()
+                                refreshMapData()
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MapCyan,
                                 contentColor = MapBackground
@@ -669,7 +664,10 @@ internal fun RescueMapScreen(
                                 MapLabel("Chưa xác nhận bản đồ tải xong", MapText)
                                 MapLabel("Kiểm tra kết nối mạng và cấu hình Google Maps. Bạn vẫn có thể quay lại tổng quan.")
                                 Button(
-                                    onClick = retry,
+                                    onClick = {
+                                        retry()
+                                        refreshMapData()
+                                    },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MapCyan,
                                         contentColor = MapBackground

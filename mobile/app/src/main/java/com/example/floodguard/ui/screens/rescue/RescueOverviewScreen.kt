@@ -5,7 +5,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -42,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -279,28 +277,42 @@ fun RescueOverviewScreen(
                         }
                     }
                     item(key = "summaries") {
-                        BoxWithConstraints {
-                            val singleColumn = (maxWidth < 340.dp) || (LocalDensity.current.fontScale > 1.2f)
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                RescueSummaryMetric.entries.chunked(if (singleColumn) 1 else 2).forEach { metrics ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        metrics.forEach { metric ->
-                                            SummaryTile(
-                                                metric = metric,
-                                                state = uiState.summaries[metric] ?: RescueSummaryState.NotReady,
-                                                modifier = Modifier.weight(1f),
-                                                canOpen = canOpen(metric.destination),
-                                                onOpen = { openDestination(metric.destination) },
-                                                onRetry = onRetry?.let { retry ->
-                                                    { retry(RescueOverviewSection.SUMMARY) }
-                                                }
-                                            )
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = OverviewSurface
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(12.dp)
+                            ) {
+                                listOf(
+                                    RescueSummaryMetric.NEW_SOS,
+                                    RescueSummaryMetric.RESCUED_SOS
+                                ).forEach { metric ->
+                                    SummaryTile(
+                                        metric = metric,
+                                        state = uiState.summaries[metric]
+                                            ?: RescueSummaryState.NotReady,
+                                        modifier = Modifier.weight(1f),
+                                        canOpen = canOpen(metric.destination),
+                                        onOpen = {
+                                            openDestination(metric.destination)
+                                        },
+                                        onRetry = onRetry?.let { retry ->
+                                            { retry(RescueOverviewSection.SUMMARY) }
                                         }
-                                    }
+                                    )
                                 }
                             }
                         }
                     }
+
                     item(key = "map") {
                         OverviewPanel("Bản đồ cứu hộ") {
                             Box(
@@ -332,10 +344,6 @@ fun RescueOverviewScreen(
                                     )
                                 }
                             }
-                            OverviewLabel(
-                                "Dữ liệu ngập lịch sử là thông tin tham khảo, không phải cảnh báo hiện tại.",
-                                12.sp, OverviewMuted
-                            )
                             OverviewAction("Mở bản đồ cứu hộ", canOpen(RescueOverviewDestination.MAP)) {
                                 openDestination(RescueOverviewDestination.MAP)
                             }
@@ -343,55 +351,24 @@ fun RescueOverviewScreen(
                     }
                     item(key = "priority") {
                         OverviewPanel("SOS đang chờ cứu") {
-                            OverviewLabel("Danh sách theo thời gian gửi mới nhất; không tự suy đoán mức ưu tiên.", 12.sp, OverviewMuted)
-                            SectionStatus(
-                                state = uiState.prioritySos,
-                                pendingMessage = "Chưa có dữ liệu SOS để hiển thị.",
-                                onRetry = onRetry?.let { retry ->
-                                    { retry(RescueOverviewSection.PRIORITY_SOS) }
-                                }
-                            )
+                            if (
+                                uiState.prioritySos is RescueOverviewSectionState.Loading ||
+                                uiState.prioritySos is RescueOverviewSectionState.Failed
+                            ) {
+                                SectionStatus(
+                                    state = uiState.prioritySos,
+                                    pendingMessage = "",
+                                    onRetry = onRetry?.let { retry ->
+                                        { retry(RescueOverviewSection.PRIORITY_SOS) }
+                                    }
+                                )
+                            }
                             OverviewAction("Xem danh sách SOS", canOpen(RescueOverviewDestination.SOS_LIST), primary = true) {
                                 openDestination(RescueOverviewDestination.SOS_LIST)
                             }
                         }
                     }
-                    item(key = "tasks") {
-                        OverviewPanel("Nhiệm vụ của tôi") {
-                            OverviewLabel("Công việc thuộc tài khoản đang đăng nhập.", 12.sp, OverviewMuted)
-                            SectionStatus(
-                                state = uiState.myTasks,
-                                pendingMessage = "Chưa có dữ liệu nhiệm vụ để hiển thị.",
-                                onRetry = onRetry?.let { retry ->
-                                    { retry(RescueOverviewSection.MY_TASKS) }
-                                }
-                            )
-                            OverviewAction("Xem nhiệm vụ", canOpen(RescueOverviewDestination.MY_TASKS)) {
-                                openDestination(RescueOverviewDestination.MY_TASKS)
-                            }
-                        }
-                    }
-                    item(key = "quick-access") {
-                        OverviewPanel("Truy cập nhanh") {
-                            listOf(
-                                "Điểm an toàn" to RescueOverviewDestination.SAFE_LOCATIONS,
-                                "Lịch sử cứu hộ" to RescueOverviewDestination.HISTORY,
-                                "Cảnh báo lũ" to RescueOverviewDestination.WARNINGS
-                            ).forEach { (title, destination) ->
-                                OverviewAction(title, canOpen(destination)) { openDestination(destination) }
-                            }
-                            logoutError?.let { OverviewLabel(it, 13.sp, OverviewRed) }
-                            OutlinedButton(
-                                onClick = logout,
-                                enabled = !isLoggingOut,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, OverviewBorder)
-                            ) {
-                                OverviewLabel(if (isLoggingOut) "Đang đăng xuất…" else "Đăng xuất", 13.sp, OverviewCyan)
-                            }
-                        }
-                    }
+
                 }
             }
         }
@@ -430,15 +407,10 @@ private fun SummaryTile(
         RescueSummaryMetric.RESCUED_SOS -> OverviewCyan
         else -> OverviewGreen
     }
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = OverviewSurface)
+    Column(
+        modifier = modifier.padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 156.dp).padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
             OverviewLabel(metric.title, 12.sp, OverviewMuted, FontWeight.SemiBold)
             when (state) {
                 RescueSummaryState.NotReady -> {
@@ -459,10 +431,8 @@ private fun SummaryTile(
             }
             OverviewLabel("Phạm vi: ${metric.scope}", 10.sp, OverviewMuted)
             if (canOpen) TextButton(onClick = onOpen) { OverviewLabel("Xem danh sách", 11.sp, OverviewCyan) }
-        }
     }
 }
-
 @Composable
 private fun SectionStatus(
     state: RescueOverviewSectionState,

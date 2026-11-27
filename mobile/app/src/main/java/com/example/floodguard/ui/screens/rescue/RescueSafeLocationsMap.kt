@@ -7,6 +7,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.example.floodguard.data.repository.RescueCatalogGps
 import com.example.floodguard.data.repository.RescueCatalogLocation
@@ -37,8 +39,10 @@ internal fun RescueSafeLocationsMap(
     onOpenDetail: (String) -> Unit,
     onShowAll: () -> Unit,
     onRequestLocation: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMapTouchChanged: (Boolean) -> Unit = {}
 ) {
+    val currentOnMapTouchChanged by rememberUpdatedState(onMapTouchChanged)
     val userPosition = userGps
         ?.takeIf { it.isValid() }
         ?.let { LatLng(it.latitude, it.longitude) }
@@ -145,6 +149,21 @@ internal fun RescueSafeLocationsMap(
         modifier = modifier
             .fillMaxWidth()
             .height(350.dp)
+            .pointerInput(Unit) {
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            // Observe before the page handles a drag, without consuming
+                            // events needed by Google Maps, markers or overlay buttons.
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            currentOnMapTouchChanged(event.changes.any { it.pressed })
+                        }
+                    }
+                } finally {
+                    // Release the page on cancellation or when the map leaves composition.
+                    currentOnMapTouchChanged(false)
+                }
+            }
     ) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
