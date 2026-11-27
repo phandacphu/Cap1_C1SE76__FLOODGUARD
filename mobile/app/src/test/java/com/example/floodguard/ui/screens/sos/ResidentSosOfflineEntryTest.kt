@@ -70,26 +70,79 @@ class ResidentSosOfflineEntryTest {
 
     @Test
     fun accessDeniedDoesNotOpenForm() = runTest {
-        val model = ResidentSosSubmissionViewModel(
-            loadActive = {
-                Result.failure(
-                    ResidentSosApiException(
-                        statusCode = 403,
-                        code = null,
-                        activeRequestId = null,
-                        message = "TEST_ONLY_FORBIDDEN"
+        for (status in listOf(401, 403)) {
+            val model = ResidentSosSubmissionViewModel(
+                loadActive = {
+                    Result.failure(
+                        ResidentSosApiException(
+                            statusCode = status,
+                            code = null,
+                            activeRequestId = null,
+                            message = "TEST_ONLY_ACCESS_DENIED"
+                        )
                     )
-                )
-            },
-            createRemote = {
-                error("Không được gọi POST.")
-            }
-        )
+                },
+                createRemote = {
+                    error("Không được gọi POST.")
+                }
+            )
 
-        advanceUntilIdle()
+            advanceUntilIdle()
 
-        assertFalse(model.state.value.formAllowed)
-        assertFalse(model.state.value.isChecking)
+            assertFalse(model.state.value.formAllowed)
+            assertFalse(model.state.value.isChecking)
+        }
+    }
+
+    @Test
+    fun initial5xxOpensFormAndRepeatedChecksDoNotPost() = runTest {
+        for (status in listOf(500, 502, 503, 504, 599)) {
+            var posts = 0
+            val model = ResidentSosSubmissionViewModel(
+                loadActive = {
+                    Result.failure(ResidentSosApiException(
+                        status, null, null, "TEST_ONLY_SERVER_ERROR"
+                    ))
+                },
+                createRemote = {
+                    posts++
+                    error("Không được tự POST sau 5xx.")
+                }
+            )
+            advanceUntilIdle()
+            assertTrue("HTTP $status", model.state.value.formAllowed)
+            model.checkActive()
+            advanceUntilIdle()
+            assertTrue(model.state.value.formAllowed)
+            assertTrue(model.submit(request()).exceptionOrNull()
+                is ResidentSosNotPostedException)
+            assertEquals(0, posts)
+            assertNull(model.state.value.openSosId)
+        }
+    }
+
+    @Test
+    fun later401Or403StillBlocksFormAfterInitial503() = runTest {
+        for (denied in listOf(401, 403)) {
+            var status = 503
+            val model = ResidentSosSubmissionViewModel(
+                loadActive = {
+                    Result.failure(ResidentSosApiException(
+                        status, null, null, "TEST_ONLY_ERROR"
+                    ))
+                },
+                createRemote = { error("Không được tự POST.") }
+            )
+            advanceUntilIdle()
+            assertTrue(model.state.value.formAllowed)
+            status = denied
+            model.checkActive()
+            advanceUntilIdle()
+            assertFalse(model.state.value.formAllowed)
+            assertFalse(model.state.value.isChecking)
+            assertTrue(model.submit(request()).exceptionOrNull()
+                is ResidentSosNotPostedException)
+        }
     }
 
     @Test

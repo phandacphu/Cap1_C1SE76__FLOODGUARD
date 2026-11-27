@@ -639,6 +639,60 @@ class SessionManager(
         }
     }
 
+    // Chỉ thay mã SMS từ cache của đúng phiên hiện tại.
+    // Giữ nguyên UUID, payload, GPS, thời điểm đo và phase.
+    suspend fun refreshSosSubmissionCredential(
+        sessionKey: SosSmsSessionKey,
+        clientRequestId: String,
+        nowMillis: Long
+    ): SosSubmission {
+        var result: SosSubmission? = null
+
+        context.dataStore.edit { preferences ->
+            check(matchesSosSmsSession(preferences, sessionKey)) {
+                "Phiên đăng nhập đã thay đổi. Hãy mở lại SOS."
+            }
+
+            val saved = decodeSosSubmission(
+                checkNotNull(preferences[SOS_PENDING_SUBMISSION]) {
+                    "Không tìm thấy bản gửi SOS đã lưu. Hãy đối chiếu lại."
+                }
+            )
+            check(saved.request.clientRequestId == clientRequestId) {
+                "Bản gửi SOS đã thay đổi. Hãy đối chiếu lại."
+            }
+
+            if (saved.smsCredential?.usableAt(nowMillis) == true) {
+                result = saved
+                return@edit
+            }
+
+            val cached = runCatching {
+                preferences[SOS_SMS_CREDENTIAL]?.let {
+                    gson.fromJson(it, SosSmsCredential::class.java)
+                }
+            }.getOrNull()
+            val usable = checkNotNull(
+                cached?.takeIf { it.usableAt(nowMillis) }
+            ) {
+                "Tự tiếp nhận SMS chưa sẵn sàng: " +
+                        "chưa có mã hoặc mã đã hết hạn."
+            }
+
+            val updated = SosSubmission(
+                request = saved.request,
+                capturedAtMillis = saved.capturedAtMillis,
+                smsCredential = usable,
+                phase = saved.phase,
+                revision = Math.addExact(saved.revision, 1L)
+            )
+            preferences[SOS_PENDING_SUBMISSION] = gson.toJson(updated)
+            result = updated
+        }
+
+        return checkNotNull(result)
+    }
+
     suspend fun updateSosSubmissionPhase(
         sessionKey: SosSmsSessionKey,
         clientRequestId: String,

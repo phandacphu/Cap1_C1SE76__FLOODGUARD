@@ -799,7 +799,20 @@ class SendSosViewModel(
         val form = _uiState.value
 
         runSubmissionAction {
-            val saved = prepareSubmission(form)
+            val prepared = prepareSubmission(form)
+            val saved = sessionManager?.let { sessions ->
+                val refreshed = sessions.refreshSosSubmissionCredential(
+                    sessionKey = checkNotNull(locationSessionKey),
+                    clientRequestId = checkNotNull(
+                        prepared.request.clientRequestId
+                    ),
+                    nowMillis = nowMillis()
+                )
+                requireCurrentSubmission(prepared)
+                pendingSubmission = refreshed
+                _uiState.update { it.withSubmission(refreshed) }
+                refreshed
+            } ?: prepared
 
             val body = SosSubmissionCodec.encodeSms(
                 saved,

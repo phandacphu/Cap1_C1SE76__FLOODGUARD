@@ -87,7 +87,9 @@ class ResidentSosSubmissionViewModel(
                         !isAccessError(error) &&
                                 (
                                         previous.formAllowed ||
-                                                error is ResidentSosNetworkException
+                                                error is ResidentSosNetworkException ||
+                                                (error is ResidentSosApiException &&
+                                                        error.statusCode in 500..599)
                                         )
 
                     _state.value = ResidentSosEntryState(

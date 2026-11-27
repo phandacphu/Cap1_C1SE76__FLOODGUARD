@@ -13,6 +13,9 @@ import com.example.floodguard.data.remote.dto.rescue.CreateSosRequest
 import com.example.floodguard.data.remote.dto.rescue.CreatedSosDto
 import com.example.floodguard.data.remote.dto.rescue.RescueRequestDto
 import com.example.floodguard.data.remote.dto.rescue.SosSmsCredential
+import com.example.floodguard.data.remote.api.ResidentSosApi
+import com.example.floodguard.data.repository.ResidentSosRepository
+import com.example.floodguard.data.repository.SosSmsCredentialCoordinator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -30,6 +33,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -86,7 +94,8 @@ class ResidentSosFrozenSubmissionTest {
     )
 
     private suspend fun seed(
-        phase: SosSubmissionPhase = SosSubmissionPhase.PREPARED
+        phase: SosSubmissionPhase = SosSubmissionPhase.PREPARED,
+        smsCredential: SosSmsCredential? = credential
     ): SosSubmission {
         val key = checkNotNull(
             sessions.getSosSmsSessionKey()
@@ -96,7 +105,7 @@ class ResidentSosFrozenSubmissionTest {
             key,
             request(),
             1_000L,
-            credential
+            smsCredential
         )
 
         return sessions.updateSosSubmissionPhase(
@@ -165,6 +174,245 @@ class ResidentSosFrozenSubmissionTest {
                 time = 1_000L
             }
         )
+    }
+
+    private suspend fun TestScope.assertCredentialRefreshAndRestore(
+        oldCredential: SosSmsCredential?
+    ) {
+        login()
+        val key = checkNotNull(sessions.getSosSmsSessionKey())
+        sessions.clearSosSmsCredential(key)
+        val original = seed(
+            SosSubmissionPhase.UNCERTAIN,
+            oldCredential
+        )
+        var posts = 0
+        val firstModel = model(post = {
+            posts++
+            error("Không được POST SOS khi làm mới credential.")
+        })
+        awaitReady(firstModel)
+
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody(
+                """{"success":true,"data":{"credential":"TEST_ONLY_REFRESHED","expiresAt":"2099-01-01T00:00:00Z","recipientPhone":"+84900000001","format":"FGSOS1"}}"""
+            ))
+            val repository = ResidentSosRepository(
+                Retrofit.Builder()
+                    .baseUrl(server.url("/"))
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                    .create(ResidentSosApi::class.java)
+            )
+            val coordinator = SosSmsCredentialCoordinator(
+                sessions, repository, key,
+                nowMillis = { 1_000_000L },
+                elapsedMillis = { 0L }
+            )
+            coordinator.refresh(hasInternet = true)
+            assertTrue(coordinator.state.value.ready)
+            val refresh = server.takeRequest(1, TimeUnit.SECONDS)
+            assertNotNull(refresh)
+            assertEquals("POST", refresh!!.method)
+            assertEquals("/sos-sms/credential", refresh.path)
+
+            val bodies = mutableListOf<String>()
+            firstModel.openSms { phone, body ->
+                assertEquals("+84900000001", phone)
+                bodies.add(body)
+            }
+            awaitReady(firstModel)
+
+            val saved = checkNotNull(sessions.getSosSubmission(key))
+            assertEquals(original.request, saved.request)
+            assertEquals(original.capturedAtMillis, saved.capturedAtMillis)
+            assertEquals("TEST_ONLY_REFRESHED", saved.smsCredential!!.credential)
+            assertEquals(SosSubmissionPhase.SMS_OPENED, saved.phase)
+            assertEquals(1, bodies.size)
+            assertEquals("TEST_ONLY_REFRESHED", bodies.single().split('|')[1])
+            assertNull(firstModel.uiState.value.submittedSosId)
+
+            stores.last().clear()
+            val reopened = model(post = {
+                posts++
+                error("Không được POST SOS khi khôi phục.")
+            })
+            awaitReady(reopened)
+            assertEquals(original.request.clientRequestId,
+                reopened.uiState.value.pendingClientRequestId)
+            reopened.openSms { _, body -> bodies.add(body) }
+            awaitReady(reopened)
+
+            assertEquals(2, bodies.size)
+            assertEquals(bodies[0], bodies[1])
+            assertEquals(original.request,
+                sessions.getSosSubmission(key)!!.request)
+            assertEquals(1, server.requestCount)
+            assertEquals(0, posts)
+            assertNull(reopened.uiState.value.submittedSosId)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun missingSavedCredentialRefreshesAndSurvivesReopen() = runTest {
+        assertCredentialRefreshAndRestore(null)
+    }
+
+    @Test
+    fun expiredSavedCredentialRefreshesAndSurvivesReopen() = runTest {
+        assertCredentialRefreshAndRestore(SosSmsCredential(
+            "TEST_ONLY_EXPIRED", "1970-01-01T00:00:01Z",
+            "+84900000000", "FGSOS1"
+        ))
+    }
+
+    @Test
+    fun missingFreshCredentialKeepsSavedRequestWithoutLaunchingSms() = runTest {
+        login()
+        val key = checkNotNull(sessions.getSosSmsSessionKey())
+        sessions.clearSosSmsCredential(key)
+        val original = seed(SosSubmissionPhase.UNCERTAIN, null)
+        var opened = false
+        val model = model()
+        awaitReady(model)
+        model.openSms { _, _ -> opened = true }
+        awaitReady(model)
+
+        val saved = checkNotNull(sessions.getSosSubmission(key))
+        assertFalse(opened)
+        assertEquals(original.request, saved.request)
+        assertEquals(original.capturedAtMillis, saved.capturedAtMillis)
+        assertEquals(original.phase, saved.phase)
+        assertEquals(original.revision, saved.revision)
+        assertNull(saved.smsCredential)
+        assertNotNull(model.uiState.value.submitError)
+    }
+
+    @Test
+    fun credentialReplacementPreservesPayloadAndRejectsStalePhaseWrite() = runTest {
+        login()
+        val key = checkNotNull(sessions.getSosSmsSessionKey())
+        val original = seed(SosSubmissionPhase.UNCERTAIN, null)
+        val id = checkNotNull(original.request.clientRequestId)
+        assertTrue(runCatching {
+            sessions.refreshSosSubmissionCredential(key, "WRONG_ID", 1_000_000L)
+        }.isFailure)
+
+        val refreshed = sessions.refreshSosSubmissionCredential(
+            key, id, 1_000_000L
+        )
+        assertEquals(original.request, refreshed.request)
+        assertEquals(original.capturedAtMillis, refreshed.capturedAtMillis)
+        assertEquals(original.phase, refreshed.phase)
+        assertEquals(original.revision + 1L, refreshed.revision)
+
+        assertTrue(runCatching {
+            sessions.updateSosSubmissionPhase(
+                key, id, SosSubmissionPhase.PREPARED,
+                expectedRevision = original.revision
+            )
+        }.isFailure)
+        val reopened = SessionManager(RuntimeEnvironment.getApplication())
+        val restored = checkNotNull(reopened.getSosSubmission(key))
+        assertEquals(original.request, restored.request)
+        assertEquals(credential.credential, restored.smsCredential!!.credential)
+        assertEquals(refreshed.revision,
+            reopened.refreshSosSubmissionCredential(key, id, 1_000_000L).revision)
+    }
+
+    @Test
+    fun credentialRefreshRejectsOldSessionForSameOrDifferentAccount() = runTest {
+        for (nextUser in listOf("A", "B")) {
+            login()
+            val oldKey = checkNotNull(sessions.getSosSmsSessionKey())
+            val old = seed(SosSubmissionPhase.UNCERTAIN, null)
+            assertTrue(sessions.saveAuthenticatedSession(
+                "TEST_ONLY_NEW_SESSION",
+                SessionUser(id = nextUser, role = "resident"),
+                sessions.getGeneration()
+            ))
+            val newKey = checkNotNull(sessions.getSosSmsSessionKey())
+            val newCredential = SosSmsCredential(
+                "TEST_ONLY_NEW_SESSION_CREDENTIAL", "2099-01-01T00:00:00Z",
+                "+84900000001", "FGSOS1"
+            )
+            assertTrue(sessions.saveSosSmsCredential(newKey, newCredential))
+            val current = sessions.getOrCreateSosSubmission(
+                newKey, request(), 2_000L, null
+            )
+            assertFalse(sessions.saveSosSmsCredential(oldKey, credential))
+            for (id in listOf(old.request.clientRequestId!!,
+                current.request.clientRequestId!!)) {
+                assertTrue(runCatching {
+                    sessions.refreshSosSubmissionCredential(oldKey, id, 1_000_000L)
+                }.isFailure)
+            }
+            val unchanged = checkNotNull(sessions.getSosSubmission(newKey))
+            assertEquals(current.request, unchanged.request)
+            assertEquals(current.revision, unchanged.revision)
+            assertNull(unchanged.smsCredential)
+            assertEquals(newCredential.credential,
+                sessions.getSosSmsCredential(newKey)!!.credential)
+        }
+    }
+
+    @Test
+    fun initial503AllowsSmsButFailedPreflightNeverPostsSos() = runTest {
+        login()
+        var posts = 0
+        val server = MockWebServer()
+        server.start()
+        try {
+            repeat(2) {
+                server.enqueue(MockResponse().setResponseCode(503))
+            }
+            val repository = ResidentSosRepository(
+                Retrofit.Builder()
+                    .baseUrl(server.url("/"))
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                    .create(ResidentSosApi::class.java)
+            )
+            val entry = ResidentSosSubmissionViewModel(
+                loadActive = { repository.getActive() },
+                createRemote = {
+                    posts++
+                    error("Không được POST sau GET 503.")
+                }
+            )
+            entry.state.first { !it.isChecking }
+            assertTrue(entry.state.value.formAllowed)
+            val model = model(post = { entry.submit(it) })
+            awaitReady(model)
+            fill(model)
+            var body: String? = null
+            model.openSms { _, value -> body = value }
+            awaitReady(model)
+            assertTrue(body!!.startsWith("FGSOS1|"))
+            val key = checkNotNull(sessions.getSosSmsSessionKey())
+            val saved = checkNotNull(sessions.getSosSubmission(key))
+
+            model.submitSos()
+            awaitReady(model)
+            assertEquals(0, posts)
+            assertEquals(saved.request, sessions.getSosSubmission(key)!!.request)
+            assertEquals(SosSubmissionPhase.SMS_OPENED,
+                sessions.getSosSubmission(key)!!.phase)
+            assertNull(model.uiState.value.submittedSosId)
+            assertEquals(2, server.requestCount)
+            repeat(2) {
+                val read = server.takeRequest(1, TimeUnit.SECONDS)
+                assertNotNull(read)
+                assertEquals("GET", read!!.method)
+                assertTrue(read.path!!.startsWith("/rescue-requests?"))
+            }
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test
