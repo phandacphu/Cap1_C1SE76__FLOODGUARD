@@ -88,8 +88,6 @@ internal fun RescueHistoryPointSheet(
                     }
                 }
             }
-            Text("Dữ liệu tham khảo lịch sử, không phản ánh tình trạng ngập hiện tại.",
-                fontFamily = font, color = muted, fontSize = 13.sp)
         }
     }
 }
@@ -145,8 +143,6 @@ internal fun RescueHistoryPolygonSheet(
                     }
                 }
             }
-            Text("Dữ liệu tham khảo lịch sử, không phản ánh tình trạng ngập hiện tại.",
-                fontFamily = font, color = muted, fontSize = 13.sp)
         }
     }
 }

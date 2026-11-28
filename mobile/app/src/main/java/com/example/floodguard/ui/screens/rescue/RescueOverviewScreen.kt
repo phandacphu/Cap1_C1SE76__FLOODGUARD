@@ -363,8 +363,8 @@ fun RescueOverviewScreen(
                                     }
                                 )
                             }
-                            OverviewAction("Xem danh sách SOS", canOpen(RescueOverviewDestination.SOS_LIST), primary = true) {
-                                openDestination(RescueOverviewDestination.SOS_LIST)
+                            OverviewAction("Xem danh sách SOS", canOpen(RescueOverviewDestination.SOS_NEW), primary = true) {
+                                openDestination(RescueOverviewDestination.SOS_NEW)
                             }
                         }
                     }

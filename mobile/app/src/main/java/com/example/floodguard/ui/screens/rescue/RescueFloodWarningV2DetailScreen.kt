@@ -1,4 +1,6 @@
 package com.example.floodguard.ui.screens.rescue
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.Icons
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -109,10 +111,11 @@ internal fun RescueFloodWarningV2DetailScreen(
                         ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onBack) {
-                        Text(
-                            "Quay lại",
-                            fontFamily = DetailWarningFont
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Quay lại",
+                            tint = DetailWarningCyan
                         )
                     }
 

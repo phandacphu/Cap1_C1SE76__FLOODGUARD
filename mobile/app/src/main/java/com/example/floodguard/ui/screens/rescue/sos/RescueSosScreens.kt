@@ -1,4 +1,6 @@
 package com.example.floodguard.ui.screens.rescue.sos
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.Icons
 
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -347,19 +349,11 @@ private fun SosFrame(title: String, onOverview: () -> Unit, onMap: () -> Unit, o
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        TextButton(
-                            onClick = onBack,
-                            contentPadding = PaddingValues(
-                                horizontal = 2.dp,
-                                vertical = 0.dp
-                            )
-                        ) {
-                            Text(
-                                text = "Quay lại",
-                                color = SosAccent,
-                                fontFamily = SosFont,
-                                fontSize = 13.sp,
-                                maxLines = 1
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "Quay lại",
+                                tint = SosAccent
                             )
                         }
 
