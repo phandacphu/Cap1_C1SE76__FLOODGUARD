@@ -1,4 +1,6 @@
 package com.example.floodguard.ui.screens.rescue
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.Icons
 
 import android.Manifest
 import android.content.Context
@@ -150,8 +152,12 @@ internal fun RescueSafeLocationDetailScreen(
                             ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(onClick = onBack) {
-                            Text("Quay lại")
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "Quay lại",
+                                tint = DetailCyan
+                            )
                         }
 
                         Text(

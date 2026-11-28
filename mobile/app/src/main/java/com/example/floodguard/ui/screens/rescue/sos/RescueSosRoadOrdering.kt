@@ -91,7 +91,7 @@ internal fun rememberRescueSosRoadOrdering(
                 needsGps = true
             )
         }
-        val status = if (last != null) "Mất kết nối GPS · đã giữ vị trí cuối; chờ cập nhật để tính đường."
+        val status = if (last != null) "Mất kết nối GPS · đã giữ vị trí cuối cùng\nChờ cập nhật"
             else if (location?.state?.isLoading == true) "Đang lấy GPS Rescue để xếp SOS gần → xa…"
             else "Chưa có GPS Rescue: danh sách chưa được xếp gần → xa."
         return RescueSosRoadOrdering(items = items, message = status, needsGps = true)
