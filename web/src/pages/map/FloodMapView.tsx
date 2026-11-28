@@ -1,3 +1,4 @@
+import { RescuerLocationControl } from './RescuerLocationControl';
 import { createRescueWarningApi } from '../rescue/warnings/warningApi';
 import { useWarningResource } from '../rescue/warnings/useWarningResource';
 import { WarningFeedback } from '../rescue/warnings/WarningFeedback';
@@ -334,6 +335,7 @@ const FloodMapContent: React.FC<FloodMapViewProps> = ({ embedded = false }) => {
           {showRegions && historyKeys.filter(key => historyLayers[key]?.error).map(key => <p key={key} role="status" className="text-xs text-amber-300">{({ points: 'Điểm lịch sử', areas: 'Đa giác HIST', buffers: 'Vùng đệm', radar: 'Radar' })[key]}: {historyLayers[key]?.error}</p>)}
         </div>
       ) : null}
+      {isRescue && !embedded && <RescuerLocationControl mapRef={mapInstanceRef} />}
       <section aria-label="Bản tin cảnh báo trên bản đồ" className="text-xs text-slate-300 space-y-2">
         <WarningFeedback resource={alerts} noun="bản tin cảnh báo" />
         {alerts.data !== null && (

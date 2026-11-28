@@ -40,7 +40,7 @@ export function RescueSafeLocations({source=catalogApi}:{source?:CatalogSource})
         <div className="flex flex-wrap items-center justify-between gap-2"><span>{position.point?'Đã có GPS người cứu hộ':'Chưa có vị trí người cứu hộ'}</span><span className="text-xs text-muted">GPS ghi nhận: {time(position.recordedAt)}</span></div>
         {position.requesting&&<p role="status" className="mt-1 text-muted">Đang lấy vị trí trình duyệt…</p>}
         {position.error&&<p role="status" className="mt-1 text-amber-300">{position.error}</p>}
-        {state.origin&&<p className="mt-1 text-xs text-muted">Khoảng cách địa lý ước tính, không phải quãng đường đi hoặc ETA. {updatingOrigin?'Đang chờ khoảng cách theo GPS mới; khoảng cách đang hiển thị dựa trên vị trí của lần tải danh sách trước.':''}</p>}
+        {state.origin&&<p className="mt-1 text-xs text-muted"> {updatingOrigin?'Đang chờ khoảng cách theo GPS mới; khoảng cách đang hiển thị dựa trên vị trí của lần tải danh sách trước.':''}</p>}
       </div>
       {state.error&&<div role="alert" className="rounded-xl border border-amber-600/50 bg-amber-950/20 p-4 text-sm text-amber-200"><strong>Chưa thể cập nhật.</strong> {state.error} {state.items!==null?'Đang giữ dữ liệu cũ, có thể đã thay đổi.':''} <button type="button" disabled={state.loading} className="underline" onClick={refresh}>Thử lại</button></div>}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.5fr)]">
@@ -48,7 +48,7 @@ export function RescueSafeLocations({source=catalogApi}:{source?:CatalogSource})
           <div className="flex items-center justify-between"><h2 className="font-bold">Danh sách địa điểm</h2><span className="rounded-lg bg-safe/10 px-2 py-1 text-xs text-safe">{state.items===null?'—':`${rows.length}/${state.items.length}`}</span></div>
           <label className="mt-4 block text-xs text-muted">Tìm trong danh sách đã tải<input className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Tên hoặc địa chỉ…"/></label>
           <label className="mt-3 block text-xs text-muted">Loại địa điểm<select className="mt-1 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text" value={type} onChange={event=>setType(event.target.value)}><option value="all">Tất cả loại</option>{Object.entries(TYPE_LABEL).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-          <p className="my-3 text-xs text-muted">{state.origin?'Sắp gần → xa theo khoảng cách gốc từ API.':'Chưa có khoảng cách; danh sách vẫn hiển thị đầy đủ.'} Không giới hạn bán kính.</p>
+          
           {state.items===null&&!state.error&&<p role="status" className="py-8 text-center text-muted">Đang tải danh mục…</p>}
           {state.items?.length===0&&<p className="py-8 text-center text-muted">Chưa có điểm tránh trú</p>}
           {state.items!==null&&state.items.length>0&&rows.length===0&&<p className="py-8 text-center text-muted">Không tìm thấy kết quả phù hợp với từ khóa hoặc loại đã chọn.</p>}
@@ -72,7 +72,7 @@ export function RescueSafeLocations({source=catalogApi}:{source?:CatalogSource})
               {state.selectedId&&selected&&<div className="mt-4 space-y-3 text-sm"><span className="rounded bg-safe/10 px-2 py-1 text-xs text-safe">{TYPE_LABEL[selected.type]}</span><h3 className="text-xl font-semibold">{selected.name}</h3><p className="text-muted">{selected.address}</p><p className="break-all font-mono text-xs text-muted">ID: {selected.id}</p><p>Tọa độ: {selected.location.latitude}, {selected.location.longitude}</p>{selected.distanceKm!==null&&<p className="text-water">{distanceLabel(selected.distanceKm)}</p>}<p className="whitespace-pre-wrap break-words text-muted">{selected.description?.trim()?selected.description:'Chưa có mô tả'}</p><a className="inline-block rounded-lg bg-safe px-4 py-2 font-semibold text-bg" href={mapsUrl(selected.location)} target="_blank" rel="noopener noreferrer">Mở Google Maps</a><p className="text-xs text-muted">Tuyến Google Maps chưa được hệ thống đánh giá an toàn trước ngập.</p></div>}
             </>}
           </section>
-          <p className="text-xs text-muted">Danh mục tải lúc: {time(state.updatedAt)}. Chưa có realtime; bấm Làm mới để nhận thay đổi từ Admin.</p>
+          
         </div>
       </div>
     </main>
