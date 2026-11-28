@@ -9,12 +9,7 @@ export function SosModeNotice({ mock }: { mock: boolean }) {
       <strong>DỮ LIỆU MẪU · CHỈ MÔI TRƯỜNG PHÁT TRIỂN</strong>
       <p className="mt-1">Tên, thông tin và thống kê bên dưới chỉ để thử giao diện; chưa dùng để nghiệm thu API thật.</p>
     </div>
-  ) : (
-    <div role="note" className="rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-muted">
-      <strong className="text-text">Nguồn: Backend SOS v2 · Admin chỉ xem và theo dõi</strong>
-      <p className="mt-1">Thông tin liên hệ chưa có trong API Admin hiện tại. Dữ liệu cũ có thể thiếu tình huống, GPS hoặc người xác nhận; không tự suy đoán giá trị.</p>
-    </div>
-  );
+  ) : null;
 }
 
 export function SosConditionBadge({ condition }: { condition: SosCondition | null }) {

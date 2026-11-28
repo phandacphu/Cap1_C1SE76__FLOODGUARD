@@ -19,7 +19,7 @@ export function SosLocationMap({ item }: { item: SosItem }) {
   return (
     <>
       <div role="region" aria-label="Bản đồ vị trí SOS" className="relative z-0 h-80 overflow-hidden rounded-xl border border-border">
-        <MapContainer key={mapKey} center={point} zoom={15} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
+        <MapContainer key={mapKey} center={point} zoom={15} minZoom={3} maxZoom={19} zoomControl scrollWheelZoom style={{ height: "100%", width: "100%" }}>
           <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             eventHandlers={{ tileerror: () => setFailedMapKey(mapKey) }} />
