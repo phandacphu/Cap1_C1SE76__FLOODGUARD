@@ -86,9 +86,6 @@ export function AdminDashboard() {
                 </span>
               )}
             </div>
-            <p className="mt-2 text-sm text-muted">
-              Trung tâm quản trị hạ tầng, điều phối dữ liệu khẩn cấp và giám sát toàn hệ thống.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -220,9 +217,6 @@ export function AdminDashboard() {
                 mock
               >
                 <AuditFeedPanel />
-                <p className="mt-auto pt-4 font-mono text-[10px] tracking-wider text-muted">
-                  CHƯA CÓ API ĐỌC AUDIT LOG · DỮ LIỆU MINH HỌA
-                </p>
               </Panel>
 
               <Panel

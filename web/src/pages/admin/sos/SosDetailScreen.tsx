@@ -79,16 +79,15 @@ export function SosDetailScreen() {
               <h2 className="mb-4 font-semibold">Vị trí SOS</h2>
               <SosLocationMap item={item} />
               <dl className="mt-4 space-y-3 text-sm">
-                <div><dt className="text-xs text-muted">Vị trí ban đầu (initialLocation)</dt>
+                <div><dt className="text-xs text-muted">Vị trí ban đầu</dt>
                   <dd className="mt-1 font-mono">{coordinates(item.initialLocation)}</dd></div>
-                <div><dt className="text-xs text-muted">Vị trí mới nhất (location)</dt>
+                <div><dt className="text-xs text-muted">Vị trí mới nhất</dt>
                   <dd className="mt-1 font-mono">{coordinates(item.location)}</dd></div>
-                <div><dt className="text-xs text-muted">Thiết bị ghi nhận GPS (locationCapturedAt)</dt>
+                <div><dt className="text-xs text-muted">Thiết bị ghi nhận GPS</dt>
                   <dd className="mt-1">{formatSosTime(item.locationCapturedAt)}</dd></div>
-                <div><dt className="text-xs text-muted">Backend nhận GPS (locationReceivedAt)</dt>
+                <div><dt className="text-xs text-muted">Backend nhận GPS</dt>
                   <dd className="mt-1">{formatSosTime(item.locationReceivedAt)}</dd></div>
               </dl>
-              <p className="mt-4 text-xs leading-5 text-muted">Không dùng thời gian cập nhật hồ sơ thay thế thời gian GPS. SOS đã cứu vẫn được xem tại chi tiết/lịch sử.</p>
             </section>
             <section className="rounded-2xl border border-border bg-card/80 p-5">
               <h2 className="font-semibold">Tiến trình cứu hộ</h2>
@@ -108,7 +107,6 @@ export function SosDetailScreen() {
             </section>
           </div>
         </div>
-        <p className="text-xs text-muted">Lần tải thành công: {formatSosTime(resource.updatedAt)}. Làm mới để kiểm tra vị trí và kết quả mới nhất đã được Backend nhận.</p>
       </>}
     </SosFrame>
   );

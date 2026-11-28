@@ -73,7 +73,7 @@ export default function AdminSettingsUiScreen() {
           </div>
           <SettingsLink title="Quản lý người dùng" description="Xem tài khoản và quyền truy cập." to="/admin/users" action="Mở quản lý" />
           <div className="flex flex-wrap items-center justify-between gap-3 py-5">
-            <div><h3 className="text-sm font-semibold text-white">Đăng xuất</h3><p className="mt-1 text-xs text-slate-400">Kết thúc phiên đăng nhập trên thiết bị này.</p></div>
+            <div><h3 className="text-sm font-semibold text-white">Đăng xuất</h3></div>
             <button type="button" disabled={signingOut} onClick={() => void signOut()} className={previewSecondaryButton}>{signingOut ? "Đang đăng xuất…" : "Đăng xuất"}</button>
           </div>
         </div>

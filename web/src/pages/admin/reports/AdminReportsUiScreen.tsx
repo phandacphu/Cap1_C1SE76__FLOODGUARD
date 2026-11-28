@@ -6,11 +6,10 @@ import { ApiError } from "../../../api/http";
 import type { SosSummary } from "../sos/sosTypes";
 import { AdminUiPreview, PreviewBadge, PreviewPanel, PreviewStat, previewSecondaryButton } from "../ui-preview/AdminUiPreview";
 import { locationTypeLabels } from "../safe-location/safeLocationTypes";
-import { fetchSosReport, fetchWarningReport, fetchFloodAreaReport, fetchManagedAreaReport, fetchSafeLocationReport, combineAreaReports, reportWindow, type ReportRange, type WarningSummary, type CombinedAreaSummary, type SafeLocationSummary } from "./reportApi";
+import { fetchSosReport, fetchWarningReport, fetchFloodAreaReport, fetchManagedAreaReport, fetchSafeLocationReport, combineAreaReports, type ReportRange, type WarningSummary, type CombinedAreaSummary, type SafeLocationSummary } from "./reportApi";
 
 type Load<T> = { data: T | null; loading: boolean; error: string; stale: boolean };
 const empty = <T,>(): Load<T> => ({ data: null, loading: true, error: "", stale: false });
-const formatDate = (iso: string) => new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 const failed = (cause: unknown) => cause instanceof Error ? cause.message : "Không thể tải dữ liệu.";
 
 export default function AdminReportsUiScreen() {
@@ -84,7 +83,6 @@ export default function AdminReportsUiScreen() {
     setLocations((old) => ({ ...old, loading: true, error: "" }));
     setRefreshKey((value) => value + 1);
   }
-  const window = reportWindow(range);
   const value = (n: number | undefined) => n === undefined ? "—" : n.toLocaleString("vi-VN");
   const total = sos.data?.total ?? 0;
   const completion = total ? Math.round((100 * (sos.data?.rescued ?? 0)) / total) : 0;
@@ -99,8 +97,7 @@ export default function AdminReportsUiScreen() {
       </button></div>}>
     {locked && <p role="alert" className="rounded-xl border border-red-500/40 p-4 text-sm">Phiên hoặc quyền Admin không hợp lệ. Dữ liệu báo cáo đã bị khóa.</p>}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-5 py-4">
-      <div><p className="text-sm font-semibold text-white">Khoảng thời gian SOS</p>
-        <p className="mt-1 text-xs text-slate-400">Từ {formatDate(window.from)} đến {formatDate(window.to)} (GMT+7)</p></div>
+      <div><p className="text-sm font-semibold text-white">Khoảng thời gian SOS</p></div>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Chọn khoảng thời gian báo cáo">
         {([["7d", "7 ngày"], ["30d", "30 ngày"], ["90d", "90 ngày"]] as const).map(([key, label]) => <button type="button" key={key}
           aria-pressed={range === key} disabled={locked} onClick={() => chooseRange(key)}

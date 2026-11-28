@@ -351,9 +351,6 @@ export default function FloodAreaManagementScreen() {
         )}
 
         <Panel title="Danh sách vùng ngập" icon="flood" mock={isMock}>
-          <p className="mb-3 text-xs text-warn">
-            Điểm ngập lịch sử (mã HIST-xx) chỉ để tham khảo, không phải cảnh báo ngập hiện tại.
-          </p>
 
           {loading && (
             <p className="py-4 text-center text-sm text-muted">

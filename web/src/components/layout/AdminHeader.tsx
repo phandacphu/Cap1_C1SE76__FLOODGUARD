@@ -1,6 +1,7 @@
 import { Icon } from "../ui/Icon";
 import { formatClock, useClock } from "./useClock";
 import { Link } from "react-router-dom";
+import { useState } from "react";
 
 interface AdminHeaderProps {
   /** Number of currently active flood alerts (shown on the bell). */
@@ -12,6 +13,7 @@ interface AdminHeaderProps {
 /** Admin top bar: breadcrumb, 24/7 status, search, clock, bell. */
 export function AdminHeader({ alertCount, title = "Tổng quan" }: AdminHeaderProps) {
   const now = useClock();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   return (
     <>
@@ -48,16 +50,26 @@ export function AdminHeader({ alertCount, title = "Tổng quan" }: AdminHeaderPr
           <Icon name="clock" className="h-4 w-4 text-water" />
           <span>{formatClock(now)} ICT</span>
         </div>
-        <div
-          className="relative rounded-lg p-2 text-muted"
-          title={alertCount === undefined ? "Thông báo" : `${alertCount} cảnh báo đang hiệu lực`}
-        >
-          <Icon name="bell" className="h-5 w-5" />
-          {alertCount !== undefined && alertCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sos px-1 font-mono text-[10px] font-bold text-white">
-              {alertCount}
-            </span>
-          )}
+        <div className="relative">
+          <button type="button" aria-label="Mở thông báo" aria-expanded={notificationsOpen}
+            aria-controls="admin-notifications" onClick={() => setNotificationsOpen((value) => !value)}
+            className="relative rounded-lg p-2 text-muted hover:bg-card hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-water">
+            <Icon name="bell" className="h-5 w-5" />
+            {alertCount !== undefined && alertCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sos px-1 font-mono text-[10px] font-bold text-white">
+                {alertCount}
+              </span>
+            )}
+          </button>
+          {notificationsOpen && <div id="admin-notifications" role="region" aria-label="Thông báo hệ thống"
+            className="absolute right-0 top-full z-50 mt-2 w-72 rounded-xl border border-border bg-card p-4 text-sm text-text shadow-xl">
+            <h2 className="mb-2 font-semibold">Thông báo</h2>
+            <p className="mb-3 text-xs text-muted">Chưa có danh sách thông báo riêng từ hệ thống. Bạn có thể kiểm tra các cảnh báo và yêu cầu SOS hiện tại.</p>
+            <div className="flex flex-col gap-2">
+              <Link to="/admin/flood-warnings" onClick={() => setNotificationsOpen(false)} className="text-water hover:underline">Xem cảnh báo lũ</Link>
+              <Link to="/admin/sos" onClick={() => setNotificationsOpen(false)} className="text-water hover:underline">Xem yêu cầu SOS</Link>
+            </div>
+          </div>}
         </div>
         <Link
           to="/admin/profile"

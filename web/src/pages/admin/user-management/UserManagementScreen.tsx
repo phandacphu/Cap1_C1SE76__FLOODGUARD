@@ -72,6 +72,15 @@ export default function UserManagementScreen() {
         (statusFilter === "active" && u.isActive) ||
         (statusFilter === "inactive" && !u.isActive);
       return matchSearch && matchRole && matchStatus;
+    }).sort((a, b) => {
+      const aTime = a.createdAt ? Date.parse(a.createdAt) : NaN;
+      const bTime = b.createdAt ? Date.parse(b.createdAt) : NaN;
+      const aValid = Number.isFinite(aTime);
+      const bValid = Number.isFinite(bTime);
+      if (!aValid && !bValid) return a.id.localeCompare(b.id);
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+      return bTime - aTime || a.id.localeCompare(b.id);
     });
   }, [list, search, roleFilter, statusFilter]);
 
@@ -130,9 +139,6 @@ export default function UserManagementScreen() {
             <h1 className="text-2xl font-bold text-white uppercase tracking-wide">
               Quản lý người dùng toàn hệ thống
             </h1>
-            <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-              Quản trị hồ sơ cư dân địa phương, phân quyền lực lượng cứu hộ và kiểm soát trạng thái hoạt động theo thời gian thực.
-            </p>
           </div>
           <button
             type="button"
@@ -228,7 +234,7 @@ export default function UserManagementScreen() {
         </div>
 
         {/* DATA TABLE & ERROR / LOADING STATES */}
-        <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           {users === null && !loadFailed ? (
             <div className="px-6 py-16 text-center text-slate-400 font-mono animate-pulse">
               Đang tải dữ liệu người dùng từ Render server (có thể mất 30-50s nếu server sleep)...
@@ -241,38 +247,39 @@ export default function UserManagementScreen() {
               <button onClick={refresh} className="mt-2 px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white">Thử lại</button>
             </div>
           ) : (
-            <table className="w-full text-left text-sm whitespace-nowrap">
+            <table className="w-full table-fixed text-left text-sm">
               <thead className="bg-slate-900/50 text-xs font-mono uppercase text-slate-400">
                 <tr>
-                  <th className="px-6 py-4 font-medium">Họ tên & Tài khoản</th>
-                  <th className="px-6 py-4 font-medium">Vai trò</th>
-                  <th className="px-6 py-4 font-medium">Trạng thái</th>
-                  <th className="px-6 py-4 font-medium">Liên hệ</th>
-                  <th className="px-6 py-4 font-medium text-right">Thao tác</th>
+                  <th className="w-[22%] px-3 py-3 font-medium">Họ tên & Tài khoản</th>
+                  <th className="w-[12%] px-3 py-3 font-medium">Vai trò</th>
+                  <th className="w-[12%] px-3 py-3 font-medium">Trạng thái</th>
+                  <th className="w-[27%] px-3 py-3 font-medium">Liên hệ</th>
+                  <th className="w-[15%] px-3 py-3 font-medium">Ngày tạo</th>
+                  <th className="w-[12%] px-3 py-3 font-medium text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {list.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                       Hệ thống chưa có người dùng nào.
                     </td>
                   </tr>
                 ) : filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                       Không tìm thấy dữ liệu người dùng phù hợp.
                     </td>
                   </tr>
                 ) : (
                   filteredUsers.map((u) => (
                     <tr key={u.id} className="hover:bg-slate-700/30 transition">
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-white">{u.fullName || "Chưa cập nhật tên"}</div>
-                        <div className="font-mono text-xs text-slate-500">ID: {u.id}</div>
+                      <td className="px-3 py-3 align-top">
+                        <div className="break-words font-semibold text-white">{u.fullName || "Chưa cập nhật tên"}</div>
+                        <div className="break-all font-mono text-xs text-slate-500">ID: {u.id}</div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium
+                      <td className="px-3 py-3 align-top">
+                        <span className={`inline-flex max-w-full break-all rounded px-1.5 py-0.5 text-xs font-medium
                           ${u.role === "admin" ? "bg-purple-500/20 text-purple-400" :
                             u.role === "rescue" ? "bg-amber-500/20 text-amber-400" :
                             u.role === "resident" ? "bg-blue-500/20 text-blue-400" :
@@ -280,21 +287,22 @@ export default function UserManagementScreen() {
                           {roleText(u.role)}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium
+                      <td className="px-3 py-3 align-top">
+                        <span className={`inline-flex max-w-full flex-wrap items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium
                           ${u.isActive ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? "bg-emerald-500" : "bg-red-500"}`}></span>
                           {u.isActive ? "Active" : "Locked"}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-slate-300">{u.phone || "Chưa cập nhật SĐT"}</div>
-                        <div className="text-xs text-slate-500">{u.email || "Chưa cập nhật Email"}</div>
+                      <td className="px-3 py-3 align-top">
+                        <div className="break-words text-slate-300">{u.phone || "Chưa cập nhật SĐT"}</div>
+                        <div className="break-all text-xs text-slate-500">{u.email || "Chưa cập nhật Email"}</div>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-3 py-3 align-top text-xs leading-5 text-slate-300">{formatDate(u.createdAt)}</td>
+                      <td className="px-3 py-3 text-right align-top">
                         <button
                           onClick={() => handleEditClick(u)}
-                          className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-600 transition"
+                          className="max-w-full rounded bg-slate-700 px-2 py-1.5 text-xs font-medium text-white transition hover:bg-slate-600"
                         >
                           Xem / Sửa
                         </button>
@@ -317,7 +325,7 @@ export default function UserManagementScreen() {
               className="w-full max-w-md rounded-2xl bg-slate-800 border border-slate-700 shadow-2xl overflow-hidden"
             >
               <div className="border-b border-slate-700 bg-slate-900/50 px-6 py-4 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-white">Chỉnh sửa Tài khoản (API)</h3>
+                <h3 className="text-lg font-semibold text-white">Chỉnh sửa Tài khoản</h3>
                 <button onClick={handleCloseModal} aria-label="Đóng" className="text-slate-400 hover:text-white">✕</button>
               </div>
               <div className="p-6 space-y-4">
@@ -382,11 +390,6 @@ export default function UserManagementScreen() {
                   </div>
                 )}
 
-                {!isSelfEditing && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded p-3 text-xs text-amber-400">
-                    Lưu ý: Hệ thống yêu cầu xác nhận trước khi cập nhật. Payload gửi lên chỉ chứa các trường thay đổi (`role` / `isActive`).
-                  </div>
-                )}
 
                 {modalError && (
                   <div role="alert" className="bg-red-500/10 border border-red-500/30 rounded p-3 text-xs text-red-300">
