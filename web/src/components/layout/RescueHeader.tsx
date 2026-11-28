@@ -1,3 +1,4 @@
+import { RescueNotificationBell } from './RescueNotificationBell';
 import { useAuth } from "../../context/AuthContext";
 import { Icon } from "../ui/Icon";
 import { formatClock, useClock } from "./useClock";
@@ -16,7 +17,7 @@ interface RescueHeaderProps {
 /** Rescue Staff top bar: online status, clock, sync info, refresh, bell, user. */
 export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount, syncHint = 'tự đồng bộ 15s' }: RescueHeaderProps) {
   const now = useClock();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   return (
     <>
@@ -45,14 +46,7 @@ export function RescueHeader({ loading, onRefresh, updatedAt, waitingCount, sync
         >
           <Icon name="refresh" className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
         </button>
-        <div className="relative rounded-lg p-2 text-muted" title={waitingCount === undefined ? 'Chưa tải được số SOS' : `${waitingCount} SOS đang chờ`}>
-          <Icon name="bell" className="h-5 w-5" />
-          {waitingCount !== undefined && waitingCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sos px-1 font-mono text-[10px] font-bold text-white">
-              {waitingCount}
-            </span>
-          )}
-        </div>
+        <RescueNotificationBell key={JSON.stringify([user?.id, token])} waitingCount={waitingCount} />
         <div className="hidden text-right sm:block">
           <p className="max-w-40 truncate text-sm font-semibold leading-tight">
             {user?.fullName || user?.email || "Rescue Staff"}

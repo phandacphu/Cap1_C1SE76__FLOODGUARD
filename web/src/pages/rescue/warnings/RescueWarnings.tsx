@@ -91,7 +91,7 @@ export function RescueWarnings() {
 }
 
 export function RescueWarningPage() {
-  const { source } = useWarnings();
+
   const { id } = useParams();
   const [status, setStatus] = useState<WarningStatus | "all">("all");
   const [query, setQuery] = useState("");
@@ -219,10 +219,6 @@ export function RescueWarningPage() {
             </div>
           </>
         )}
-        <footer className="rw-footer">
-          FLOODGUARD · Nguồn bản tin: Admin{" "}
-          <span>{source.demo ? "Dữ liệu mẫu · GMT+7" : "GMT+7"}</span>
-        </footer>
       </main>
     </RescueLayout>
   );

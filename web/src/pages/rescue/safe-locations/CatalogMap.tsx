@@ -47,6 +47,6 @@ export function CatalogMap({items,user,selectedId,onSelect,command}:{items:SafeL
         <Camera command={command} items={items} user={user}/>
       </MapContainer>
     </div>
-    <p className="text-xs text-muted">Ghim định vị xanh lá: điểm tránh trú · Biểu tượng GPS xanh dương: người cứu hộ. Tâm bản đồ ban đầu là Đà Nẵng, không phải vị trí của bạn. Camera chỉ di chuyển khi bạn thao tác.</p>
+    
   </div>;
 }
